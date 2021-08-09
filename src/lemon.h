@@ -6,6 +6,11 @@
 
 #pragma once
 
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
+
 #ifndef __GNUC__
     #error "Lemon requires a GNU C compiler"
 #endif
