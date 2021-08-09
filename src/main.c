@@ -8,13 +8,18 @@
 
 #include "assets/vector.h"
 
-struct point {
-	int x;
-	int y;
-}
-
-make_vector(struct point, point, static inline)
+make_vector(uint8_t, u8, extern)
 
 int main(void) {
+	int err = 0;
+
+	u8_vector v;
+
+	err = u8_vector_init(&v);
+
+	assert(err == LEMON_ESUCCESS);
+
+	u8_vector_free(&v);
+
 	return 0;
 }
