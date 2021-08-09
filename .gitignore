@@ -1,3 +1,8 @@
+# Lemon docs and executables
+lemon
+html/
+latex/
+
 # Prerequisites
 *.d
 
