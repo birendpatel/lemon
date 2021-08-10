@@ -1,4 +1,4 @@
-/*
+/**
  * @file vector.h
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
  * @brief Templated vector data structure for shallow copies.
@@ -12,9 +12,9 @@
 #include <string.h>
 
 //error codes
-#define VECTOR_ESUCCESS	0	/** Function returned successfully */
-#define VECTOR_ENOMEM	1	/** Cannot allocate memory */
-#define VECTOR_EFULL	2	/** Cannot append, vector is full */
+#define VECTOR_ESUCCESS	0	/**< @brief Function returned successfully */
+#define VECTOR_ENOMEM	1	/**< @brief Cannot allocate memory */
+#define VECTOR_EFULL	2	/**< @brief Cannot append, vector is full */
 
 //typedef and forward declaration
 #define alias_vector(pfix)					               \
@@ -46,7 +46,6 @@ cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum);   \
  * @return VECTOR_ENOMEM if dynamic memory allocation fails
  ******************************************************************************/
 #define impl_vector_init(T, pfix, cls)				               \
-									       \
 cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)        \
 {                                                                              \
 	assert(self);							       \
@@ -73,7 +72,6 @@ cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)        \
  * @details This function may be used with the GCC cleanup attribute.
  ******************************************************************************/
 #define impl_vector_free(T, pfix, cls)					       \
-									       \
 cls void pfix##_vector_free(pfix##_vector *self)			       \
 {									       \
 	assert(self);							       \
@@ -92,7 +90,6 @@ cls void pfix##_vector_free(pfix##_vector *self)			       \
  * if dynamic memory allocation fails.
  ******************************************************************************/
 #define impl_vector_push(T, pfix, cls)					       \
-									       \
 cls int pfix##_vector_push(pfix##_vector *self, const T datum)                 \
 {									       \
 	assert(self);							       \
@@ -137,7 +134,6 @@ cls int pfix##_vector_push(pfix##_vector *self, const T datum)                 \
  * checks are required in debug mode or where the vector struct is opaque.
  ******************************************************************************/
 #define impl_vector_get(T, pfix, cls)					       \
-									       \
 cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
 {									       \
 	assert(self);                                                          \
@@ -152,7 +148,6 @@ cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
  * @return The old element is returned.
  ******************************************************************************/
 #define impl_vector_set(T, pfix, cls)					       \
-									       \
 cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum)    \
 {									       \
 	assert(self);							       \

@@ -32,17 +32,22 @@ all: debug
 
 debug: CFLAGS += -ggdb -O0 -DDEBUG
 debug: lemon
+	mkdir -p ./debug
+	mv ./lemon ./debug
+	@echo "\nBuild finished successfully."
 	@echo "Lemon was compiled in debug mode."
 	@echo "Issue 'make release' to turn on optimisations."
 
 release: CFLAGS += -O2
 release: lemon
+	mkdir -p ./release
+	mv ./lemon ./release
+	@echo "\nBuild finished successfully."
 	@echo "Lemon was compiled in release mode."
 	@echo "Issue 'make' or 'make debug' to turn on debugging."
 
 lemon: $(objects)
 	$(CC) $(objects) -o $@
-	@echo "\nbuild finished successfully."
 
 main.o : main.c $(common)
 	$(CC) $(CFLAGS) -c $< -o $@
@@ -52,10 +57,12 @@ main.o : main.c $(common)
 ###############################################################################
 
 docs:
+	rm -rf ./docs
 	doxygen
-	cp ./html/index.html ./
-	mv ./index.html ./lemon_docs.html
-	@echo "documentation generated, see ./lemon_docs.html."
+	mkdir -p ./docs
+	mv ./html/* ./docs
+	rm -rf ./html ./latex
+	@echo "\ndocumentation generated, see ./docs/index.html."
 
 ###############################################################################
 # tests
@@ -70,7 +77,7 @@ unity.o: unity.c unity.h unity_internals.h
 ###############################################################################
 
 clean:
-	@rm -f *.o *.html
-	@rm -rf ./html ./latex
-	@rm -rf ./lemon
+	@rm -f *.o
+	@rm -rf ./lemon ./release ./debug
+	@rm -rf ./docs ./html ./latex
 	@echo "directory cleaned."
