@@ -6,10 +6,15 @@
 
 #pragma once
 
-#include "../lemon.h"
-
+#include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+//error codes
+#define VECTOR_ESUCCESS	0	/** Function returned successfully */
+#define VECTOR_ENOMEM	1	/** Cannot allocate memory */
+#define VECTOR_EFULL	2	/** Cannot append, vector is full */
 
 //typedef and forward declaration
 #define alias_vector(pfix)					               \
@@ -27,9 +32,9 @@ struct pfix##_vector {					                       \
 #define api_vector(T, pfix, cls)					       \
 cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap);       \
 cls void pfix##_vector_free(pfix##_vector *self);			       \
-cls int pfix##_vector_push(pfix##_vector *self, const T data);	               \
-cls int pfix##_vector_get(pfix##_vector *self, const size_t i, T *data);       \
-cls int pfix##_vector_set(pfix##_vector *self, const size_t i, const T data);  \
+cls int pfix##_vector_push(pfix##_vector *self, const T datum);	               \
+cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum);     \
+cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum);   \
 
 //implementation helpers
 #define GROW_CAP(x) (x * (size_t) 2)
@@ -38,34 +43,34 @@ cls int pfix##_vector_set(pfix##_vector *self, const size_t i, const T data);  \
 /*******************************************************************************
  * @def impl_vector_init
  * @brief Initialize and zero-out the first 'len' elements.
+ * @return VECTOR_ENOMEM if dynamic memory allocation fails
  ******************************************************************************/
 #define impl_vector_init(T, pfix, cls)				               \
 									       \
 cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)        \
 {                                                                              \
 	assert(self);							       \
+	assert(cap < len);						       \
+	assert(cap != 0);						       \
 									       \
-	if (cap < len || cap == 0) {					       \
-		return LEMON_EARGS;					       \
-	}								       \
+	self->len = len;                                                       \
+	self->cap = cap;                                                       \
 									       \
 	self->data = malloc(cap * sizeof(T));                                  \
 									       \
 	if (!self->data) {                                                     \
-		return LEMON_ENOMEM;                                           \
+		return VECTOR_ENOMEM;                                          \
 	}                                                                      \
                       	 	 	 	 	                       \
-	self->len = len;                                                       \
-	self->cap = cap;                                                       \
-                                   					       \
 	memset(self->data, 0, len * sizeof(T));				       \
 									       \
-	return LEMON_ESUCCESS;						       \
+	return VECTOR_ESUCCESS;						       \
 }
 
 /*******************************************************************************
  * @def impl_vector_free
  * @brief Release data pointer to system.
+ * @details This function may be used with the GCC cleanup attribute.
  ******************************************************************************/
 #define impl_vector_free(T, pfix, cls)					       \
 									       \
@@ -83,15 +88,17 @@ cls void pfix##_vector_free(pfix##_vector *self)			       \
 /*******************************************************************************
  * @def impl_vector_push
  * @brief Append an element to the end of the vector in amoritized O(1) time.
+ * @return VECTOR_EFULL if vector is already at max capacity or VECTOR_ENOMEM
+ * if dynamic memory allocation fails.
  ******************************************************************************/
 #define impl_vector_push(T, pfix, cls)					       \
 									       \
-cls int pfix##_vector_push(pfix##_vector *self, const T data)                  \
+cls int pfix##_vector_push(pfix##_vector *self, const T datum)                 \
 {									       \
 	assert(self);							       \
                                                                                \
 	if (self->len == SIZE_MAX) {                                           \
-		return LEMON_EFULL;                                            \
+		return VECTOR_EFULL;                                           \
 	}                                                                      \
 									       \
 	if (self->len == self->cap) {					       \
@@ -106,7 +113,7 @@ cls int pfix##_vector_push(pfix##_vector *self, const T data)                  \
 		T *tmp = malloc(new_cap * sizeof(T));			       \
 									       \
 		if (!tmp) {						       \
-			return LEMON_ENOMEM;				       \
+			return VECTOR_ENOMEM;				       \
 		}							       \
 									       \
 		memcpy(tmp, self->data, self->len * sizeof(T));                \
@@ -117,12 +124,46 @@ cls int pfix##_vector_push(pfix##_vector *self, const T data)                  \
 		self->data = tmp;					       \
 	}								       \
 									       \
-	self->data[self->len] = data;					       \
+	self->data[self->len] = datum;					       \
 	self->len++;							       \
     									       \
-	return LEMON_ESUCCESS;						       \
+	return VECTOR_ESUCCESS;						       \
 }
 
+/*******************************************************************************
+ * @def impl_vector_get
+ * @brief Array indexing on vector, O(1).
+ * @details This function is intended for situations where array indexing
+ * checks are required in debug mode or where the vector struct is opaque.
+ ******************************************************************************/
+#define impl_vector_get(T, pfix, cls)					       \
+									       \
+cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
+{									       \
+	assert(self);                                                          \
+	assert(i < self.len);                                                  \
+									       \
+	*datum = self.data[i];						       \
+}
+
+/*******************************************************************************
+ * @def impl_vector_set
+ * @brief Set an element at the specified index to a new element.
+ * @return The old element is returned.
+ ******************************************************************************/
+#define impl_vector_set(T, pfix, cls)					       \
+									       \
+cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum)    \
+{									       \
+	assert(self);							       \
+	assert(i < self.len);						       \
+									       \
+	T old = self.data[i];						       \
+	self.data[i] = datum;						       \
+									       \
+	return old;							       \
+}
+								       
 /*******************************************************************************
  * @def make_vector
  * @brief Create a generic vector named pfix_vector which contains elements
@@ -134,4 +175,6 @@ cls int pfix##_vector_push(pfix##_vector *self, const T data)                  \
 	api_vector(T, pfix, cls)					       \
 	impl_vector_init(T, pfix, cls)				               \
 	impl_vector_free(T, pfix, cls)					       \
-	impl_vector_push(T, pfix, cls)
+	impl_vector_push(T, pfix, cls)					       \
+	impl_vector_get(T, pfix, cls)					       \
+	impl_vector_set(T, pfix, cls)
