@@ -15,7 +15,11 @@ CFLAGS += -march=native
 .PHONY: all debug release docs clean
 
 vpath %.h ./src
+vpath %.h ./src/lib
+vpath %.h ./extern/unity
+
 vpath %.c ./src
+vpath %.c ./extern/unity
 
 objects := main.o
 common := lemon.h
@@ -52,6 +56,14 @@ docs:
 	cp ./html/index.html ./
 	mv ./index.html ./lemon_docs.html
 	@echo "documentation generated, see ./lemon_docs.html."
+
+###############################################################################
+# tests
+# Unity framework is external, compiled w/out flags
+###############################################################################
+
+unity.o: unity.c unity.h unity_internals.h
+	$(CC) -c $< -o $@
 
 ###############################################################################
 # clean 
