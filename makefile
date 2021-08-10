@@ -60,4 +60,5 @@ docs:
 clean:
 	@rm -f *.o *.html
 	@rm -rf ./html ./latex
+	@rm -rf ./lemon
 	@echo "directory cleaned."
