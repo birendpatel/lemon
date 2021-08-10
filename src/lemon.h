@@ -19,4 +19,6 @@
 #define LEMON_ESUCCESS	0	/** Function terminated successfully. */
 #define LEMON_ENOMEM	1	/** Cannot allocate memory. */
 #define LEMON_ENULLPTR	2	/** Null pointer received but not allowed. */
+#define LEMON_EFULL	3	/** A container has reached capacity. */
+#define LEMON_EARGS	4	/** Bad function arguments. */
 #define LEMON_UNDEFINED	999	/** Internal compiler bug, please report. */
