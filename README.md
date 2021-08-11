@@ -1,41 +1,33 @@
 # Lemon
-Lemon is a dynamic programming language. It includes features such as:
 
+Lemon is a programming language. It includes features such as:
+
+- Static typing
 - Garbage collection
-- First class functions
 - Closures
+- Random variable types
+- Matrix types
 
-It also includes uncommon features such as:
-
-- Random variables
-- Built-in linear algebra
-
-This repository implements Lemon in C with GNU extensions and is licensed under the GNU General Public License v3.0. You may find a copy of this license in the root directory.
+This repository implements Lemon in C, henceforth called CLemon. CLemon is an interpreter and has a bytecode compiler that performs high-level optimisations. In the future, CLemon's optimised IR will funnel to LLVM.
 
 # Install
 
-Clone this repository and issue `make release`. If successful, you should see `Build finished successfully. Lemon was compiled in release mode.` The executable `lemon` will be placed in the newly created `release` directory.
+Clone this repository and issue `make release`. The executable `lemon` will be placed in the newly created `release` directory.
 
 You can issue `make docs` to generate the source code documentation via Doxygen.
 
-# FAQ
+Check out the makefile if you want to build Lemon in debug mode or issue any of the unit and integration tests.
 
-## Why is it called Lemon?
+# Philosophy
 
-It was picked completely at random from a dictionary.
+The focus of Lemon is its native support for random variables. This allows us to engineer a variety of interesting high level optimisations on the IR.
 
-## Is this a real programming language?
+For example, we can simplify probability convolutions. The sum of 1 million bernoulli samples will reduce to 1 binomial sample at compile time. Or, we can leverage CPU vectorisation for parallel sampling. We can precalculate the entropy of a density function and shift the value into the program text segment as an immediate value.
 
-Yes, but I have not yet implemented a standard library or an OS interface.
+These types of optimisations are tremendously hard to perform in dynamic languages like Python which depend heavily on runtime information.
 
-## Why did you build it?
+In the distant future, Lemon will hopefully take a form similar to the Glasgow Haskell Compiler. In that it will perform high level IR modifications before funneling to a low level optimiser like LLVM.
 
-I wanted to play around with the idea of incorporating probability theory directly into a language. It allows the compiler to perform interesting high-level optimisations. For example, Lemon can detect probability convolutions. If the user sums 1 million IID bernoulli variables, Lemon will optimize the bytecode and reduce it to a single binomial sample.
+# License
 
-On modern CPUs Lemon can also perform extreme low-level optimisations. A stream of bernoulli random samples can be optimised into a bit trie. This can be transformed into a tiny virtual machine that leverages AVX512 for absolutely massive throughputs.
-
-I was inspired by the crazy high-level optimisations that Haskell compilers can perform before dropping into LLVM IR.
-
-## Are these actually frequently asked questions?
-
-No, the repository has zero stars and one contributor. I'm basically talking to myself out loud.
+This project is licensed under the GNU General Public License v3.0. You may find a copy of this license in the root directory.
