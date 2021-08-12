@@ -6,5 +6,3 @@ The unit tests depend on the Unity software located in `/extern/unity` or found 
 In general, `/extern` contains decoupled 3rd party software while `/src/lib` contains decoupled in-house software.
 
 `vector.h`: Templated dynamic array which appends and sets shallow copies. Lemon uses vectors to implement program sections like .text and .data.
-
-`map.h`: Templated hash table associating strings with a generic type. Used for lexical analysis and symbol tables.
