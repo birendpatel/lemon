@@ -15,5 +15,10 @@
     #error "Lemon requires a GNU C compiler"
 #endif
 
+//all source files under strict purview of CLemon (e.g., not /src/lib or /extern)
+//use lemon_error and its associated codes.
+typedef int lemon_error;
+
 //error codes
 #define LEMON_ESUCCESS 0 /**< @brief Function terminated successfully. */
+#define LEMON_ENONMEM  1 /**< @brief Dynamic allocation failed. */
