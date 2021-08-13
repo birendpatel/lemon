@@ -19,7 +19,7 @@
 #define MACHINE_NORUN_KEY	'k'
 
 //argp global parameters and docs
-const char *argp_program_version = "1.0.0.7 alpha";
+const char *argp_program_version = "1.0.0.8 alpha";
 const char *argp_program_bug_address = "https://github.com/birendpatel/lemon/issues";
 static char args_doc[] = "filename";
 static char doc[] = "\nThis is the C Lemon interpreter for the Lemon language.";
@@ -118,7 +118,7 @@ lemon_error options_parse(options *self, int argc, char **argv)
 		.doc = doc
 	};
 
-	error_t err = argp_parse(&args_data, argc, argv, 0, 0, &self);
+	error_t err = argp_parse(&args_data, argc, argv, 0, 0, self);
 
 	if (err == ENOMEM) {
 		return LEMON_ENOMEM;
@@ -134,21 +134,23 @@ lemon_error options_parse(options *self, int argc, char **argv)
 	return LEMON_ESUCCESS;
 }
 
+#define TO_BOOL(x) ((x) ? 1 : 0)
+
 void options_display(options *self)
 {
 	fprintf(stderr, "OPTIONS\n\n");
 
 	fprintf(stderr, "diagnostic\n");
-	fprintf(stderr, "\tall: %d\n", self->diagnostic & DIAGNOSTIC_ALL);
-	fprintf(stderr, "\topt: %d\n", self->diagnostic & DIAGNOSTIC_OPT);
-	fprintf(stderr, "\tpass: %d\n", self->diagnostic & DIAGNOSTIC_PASS);
-	fprintf(stderr, "\ttokens: %d\n", self->diagnostic & DIAGNOSTIC_TOKENS);
+	fprintf(stderr, "\tall: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_ALL));
+	fprintf(stderr, "\topt: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_OPT));
+	fprintf(stderr, "\tpass: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_PASS));
+	fprintf(stderr, "\ttokens: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_TOKENS));
 	
-	fprintf(stderr, "intermediate representation\n");
-	fprintf(stderr, "\tdisassemble: %d\n", self->ir & IR_DISASSEMBLE);
+	fprintf(stderr, "\nintermediate representation\n");
+	fprintf(stderr, "\tdisassemble: %d\n", TO_BOOL(self->ir & IR_DISASSEMBLE));
 	
-	fprintf(stderr, "virtual machine\n");
-	fprintf(stderr, "norun: %d\n", self->machine & MACHINE_NORUN);
+	fprintf(stderr, "\nvirtual machine\n");
+	fprintf(stderr, "\tnorun: %d\n", TO_BOOL(self->machine & MACHINE_NORUN));
 
-	fprintf(stderr, "END OPTIONS\n\n");
+	fprintf(stderr, "\nEND OPTIONS\n\n");
 }
