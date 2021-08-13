@@ -8,7 +8,7 @@ Lemon is a programming language. It includes features such as:
 - Random variable types
 - Matrix types
 
-This repository implements Lemon in C, henceforth called CLemon. CLemon is an interpreter and has a bytecode compiler that performs high-level optimisations. In the future, CLemon's optimised IR will funnel to LLVM.
+This repository implements Lemon in C, nicknamed CLemon. CLemon is an interpreter and has a bytecode compiler that performs high-level optimisations. In the future, CLemon's optimised IR will funnel to LLVM.
 
 # Install
 
