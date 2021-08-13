@@ -4,8 +4,40 @@
  * @brief Lemon compiler
  */
 
-#include "lemon.h"
+#include <stdio.h>
+#include <stdlib.h>
 
-int main(void) {
-	return 0;
+#include "lemon.h"
+#include "options.h"
+
+options config_options(int argc, char **argv, lemon_error *err);
+
+int main(int argc, char **argv)
+{
+	lemon_error err = LEMON_EUNDEF;
+
+	options opt = config_options(argc, argv, &err);
+
+	if (err) {
+		fprintf(stderr, "CLemon error: %s\n", lemon_describe(err));
+	}
+
+	if (opt.diagnostic & DIAGNOSTIC_OPT) {
+		options_display(&opt);
+	}
+
+	return EXIT_SUCCESS;
+}
+
+options config_options(int argc, char **argv, lemon_error *err)
+{
+	options opt = options_init();
+
+	*err = options_parse(&opt, argc, argv);
+
+	if (*err != LEMON_ESUCCESS) {
+		return (options) {0};
+	}
+
+	return opt;
 }

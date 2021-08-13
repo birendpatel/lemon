@@ -1,4 +1,4 @@
-/**
+/*
  * @file options.h
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
  * @brief Lemon command line options API.
@@ -16,7 +16,7 @@ typedef struct options {
 
 //bitwise operations for reading the options struct
 #define DIAGNOSTIC_ALL 		1 << 0
-#define DIAGNOSTIC_FLAGS	1 << 1
+#define DIAGNOSTIC_OPT		1 << 1
 #define DIAGNOSTIC_PASS		1 << 2
 #define DIAGNOSTIC_TOKENS	1 << 3
 #define IR_DISASSEMBLE		1 << 1
@@ -31,7 +31,12 @@ options options_init(void);
 /*******************************************************************************
  * @fn options_parse
  * @brief GNU argp option parser. Must be invoked before reading from options.
- * @returns Possibly LEMON_ENOMEM.
+ * @returns Possibly LEMON_ENOMEM or LEMON_EOPTION.
  ******************************************************************************/
 lemon_error options_parse(options *self, int argc, char **argv);
 
+/*******************************************************************************
+ * @fn options_display
+ * @brief Print all options on stderr.
+ ******************************************************************************/
+void options_display(options *self);

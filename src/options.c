@@ -5,69 +5,71 @@
  */
 
 #include <argp.h>
+#include <errno.h>
+#include <stdio.h>
 
 #include "options.h"
 
 //argp options keys; options without a short name begin at 256
 #define DIAGNOSTIC_ALL_KEY	256
-#define DIAGNOSTIC_FLAGS_KEY	257
+#define DIAGNOSTIC_OPT_KEY	257
 #define DIAGNOSTIC_PASS_KEY	258
 #define DIAGNOSTIC_TOKENS_KEY	259
 #define IR_DISASSEMBLE_KEY	'S'
 #define MACHINE_NORUN_KEY	'k'
 
 //argp global parameters and docs
-const char *argp_program_version = "1.0.0.5 alpha";
+const char *argp_program_version = "1.0.0.6 alpha";
 const char *argp_program_bug_address = "https://github.com/birendpatel/lemon/issues";
 static const char *args_doc = "lemon [options] [filename]";
-static const char *doc = "This is the CLemon interpreter for the Lemon language."
+static const char *doc = "This is the CLemon interpreter for the Lemon language.";
 
 //argp options descriptions
-static const struct argp_options options_info[] = {
+static const struct argp_option options_info[] = {
 	{
 		.name = "Dall",
-		.key  = DIAGNOSTIC_ALL_KEY
+		.key  = DIAGNOSTIC_ALL_KEY,
 		.doc  = "Enable all diagnostics."
 	},
 	{
-		.name = "Dflags",
-		.key  = DIAGNOSTIC_FLAGS_KEY
-		.doc  = "Display flags on stderr, including those not set by options."
+		.name = "Dopt",
+		.key  = DIAGNOSTIC_OPT_KEY,
+		.doc  = "Display the options state on stderr."
 	},
 	{
 		.name = "Dpass",
-		.key  = DIAGNOSTIC_PASS_KEY
+		.key  = DIAGNOSTIC_PASS_KEY,
 		.doc  = "Notify on stderr all entry and exit points for all compiler passes."
 	},
 	{
 		.name = "Dtokens",
-		.key  = DIAGNOSTIC_TOKENS_KEY
+		.key  = DIAGNOSTIC_TOKENS_KEY,
 		.doc  = "Display tokens on stderr once lexical analysis is complete."
 	},
 	{
 		.name = "Iasm",
 		.key  = IR_DISASSEMBLE_KEY,
 		.doc  = "Output disassembled bytecode from the final pass to stderr."
-	}
+	},
 	{
-		.name = "Mkill"
+		.name = "Mkill",
 		.key = MACHINE_NORUN_KEY,
 		.doc = "Compile to bytecode but do not run the virtual machine."
 	}
 };
 
 //argp parser actions
-error_t parser(int key, char *arg, struct argp_state *state)
+error_t parser(int key, __attribute__((unused)) char *arg, struct argp_state *state)
 {
-	options *opt = (opt*) state->input;
+	options *opt = (options *) state->input;
 
 	switch (key) {
 	case DIAGNOSTIC_ALL_KEY:
 		opt->diagnostic = 0xFF;
 		break;
 
-	case DIAGNOSTIC_FLAGS_KEY:
-		opt->diagnostic |= DIAGNOSTIC_FLAGS;
+	case DIAGNOSTIC_OPT_KEY:
+		opt->diagnostic |= DIAGNOSTIC_OPT;
 		break;
 
 	case DIAGNOSTIC_PASS_KEY:
@@ -93,11 +95,6 @@ error_t parser(int key, char *arg, struct argp_state *state)
 	return 0;
 }
 
-//The initializer places CLemon into a default state. Currently all options
-//default to off, or false. Meaning, CLemon does not do any optimisations or
-//diagnostics or anything whatsovever that may be remotely interesting. It
-//just performs the 3 basic compiler passes: parser -> ast -> bytecode. And
-//then executes the VM and exits.
 options options_init(void) {
 	options opt = {
 		.diagnostic = 0,
@@ -106,4 +103,49 @@ options options_init(void) {
 	};
 
 	return opt;
+}
+
+lemon_error options_parse(options *self, int argc, char **argv)
+{
+	assert(self);
+	assert(argc > 0);
+	assert(argv);
+
+	struct argp args_data = {
+		.options = options_info,
+		.parser = parser,
+		.args_doc = args_doc,
+		.doc = doc
+	};
+
+	error_t err = argp_parse(&args_data, argc, argv, 0, 0, &self);
+
+	if (err == ENOMEM) {
+		return LEMON_ENOMEM;
+	} else if (err == EINVAL) {
+		return LEMON_EOPTION;
+	} else {
+		assert(1 == 0); //catch unknown errno
+	}
+
+	return LEMON_ESUCCESS;
+}
+
+void options_diplay(options *self)
+{
+	fprintf(stderr, "OPTIONS\n\n");
+
+	fprintf(stderr, "diagnostic\n");
+	fprintf(stderr, "\tall: %d\n", self->diagnostic & DIAGNOSTIC_ALL);
+	fprintf(stderr, "\topt: %d\n", self->diagnostic & DIAGNOSTIC_OPT);
+	fprintf(stderr, "\tpass: %d\n", self->diagnostic & DIAGNOSTIC_PASS);
+	fprintf(stderr, "\ttokens: %d\n", self->diagnostic & DIAGNOSTIC_TOKENS);
+	
+	fprintf(stderr, "intermediate representation\n");
+	fprintf(stderr, "\tdisassemble: %d\n", self->ir & IR_DISASSEMBLE);
+	
+	fprintf(stderr, "virtual machine\n");
+	fprintf(stderr, "norun: %d\n", self->machine & MACHINE_NORUN);
+
+	fprintf(stderr, "END OPTIONS\n\n");
 }
