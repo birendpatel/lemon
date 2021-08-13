@@ -11,14 +11,13 @@
 //options handle
 typedef struct options options;
 
-//available options - OPTIONS_COUNT is a no op.
-//No Doxygen, see options.c for details.
+//No Doxygen, see options.c info array.
 typedef enum options_code {
 	DIAGNOSTIC_ALL,
 	DIAGNOSTIC_FLAGS,
 	DIAGNOSTIC_PASS,
 	DIAGNOSTIC_TOKENS,
-	BYTECODE,
+	MACHINE_BYTECODE,
 	OPTIONS_COUNT
 } options_code;
 

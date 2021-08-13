@@ -8,6 +8,11 @@
 
 #include "options.h"
 
+struct options {
+	uint8_t diagnostics;
+	uint8_t machine;
+};
+
 //Since the options struct is dense and requires bitwise operations, the values
 //in enum options_code cannot be used to access information in the struct. So
 //for every API user-facing option code, there are two corresponding macros
@@ -25,11 +30,11 @@
 #define DTOKENS 1 << 3
 #define DTOKENS_KEY 259
 
-#define BYTECODE 1 << 0
-#define BYTECODE_KEY 'S'
+#define MBYTECODE 1 << 0
+#define MBYTECODE_KEY 'S'
 
 //argp global parameters and docs
-const char *argp_program_version = "1.0.0.3 alpha";
+const char *argp_program_version = "1.0.0.4 alpha";
 const char *argp_program_bug_address = "https://github.com/birendpatel/lemon/issues";
 static const char *args_doc = "lemon [options] [filename]";
 static const char *doc = "This is the CLemon interpreter for the Lemon language."
@@ -57,9 +62,41 @@ static const struct argp_options options_info[OPTIONS_COUNT] = {
 		.key  = DTOKENS_KEY
 		.doc  = "Display tokens on stderr when lexical analysis is complete."
 	},
-	[BYTECODE] = {
-		.key = BYTECODE_KEY,
+	[MACHINE_BYTECODE] = {
+		.key = MBYTECODE_KEY,
 		.doc = "Generate bytecode but do not run the virtual machine."
 	}
 };
 
+//argp parser actions
+error_t parser(int key, char *arg, struct argp_state *state)
+{
+	options *opt = (opt*) state->input;
+
+	switch (key) {
+	case DALL_KEY:
+		opt->diagnostics |= DALL;
+		break;
+
+	case DFLAGS_KEY:
+		opt->diagnostics |= DFLAGS;
+		break;
+
+	case DPASS_KEY:
+		opt->diagnostics |= DPASS;
+		break;
+
+	case DTOKENS_KEY:
+		opt->diagnostics |= DTOKENS;
+		break;
+
+	case BYTECODE:
+		opt->machine |= MBYTECODE;
+		break;
+
+	default:
+		return ARGP_ERR_UNKNOWN;
+	}
+
+	return 0;
+}
