@@ -10,13 +10,14 @@
 #include "lemon.h"
 #include "options.h"
 
-options config_options(int argc, char **argv, lemon_error *err);
+options config_options(int argc, char **argv, int *argi, lemon_error *err);
 
 int main(int argc, char **argv)
 {
 	lemon_error err = LEMON_EUNDEF;
+	int argi = 0;
 
-	options opt = config_options(argc, argv, &err);
+	options opt = config_options(argc, argv, &argi, &err);
 
 	if (err) {
 		fprintf(stderr, "CLemon error: %s\n", lemon_describe(err));
@@ -29,11 +30,11 @@ int main(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
-options config_options(int argc, char **argv, lemon_error *err)
+options config_options(int argc, char **argv, int *argi, lemon_error *err)
 {
 	options opt = options_init();
 
-	*err = options_parse(&opt, argc, argv);
+	*err = options_parse(&opt, argc, argv, argi);
 
 	if (*err != LEMON_ESUCCESS) {
 		return (options) {0};

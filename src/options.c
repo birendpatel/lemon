@@ -19,9 +19,9 @@
 #define MACHINE_NORUN_KEY	'k'
 
 //argp global parameters and docs
-const char *argp_program_version = "1.0.0.8 alpha";
+const char *argp_program_version = "2.0.0.0 alpha";
 const char *argp_program_bug_address = "https://github.com/birendpatel/lemon/issues";
-static char args_doc[] = "filename";
+static char args_doc[] = "<file 1> ... <file n>";
 static char doc[] = "\nThis is the C Lemon interpreter for the Lemon language.";
 
 //argp options descriptions
@@ -106,11 +106,12 @@ options options_init(void) {
 	return opt;
 }
 
-lemon_error options_parse(options *self, int argc, char **argv)
+lemon_error options_parse(options *self, int argc, char **argv, int *argi)
 {
 	assert(self);
 	assert(argc > 0);
 	assert(argv);
+	assert(argi);
 
 	struct argp args_data = {
 		.options = options_info,
@@ -119,7 +120,7 @@ lemon_error options_parse(options *self, int argc, char **argv)
 		.doc = doc
 	};
 
-	error_t err = argp_parse(&args_data, argc, argv, 0, 0, self);
+	error_t err = argp_parse(&args_data, argc, argv, 0, argi, self);
 
 	if (err == ENOMEM) {
 		return LEMON_ENOMEM;

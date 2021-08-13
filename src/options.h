@@ -31,9 +31,12 @@ options options_init(void);
 /*******************************************************************************
  * @fn options_parse
  * @brief GNU argp option parser. Must be invoked before reading from options.
+ * @param argi Index in argv of the first element not parsed by this function.
+ * The argv argument is reordered so that all elements in argv from [argi, argc)
+ * are elements that were not parsed.
  * @returns Possibly LEMON_ENOMEM or LEMON_EOPTION.
  ******************************************************************************/
-lemon_error options_parse(options *self, int argc, char **argv);
+lemon_error options_parse(options *self, int argc, char **argv, int *argi);
 
 /*******************************************************************************
  * @fn options_display
