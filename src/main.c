@@ -58,7 +58,7 @@ fail:
  * @brief Initialize the REPL on stdin.
  * @details User input is read into a vector so that the user is not limited in
  * how much they are allowed to write (unless they run out of heap).
- * @returns LEMON_ENOMEM
+ * @returns LEMON_ENOMEM or LEMON_ESUCCESS
  ******************************************************************************/
 lemon_error run_repl(__attribute__((unused)) options *opt)
 {
@@ -71,7 +71,40 @@ lemon_error run_repl(__attribute__((unused)) options *opt)
 		return LEMON_ENOMEM;
 	}
 
-	fprintf(stderr, "repl goes here");
+	//TODO: signals
+	while (true) {
+		fprintf(stdout, ">>> ");
+
+		//read input until double newline
+		//TODO: EOF and fgetc errors
+		while (true) {
+			int curr = fgetc(stdin);
+
+			if (buf.len > 0) {
+				int prev = buf.data[buf.len - 1];
+
+				if (curr == '\n' && prev == '\n') {
+					break;
+				}
+			}
+			
+			//TODO: check char cast
+			char_vector_push(&buf, (char) curr);
+		}
+
+		//TODO: compile
+		//debug
+		printf("echo: ");
+		for (size_t i = 0; i < buf.len; i++) {
+			printf("%c", buf.data[i]);
+		}
+
+		//before looping back onto the next REPL request, we backdoor
+		//into the vector and reset it to empty. This lets us reuse
+		//the vector but also keep any capacity we gained from the
+		//expensive realloc syscalls.
+		buf.len = 0;
+	}
 
 	char_vector_free(&buf);
 
