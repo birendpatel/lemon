@@ -19,13 +19,13 @@
 #define MACHINE_NORUN_KEY	'k'
 
 //argp global parameters and docs
-const char *argp_program_version = "1.0.0.6 alpha";
+const char *argp_program_version = "1.0.0.7 alpha";
 const char *argp_program_bug_address = "https://github.com/birendpatel/lemon/issues";
-static const char *args_doc = "lemon [options] [filename]";
-static const char *doc = "This is the CLemon interpreter for the Lemon language.";
+static char args_doc[] = "filename";
+static char doc[] = "\nThis is the C Lemon interpreter for the Lemon language.";
 
 //argp options descriptions
-static const struct argp_option options_info[] = {
+static struct argp_option options_info[] = {
 	{
 		.name = "Dall",
 		.key  = DIAGNOSTIC_ALL_KEY,
@@ -125,13 +125,16 @@ lemon_error options_parse(options *self, int argc, char **argv)
 	} else if (err == EINVAL) {
 		return LEMON_EOPTION;
 	} else {
-		assert(1 == 0); //catch unknown errno
+		//catch unknown errnos in debug mode.
+		//argp documentation only lists ENOMEM and EINVAL
+		//but suggests other error codes could appear.
+		assert(err == 0);
 	}
 
 	return LEMON_ESUCCESS;
 }
 
-void options_diplay(options *self)
+void options_display(options *self)
 {
 	fprintf(stderr, "OPTIONS\n\n");
 

@@ -46,7 +46,7 @@ release: lemon
 	@echo "Issue 'make' or 'make debug' to turn on debugging."
 
 lemon: $(objects)
-	$(CC) $(objects) -o $@
+	$(CC) -o $@ $^
 
 main.o: lemon.h options.h
 lemon.o: lemon.h
