@@ -55,7 +55,8 @@ static struct argp_option options_info[] = {
 		.name = "Mkill",
 		.key = MACHINE_NORUN_KEY,
 		.doc = "Compile to bytecode but do not run the virtual machine."
-	}
+	},
+	{0} //terminator required by argp, otherwise nonprintables will appear in -?
 };
 
 //argp parser actions
