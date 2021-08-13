@@ -11,7 +11,7 @@
 #include "lib/vector.h"
 #include "options.h"
 
-//data structures
+//vector<char> used by REPL for input buffering
 make_vector(char, char, static inline)
 
 //prototypes
@@ -74,20 +74,23 @@ lemon_error run_repl(__attribute__((unused)) options *opt)
 	//TODO: signals
 	while (true) {
 		fprintf(stdout, ">>> ");
+		fflush(stdout);
 
 		//read input until double newline
 		//TODO: EOF and fgetc errors
 		while (true) {
+			int prev = buf.len > 0 ? buf.data[buf.len - 1] : 0;
 			int curr = fgetc(stdin);
 
-			if (buf.len > 0) {
-				int prev = buf.data[buf.len - 1];
-
-				if (curr == '\n' && prev == '\n') {
+			if (curr == '\n') {
+				if (prev == '\n') {
 					break;
 				}
+
+				fprintf(stdout, "... ");
+				fflush(stdout);
 			}
-			
+		
 			//TODO: check char cast
 			char_vector_push(&buf, (char) curr);
 		}
@@ -98,15 +101,13 @@ lemon_error run_repl(__attribute__((unused)) options *opt)
 		for (size_t i = 0; i < buf.len; i++) {
 			printf("%c", buf.data[i]);
 		}
-
-		//before looping back onto the next REPL request, we backdoor
-		//into the vector and reset it to empty. This lets us reuse
-		//the vector but also keep any capacity we gained from the
-		//expensive realloc syscalls.
-		buf.len = 0;
+		
+		//since syscalls in vector reallocation are expensive we reuse
+		//the vector on the next REPL iteration.
+		char_vector_reset(&buf, NULL);
 	}
 
-	char_vector_free(&buf);
+	char_vector_free(&buf, NULL);
 
 	return LEMON_ESUCCESS;
 }
