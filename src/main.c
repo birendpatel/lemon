@@ -60,7 +60,7 @@ fail:
  * how much they are allowed to write (unless they run out of heap).
  * @returns LEMON_ENOMEM
  ******************************************************************************/
-lemon_error run_repl(options *opt)
+lemon_error run_repl(__attribute__((unused)) options *opt)
 {
 	int err = 0;
 	char_vector buf;

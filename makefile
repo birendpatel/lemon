@@ -48,7 +48,7 @@ release: lemon
 lemon: $(objects)
 	$(CC) -o $@ $^
 
-main.o: lemon.h options.h
+main.o: lemon.h options.h vector.h
 lemon.o: lemon.h
 options.o : options.h
 

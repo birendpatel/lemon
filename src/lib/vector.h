@@ -49,7 +49,7 @@ cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum);   \
 cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)        \
 {                                                                              \
 	assert(self);							       \
-	assert(cap < len);						       \
+	assert(len <= cap);						       \
 	assert(cap != 0);						       \
 									       \
 	self->len = len;                                                       \
