@@ -137,9 +137,9 @@ cls int pfix##_vector_push(pfix##_vector *self, const T datum)                 \
 cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
 {									       \
 	assert(self);                                                          \
-	assert(i < self.len);                                                  \
+	assert(i < self->len);                                                 \
 									       \
-	*datum = self.data[i];						       \
+	*datum = self->data[i];						       \
 }
 
 /*******************************************************************************
@@ -151,10 +151,10 @@ cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
 cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum)    \
 {									       \
 	assert(self);							       \
-	assert(i < self.len);						       \
+	assert(i < self->len);						       \
 									       \
-	T old = self.data[i];						       \
-	self.data[i] = datum;						       \
+	T old = self->data[i];						       \
+	self->data[i] = datum;						       \
 									       \
 	return old;							       \
 }
