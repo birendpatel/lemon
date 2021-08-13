@@ -8,35 +8,30 @@
 
 #include "lemon.h"
 
-//options handle
-typedef struct options options;
+typedef struct options {
+	uint8_t diagnostic;
+	uint8_t ir;
+	uint8_t machine;
+} options;
 
-//No Doxygen, see options.c info array.
-typedef enum options_code {
-	DIAGNOSTIC_ALL,
-	DIAGNOSTIC_FLAGS,
-	DIAGNOSTIC_PASS,
-	DIAGNOSTIC_TOKENS,
-	MACHINE_BYTECODE,
-	OPTIONS_COUNT
-} options_code;
+//bitwise operations for reading the options struct
+#define DIAGNOSTIC_ALL 		1 << 0
+#define DIAGNOSTIC_FLAGS	1 << 1
+#define DIAGNOSTIC_PASS		1 << 2
+#define DIAGNOSTIC_TOKENS	1 << 3
+#define IR_DISASSEMBLE		1 << 1
+#define MACHINE_NORUN		1 << 1
 
 /*******************************************************************************
  * @fn options_init
- * @brief GNU argp option parser.
- * @details Options will be heap allocated. Call options_free when done.
+ * @brief Initialize an options struct to the default state.
+ *******************************************************************************/
+options options_init(void);
+
+/*******************************************************************************
+ * @fn options_parse
+ * @brief GNU argp option parser. Must be invoked before reading from options.
  * @returns Possibly LEMON_ENOMEM.
  ******************************************************************************/
-lemon_error options_init(options **self, int argc, char **argv);
+lemon_error options_parse(options *self, int argc, char **argv);
 
-/*******************************************************************************
- * @fn options_read
- * @brief Return the status of an option.
- * @returns LEMON_ERANGE if invalid option.
- ******************************************************************************/
-bool options_read(options *self, options_code optcode);
-
-/*******************************************************************************
- * @fn options_free
- ******************************************************************************/
-void options_free(options *self);
