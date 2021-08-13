@@ -21,8 +21,7 @@ vpath %.h ./extern/unity
 vpath %.c ./src
 vpath %.c ./extern/unity
 
-objects := main.o
-common := lemon.h
+objects := main.o lemon.o options.o
 
 ###############################################################################
 # build
@@ -47,10 +46,11 @@ release: lemon
 	@echo "Issue 'make' or 'make debug' to turn on debugging."
 
 lemon: $(objects)
-	$(CC) $(objects) -o $@
+	$(CC) -o $@ $^
 
-main.o : main.c $(common)
-	$(CC) $(CFLAGS) -c $< -o $@
+main.o: lemon.h options.h
+lemon.o: lemon.h
+options.o : options.h
 
 ###############################################################################
 # docs
@@ -73,7 +73,7 @@ unity.o: unity.c unity.h unity_internals.h
 	$(CC) -c $< -o $@
 
 ###############################################################################
-# clean 
+# clean
 ###############################################################################
 
 clean:
