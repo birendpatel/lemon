@@ -19,7 +19,7 @@
 #define MACHINE_NORUN_KEY	'k'
 
 //argp global parameters and docs
-const char *argp_program_version = "2.0.2.3 alpha";
+const char *argp_program_version = "2.0.2.4 alpha";
 const char *argp_program_bug_address = "https://github.com/birendpatel/lemon/issues";
 static char args_doc[] = "<file 1> ... <file n>";
 static char doc[] = "\nThis is the C Lemon interpreter for the Lemon language.";

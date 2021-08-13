@@ -16,6 +16,7 @@ make_vector(char, char, static inline)
 
 //prototypes
 lemon_error run_repl(options *opt);
+lemon_error run(char *source, size_t n, options *opt);
 
 /*******************************************************************************
  * @fn main
@@ -55,12 +56,9 @@ fail:
 
 /*******************************************************************************
  * @fn run_repl
- * @brief Initialize the REPL on stdin.
- * @details User input is read into a vector so that the user is not limited in
- * how much they are allowed to write (unless they run out of heap).
  * @returns LEMON_ENOMEM or LEMON_ESUCCESS
  ******************************************************************************/
-lemon_error run_repl(__attribute__((unused)) options *opt)
+lemon_error run_repl(options *opt)
 {
 	int err = 0;
 	char_vector buf;
@@ -73,14 +71,16 @@ lemon_error run_repl(__attribute__((unused)) options *opt)
 
 	//TODO: signals
 	while (true) {
+		int prev = 0;
+		int curr = 0;
+
 		fprintf(stdout, ">>> ");
 		fflush(stdout);
 
-		//read input until double newline
+		//read input until double newline.
 		//TODO: EOF and fgetc errors
 		while (true) {
-			int prev = buf.len > 0 ? buf.data[buf.len - 1] : 0;
-			int curr = fgetc(stdin);
+			curr = fgetc(stdin);
 
 			if (curr == '\n') {
 				if (prev == '\n') {
@@ -93,14 +93,10 @@ lemon_error run_repl(__attribute__((unused)) options *opt)
 		
 			//TODO: check char cast
 			char_vector_push(&buf, (char) curr);
+			prev = curr;
 		}
 
-		//TODO: compile
-		//debug
-		printf("echo: ");
-		for (size_t i = 0; i < buf.len; i++) {
-			printf("%c", buf.data[i]);
-		}
+		run(buf.data, buf.len, opt);
 		
 		//since syscalls in vector reallocation are expensive we reuse
 		//the vector on the next REPL iteration.
@@ -111,3 +107,23 @@ lemon_error run_repl(__attribute__((unused)) options *opt)
 
 	return LEMON_ESUCCESS;
 }
+
+/*******************************************************************************
+ * @fn run
+ * @brief Compile source text to bytecode and execute it on the virtual machine.
+ * @param source Char array of length n. Does not have to be null terminated.
+ ******************************************************************************/
+lemon_error run(char *source, size_t n, options *opt)
+{
+	if (opt->diagnostic & DIAGNOSTIC_PASS) {
+		fprintf(stderr, "compiler pass: echo\n");
+	}
+
+	for (size_t i = 0; i < n; i++) {
+		printf("%c", source[i]);
+	}
+
+	return LEMON_ESUCCESS;
+	
+}
+
