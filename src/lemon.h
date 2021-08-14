@@ -11,6 +11,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#define LEMON_VERSION "3.0.0.2 (alpha)"
+
 #ifndef __GNUC__
     #error "Lemon requires a GNU C compiler"
 #endif
@@ -24,8 +26,12 @@ typedef int lemon_error;
 #define LEMON_ESUCCESS 0 /**< @brief Function terminated successfully. */
 #define LEMON_ENOMEM   1 /**< @brief Dynamic allocation failed. */
 #define LEMON_EOPTION  2 /**< @brief Options parsing failed. */
-#define LEMON_EUNDEF   3 /**< @brief Undefined error code for initialization */
+#define LEMON_EFULL    3 /**< @brief A dynamic container is at capacity */
+#define LEMON_EFILE    4 /**< @brief Stdio file error */
+#define LEMON_EUNDEF   5 /**< @brief Undefined error code for initialization */
 
 //error code verbose fetch
 const char *lemon_describe(lemon_error err);
 
+//allocation helpers
+#define KILOBYTE ((size_t) 1024)
