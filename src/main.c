@@ -19,17 +19,17 @@ lemon_error run_repl(options *opt);
 lemon_error run(options *opt, char *source);
 void display_header(void);
 lemon_error run_file(options *opt, int argc, char **argv, int argi);
+void char_vector_cleanup(char_vector *v);
+void file_cleanup(FILE **fp);
 
-//vector raii
+//vector raii - safe even when v->data is NULL
 void char_vector_cleanup(char_vector *v) {
-	if (v->data) {
-		char_vector_free(v, NULL);
-	}
+	char_vector_free(v, NULL);
 }
 
 #define CHARVEC_RAII __attribute__((__cleanup__(char_vector_cleanup)))
 
-//file raii
+//file raii - stdio fclose is undefined when *fp is NULL.
 void file_cleanup(FILE **fp) {
 	if (*fp) {
 		fclose(*fp);
@@ -90,14 +90,13 @@ int main(int argc, char **argv)
  ******************************************************************************/
 lemon_error run_repl(options *opt)
 {
-	lemon_error lerr = LEMON_EUNDEF;
-	int verr = 0;
+	lemon_error err = LEMON_EUNDEF;
 	CHARVEC_RAII char_vector buf = {0};
 
-	verr = char_vector_init(&buf, 0, KILOBYTE);
+	err = char_vector_init(&buf, 0, KILOBYTE);
 
-	if (verr == VECTOR_ENOMEM) {
-		return LEMON_ENOMEM;
+	if (err) {
+		return err;
 	}
 
 	display_header();
@@ -127,34 +126,32 @@ lemon_error run_repl(options *opt)
 				fprintf(stdout, "... ");
 			}
 			
-			verr = char_vector_push(&buf, (char) curr);
-			if (verr) goto fail;
+			err = char_vector_push(&buf, (char) curr);
+			
+			if (err) {
+				return err;
+			}
 
 			prev = curr;
 		}
 
 		//satisfy string requirement requested by run()
-		verr = char_vector_push(&buf, '\0');
-		if (verr) goto fail;
+		err = char_vector_push(&buf, '\0');
 
-		lerr = run(opt, buf.data);
-		if (lerr) return lerr;
+		if (err) {
+			return err;
+		}
+
+		err = run(opt, buf.data);
+
+		if (err) {
+			return err;
+		}
 
 		char_vector_reset(&buf, NULL);
 	}
 
 	return LEMON_ESUCCESS;
-
-fail:
-	switch (verr) {
-	case VECTOR_ENOMEM:
-		return LEMON_ENOMEM;
-	case VECTOR_EFULL:
-		return LEMON_EFULL;
-	default:
-		assert(1 == 0);
-		return LEMON_EUNDEF;
-	}
 }
 
 /*******************************************************************************
