@@ -23,7 +23,7 @@ This project is licensed under the GNU General Public License v3.0. You may find
 # Todo
 
 - [X] Refactor vector library to use lemon error codes
-- [ ] Refactor vector free to allow NULL vector for RAII
+- [X] Refactor vector free to allow NULL vector for RAII
 - [ ] Refactor REPL to use updated vector mechanisms
 - [ ] Simplify error handling in main
 - [ ] Consider adding C11 Generic for RAII idioms

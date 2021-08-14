@@ -98,17 +98,19 @@ cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T))	       \
 {									       \
 	assert(self);							       \
 									       \
-	if (vfree) {							       \
-		for (size_t i = 0; i < self->len; i++) {                       \
-			vfree(self->data[i]);				       \
-		}         						       \
+	if (self->data) {						       \
+		if (vfree) {						       \
+			for (size_t i = 0; i < self->len; i++) {               \
+				vfree(self->data[i]);			       \
+			}         					       \
+		}							       \
+									       \
+		free(self->data);					       \
+									       \
+		self->len = 0;						       \
+		self->cap = 0;						       \
+		self->data = NULL;					       \
 	}                                                                      \
-									       \
-	free(self->data);						       \
-									       \
-	self->len = 0;							       \
-	self->cap = 0;							       \
-	self->data = NULL;						       \
 }
 
 /*******************************************************************************
