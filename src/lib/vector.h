@@ -31,10 +31,11 @@ struct pfix##_vector {					                       \
 //prototypes
 #define api_vector(T, pfix, cls)					       \
 cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap);       \
-cls void pfix##_vector_free(pfix##_vector *self);			       \
+cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T));	       \
 cls int pfix##_vector_push(pfix##_vector *self, const T datum);	               \
 cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum);     \
 cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum);   \
+cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T));
 
 //implementation helpers
 #define GROW_CAP(x) (x * (size_t) 2)
@@ -49,7 +50,7 @@ cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum);   \
 cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)        \
 {                                                                              \
 	assert(self);							       \
-	assert(cap < len);						       \
+	assert(len <= cap);						       \
 	assert(cap != 0);						       \
 									       \
 	self->len = len;                                                       \
@@ -70,11 +71,19 @@ cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)        \
  * @def impl_vector_free
  * @brief Release data pointer to system.
  * @details This function may be used with the GCC cleanup attribute.
+ * @param vfree If vfree is a non-null function pointer then it will be called
+ * on each element present in the vector.
  ******************************************************************************/
 #define impl_vector_free(T, pfix, cls)					       \
-cls void pfix##_vector_free(pfix##_vector *self)			       \
+cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T))	       \
 {									       \
 	assert(self);							       \
+									       \
+	if (vfree) {							       \
+		for (size_t i = 0; i < self->len; i++) {                       \
+			vfree(self->data[i]);				       \
+		}         						       \
+	}                                                                      \
 									       \
 	free(self->data);						       \
 									       \
@@ -137,9 +146,9 @@ cls int pfix##_vector_push(pfix##_vector *self, const T datum)                 \
 cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
 {									       \
 	assert(self);                                                          \
-	assert(i < self.len);                                                  \
+	assert(i < self->len);                                                 \
 									       \
-	*datum = self.data[i];						       \
+	*datum = self->data[i];						       \
 }
 
 /*******************************************************************************
@@ -151,12 +160,33 @@ cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
 cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum)    \
 {									       \
 	assert(self);							       \
-	assert(i < self.len);						       \
+	assert(i < self->len);						       \
 									       \
-	T old = self.data[i];						       \
-	self.data[i] = datum;						       \
+	T old = self->data[i];						       \
+	self->data[i] = datum;						       \
 									       \
 	return old;							       \
+}
+
+/*******************************************************************************
+ * @def impl_vector_reset
+ * @brief Remove all elements from the vector but retain its capacity. After
+ * reset, the vector will have a length of zero. 
+ * @param vfree If vfree is not null, it will be called on each element that
+ * is present in the vector before initiating a reset.
+ ******************************************************************************/
+#define impl_vector_reset(T, pfix, cls)					       \
+cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T))	       \
+{									       \
+	assert(self);							       \
+									       \
+	if (vfree) {							       \
+		for (size_t i = 0; i < self->len; i++) {		       \
+			vfree(self->data[i]);				       \
+		}							       \
+	}								       \
+									       \
+	self->len = 0;							       \
 }
 								       
 /*******************************************************************************
@@ -172,4 +202,5 @@ cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum)    \
 	impl_vector_free(T, pfix, cls)					       \
 	impl_vector_push(T, pfix, cls)					       \
 	impl_vector_get(T, pfix, cls)					       \
-	impl_vector_set(T, pfix, cls)
+	impl_vector_set(T, pfix, cls)					       \
+	impl_vector_reset(T, pfix, cls)
