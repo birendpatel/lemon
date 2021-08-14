@@ -16,8 +16,27 @@ make_vector(char, char, static inline)
 
 //prototypes
 lemon_error run_repl(options *opt);
-lemon_error run(char *source, size_t n, options *opt);
+lemon_error run(options *opt, char *source);
 void display_header(void);
+lemon_error run_file(options *opt, int argc, char **argv, int argi);
+
+//vector raii
+void char_vector_cleanup(char_vector *v) {
+	if (v->data) {
+		char_vector_free(v, NULL);
+	}
+}
+
+#define CHARVEC_RAII __attribute__((__cleanup__(char_vector_cleanup)))
+
+//file raii
+void file_cleanup(FILE **fp) {
+	if (*fp) {
+		fclose(*fp);
+	}
+}
+
+#define FILE_RAII __attribute__((__cleanup__(file_cleanup)))
 
 /*******************************************************************************
  * @def EXIT_NONRECOVERABLE
@@ -56,9 +75,9 @@ int main(int argc, char **argv)
 
 	if (argi == argc) {
 		err = run_repl(&opt);
-	}// else {
-	//	err = run_file(argv, argi, &opt);
-	//}
+	} else {
+		err = run_file(&opt, argc, argv, argi);
+	}
 
 	EXIT_NONRECOVERABLE(err);
 
@@ -67,16 +86,17 @@ int main(int argc, char **argv)
 
 /*******************************************************************************
  * @fn run_repl
- * @returns LEMON_ENOMEM or LEMON_ESUCCESS
+ * @returns LEMON_ENOMEM, LEMON_EFULL, or LEMON_ESUCCESS
  ******************************************************************************/
 lemon_error run_repl(options *opt)
 {
-	int err = 0;
-	char_vector buf;
+	lemon_error lerr = LEMON_EUNDEF;
+	int verr = 0;
+	CHARVEC_RAII char_vector buf = {0};
 
-	err = char_vector_init(&buf, 0, KILOBYTE / 4);
+	verr = char_vector_init(&buf, 0, KILOBYTE);
 
-	if (err == VECTOR_ENOMEM) {
+	if (verr == VECTOR_ENOMEM) {
 		return LEMON_ENOMEM;
 	}
 
@@ -91,11 +111,12 @@ lemon_error run_repl(options *opt)
 		//read input until a double newline occurs
 		while (true) {
 			fflush(stdout);
+
 			curr = fgetc(stdin);
 			
-			//handle ctrl-d signal
 			if (curr == EOF) {
-				goto kill;
+				fprintf(stdout, "\n");
+				return LEMON_ESUCCESS;
 			}
 
 			if (curr == '\n') {
@@ -105,25 +126,35 @@ lemon_error run_repl(options *opt)
 
 				fprintf(stdout, "... ");
 			}
+			
+			verr = char_vector_push(&buf, (char) curr);
+			if (verr) goto fail;
 
-			char_vector_push(&buf, (char) curr);
 			prev = curr;
 		}
 
 		//satisfy string requirement requested by run()
-		char_vector_push(&buf, '\0');
+		verr = char_vector_push(&buf, '\0');
+		if (verr) goto fail;
 
-		run(buf.data, buf.len, opt);
+		lerr = run(opt, buf.data);
+		if (lerr) return lerr;
 
 		char_vector_reset(&buf, NULL);
 	}
 
-kill:
-	fprintf(stdout, "\n");
-
-	char_vector_free(&buf, NULL);
-
 	return LEMON_ESUCCESS;
+
+fail:
+	switch (verr) {
+	case VECTOR_ENOMEM:
+		return LEMON_ENOMEM;
+	case VECTOR_EFULL:
+		return LEMON_EFULL;
+	default:
+		assert(1 == 0);
+		return LEMON_EUNDEF;
+	}
 }
 
 /*******************************************************************************
@@ -139,21 +170,80 @@ void display_header(void)
 	return;
 }
 
+/*******************************************************************************
+ * @def FILE_ERROR
+ * @brief system/library function error wrapper for run_file().
+ ******************************************************************************/
+#define FILE_ERROR(fname)						       \
+	do {								       \
+		fprintf(stderr, "%s: ", (fname));			       \
+		perror(NULL);						       \
+		return LEMON_EFILE;					       \
+	} while (0)
+
+/*******************************************************************************
+ * @fn run_file
+ * @brief Compile from source file.
+ * @details Lemon does not yet have a module system. Therefore, all files are
+ * processed sequentially in isolation.
+ ******************************************************************************/
+lemon_error run_file(options *opt, int argc, char **argv, int argi)
+{
+	lemon_error err = LEMON_EUNDEF;
+	long ferr = -1;
+	size_t serr = 0;
+	size_t bytes = 0;
+
+	for (int i = argi; i < argc; i++) {
+		char *fname = argv[i];
+
+		//use raii idiom to avoid complicated goto chains for errors
+		FILE_RAII FILE *fp = fopen(fname, "r");
+		if (!fp) FILE_ERROR(fname);
+
+		//move to the end of the file
+		ferr = fseek(fp, 0L, SEEK_END);
+		if (ferr == -1) FILE_ERROR(fname);
+
+		//count total bytes in file
+		ferr = ftell(fp);
+		if (ferr == -1) FILE_ERROR(fname);
+		bytes = (size_t) ferr;
+
+		//move to the beginning of the file
+		ferr = fseek(fp, 0L, SEEK_SET);
+		if (ferr == -1) FILE_ERROR(fname);
+
+		//allocate space for file including a null terminator
+		char *buf = malloc(sizeof(char) * bytes + 1);
+		if (!buf) return LEMON_ENOMEM;
+
+		//read file into memory
+		serr = fread(buf, sizeof(char), bytes, fp);
+		if (serr != bytes) FILE_ERROR(fname);
+
+		//add null terminator as required by run()
+		buf[bytes] = '\0';
+
+		err = run(opt, buf);
+		if (err) return err;
+	}
+
+	return LEMON_ESUCCESS;
+}
 
 /*******************************************************************************
  * @fn run
  * @brief Compile source text to bytecode and execute it on the virtual machine.
- * @param source Char array of length n. Does not have to be null terminated.
+ * @param source Null terminated char array.
  ******************************************************************************/
-lemon_error run(char *source, size_t n, options *opt)
+lemon_error run(options *opt, char *source)
 {
 	if (opt->diagnostic & DIAGNOSTIC_PASS) {
 		fprintf(stderr, "compiler pass: echo\n");
 	}
 
-	for (size_t i = 0; i < n; i++) {
-		printf("%c", source[i]);
-	}
+	fprintf(stdout, "%s\n", source);
 
 	return LEMON_ESUCCESS;
 
