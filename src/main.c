@@ -45,7 +45,7 @@ int main(int argc, char **argv)
 		if (err) {
 			goto fail;
 		}
-	} 
+	}
 
 	return EXIT_SUCCESS;
 
@@ -62,14 +62,15 @@ lemon_error run_repl(options *opt)
 {
 	int err = 0;
 	char_vector buf;
-	
-	err = char_vector_init(&buf, 0, 8);
+
+	//heuristic: 0.25 KB buffer is enough to avoid syscalls for most users.
+	err = char_vector_init(&buf, 0, 256);
 
 	if (err == VECTOR_ENOMEM) {
 		return LEMON_ENOMEM;
 	}
 
-	//TODO: signals
+	//note: no signal handlers other than ctrl-D; defaults are good enough.
 	while (true) {
 		int prev = 0;
 		int curr = 0;
@@ -77,10 +78,13 @@ lemon_error run_repl(options *opt)
 		fprintf(stdout, ">>> ");
 		fflush(stdout);
 
-		//read input until double newline.
-		//TODO: EOF and fgetc errors
+		//read input until a double newline occurs
 		while (true) {
 			curr = fgetc(stdin);
+
+			if (curr == EOF) {
+				goto kill;
+			}
 
 			if (curr == '\n') {
 				if (prev == '\n') {
@@ -90,18 +94,19 @@ lemon_error run_repl(options *opt)
 				fprintf(stdout, "... ");
 				fflush(stdout);
 			}
-		
-			//TODO: check char cast
+
 			char_vector_push(&buf, (char) curr);
 			prev = curr;
 		}
 
 		run(buf.data, buf.len, opt);
-		
-		//since syscalls in vector reallocation are expensive we reuse
-		//the vector on the next REPL iteration.
+
 		char_vector_reset(&buf, NULL);
 	}
+
+kill:
+	fprintf(stdout, "\n");
+	fflush(stdout);
 
 	char_vector_free(&buf, NULL);
 
@@ -124,6 +129,6 @@ lemon_error run(char *source, size_t n, options *opt)
 	}
 
 	return LEMON_ESUCCESS;
-	
+
 }
 
