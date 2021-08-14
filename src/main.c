@@ -17,6 +17,23 @@ make_vector(char, char, static inline)
 //prototypes
 lemon_error run_repl(options *opt);
 lemon_error run(char *source, size_t n, options *opt);
+void display_header(void);
+
+/*******************************************************************************
+ * @def EXIT_NONRECOVERABLE
+ * @brief Error handling wrapper for errors which the callee cannot recover 
+ * from.
+ * @details Design note: Do not move this def to the lemon header. Only main.c
+ * and options.c reserve the right to terminate the program.
+ ******************************************************************************/
+#define EXIT_NONRECOVERABLE(err)					       \
+	do {								       \
+		if ((err) != LEMON_ESUCCESS) {			               \
+			const char *desc = lemon_describe(err);                \
+			fprintf(stderr, "lemon error: %s\n", desc);            \
+			exit(EXIT_FAILURE);                                    \
+		}                                                              \
+	} while (0)
 
 /*******************************************************************************
  * @fn main
@@ -30,10 +47,8 @@ int main(int argc, char **argv)
 	options opt = options_init();
 
 	err = options_parse(&opt, argc, argv, &argi);
-
-	if (err) {
-		goto fail;
-	}
+	
+	EXIT_NONRECOVERABLE(err);
 
 	if (opt.diagnostic & DIAGNOSTIC_OPT) {
 		options_display(&opt);
@@ -41,17 +56,13 @@ int main(int argc, char **argv)
 
 	if (argi == argc) {
 		err = run_repl(&opt);
+	}// else {
+	//	err = run_file(argv, argi, &opt);
+	//}
 
-		if (err) {
-			goto fail;
-		}
-	}
+	EXIT_NONRECOVERABLE(err);
 
 	return EXIT_SUCCESS;
-
-fail:
-	fprintf(stderr, "lemon error: %s\n", lemon_describe(err));
-	exit(EXIT_FAILURE);
 }
 
 /*******************************************************************************
@@ -63,25 +74,26 @@ lemon_error run_repl(options *opt)
 	int err = 0;
 	char_vector buf;
 
-	//heuristic: 0.25 KB buffer is enough to avoid syscalls for most users.
-	err = char_vector_init(&buf, 0, 256);
+	err = char_vector_init(&buf, 0, KILOBYTE / 4);
 
 	if (err == VECTOR_ENOMEM) {
 		return LEMON_ENOMEM;
 	}
 
-	//note: no signal handlers other than ctrl-D; defaults are good enough.
+	display_header();
+
 	while (true) {
 		int prev = 0;
 		int curr = 0;
 
 		fprintf(stdout, ">>> ");
-		fflush(stdout);
 
 		//read input until a double newline occurs
 		while (true) {
+			fflush(stdout);
 			curr = fgetc(stdin);
-
+			
+			//handle ctrl-d signal
 			if (curr == EOF) {
 				goto kill;
 			}
@@ -92,12 +104,14 @@ lemon_error run_repl(options *opt)
 				}
 
 				fprintf(stdout, "... ");
-				fflush(stdout);
 			}
 
 			char_vector_push(&buf, (char) curr);
 			prev = curr;
 		}
+
+		//satisfy string requirement requested by run()
+		char_vector_push(&buf, '\0');
 
 		run(buf.data, buf.len, opt);
 
@@ -106,12 +120,25 @@ lemon_error run_repl(options *opt)
 
 kill:
 	fprintf(stdout, "\n");
-	fflush(stdout);
 
 	char_vector_free(&buf, NULL);
 
 	return LEMON_ESUCCESS;
 }
+
+/*******************************************************************************
+ * @fn display_header
+ * @brief License, version, compile date, etc displayed on the REPL.
+ ******************************************************************************/
+void display_header(void)
+{
+	fprintf(stdout, "Lemon %s ", LEMON_VERSION);
+	fprintf(stdout, "(Compiled %s %s)\n", __DATE__, __TIME__);
+	fprintf(stdout, "GNU General Public License v3.0.\n\n");
+
+	return;
+}
+
 
 /*******************************************************************************
  * @fn run

@@ -11,6 +11,8 @@
 #include <stddef.h>
 #include <stdbool.h>
 
+#define LEMON_VERSION "3.0.0.2 (alpha)"
+
 #ifndef __GNUC__
     #error "Lemon requires a GNU C compiler"
 #endif
@@ -29,3 +31,5 @@ typedef int lemon_error;
 //error code verbose fetch
 const char *lemon_describe(lemon_error err);
 
+//allocation helpers
+#define KILOBYTE ((size_t) 1024)
