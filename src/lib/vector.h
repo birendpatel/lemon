@@ -2,6 +2,15 @@
  * @file vector.h
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
  * @brief Templated vector data structure for shallow copies.
+ *
+ * @details This file is plug and play, but the user does need to configure
+ * macro definitions for the three error codes VECTOR_ESUCCESS, VECTOR_ENOMEM,
+ * and VECTOR_EFULL. These codes must be integers.
+ *
+ * This error code design was implemented so that applications which use
+ * vectors do not have to take special considerations in their error handling
+ * logic to handle vector codes. If you have a function with dense and
+ * complex error paths, dealing with two sets of codes is a nightmare.
  */
 
 #pragma once
@@ -11,10 +20,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-//error codes
-#define VECTOR_ESUCCESS	0	/**< @brief Function returned successfully */
-#define VECTOR_ENOMEM	1	/**< @brief Cannot allocate memory */
-#define VECTOR_EFULL	2	/**< @brief Cannot append, vector is full */
+//function returned successfully
+#ifndef VECTOR_ESUCCESS
+	#error "vector.h requires user to implement VECTOR_ESUCCESS int code"
+#endif
+
+//cannot allocate memory
+#ifndef VECTOR_ENOMEM
+	#error "vector.h requires user to implement VECTOR_ENOMEM int code"
+#endif
+
+//cannot append because vector is full
+#ifndef VECTOR_EFULL
+	#error "vector.h requires user to implement VECTOR_EFULL int code"
+#endif
 
 //typedef and forward declaration
 #define alias_vector(pfix)					               \

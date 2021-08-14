@@ -11,7 +11,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#define LEMON_VERSION "3.0.0.2 (alpha)"
+#define LEMON_VERSION "3.1.0.2 (alpha)"
 
 #ifndef __GNUC__
     #error "Lemon requires a GNU C compiler"
@@ -29,6 +29,11 @@ typedef int lemon_error;
 #define LEMON_EFULL    3 /**< @brief A dynamic container is at capacity */
 #define LEMON_EFILE    4 /**< @brief Stdio file error */
 #define LEMON_EUNDEF   5 /**< @brief Undefined error code for initialization */
+
+//vector error codes mapped to lemon error codes
+#define VECTOR_ESUCCESS LEMON_ESUCCESS
+#define VECTOR_ENOMEM LEMON_ENOMEM
+#define VECTOR_EFULL LEMON_EFULL
 
 //error code verbose fetch
 const char *lemon_describe(lemon_error err);
