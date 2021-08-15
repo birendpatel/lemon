@@ -6,6 +6,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "lemon.h"
 #include "lib/vector.h"
@@ -39,22 +40,6 @@ void file_cleanup(FILE **fp) {
 #define FILE_RAII __attribute__((__cleanup__(file_cleanup)))
 
 /*******************************************************************************
- * @def EXIT_NONRECOVERABLE
- * @brief Error handling wrapper for errors which the callee cannot recover 
- * from.
- * @details Design note: Do not move this def to the lemon header. Only main.c
- * and options.c reserve the right to terminate the program.
- ******************************************************************************/
-#define EXIT_NONRECOVERABLE(err)					       \
-	do {								       \
-		if ((err) != LEMON_ESUCCESS) {			               \
-			const char *desc = lemon_describe(err);                \
-			fprintf(stderr, "lemon error: %s\n", desc);            \
-			exit(EXIT_FAILURE);                                    \
-		}                                                              \
-	} while (0)
-
-/*******************************************************************************
  * @fn main
  * @brief Main parses the command line options and then delegates compilation
  * to either the REPL or the file reader.
@@ -67,7 +52,7 @@ int main(int argc, char **argv)
 
 	err = options_parse(&opt, argc, argv, &argi);
 	
-	EXIT_NONRECOVERABLE(err);
+	REPORT_ERROR(err, lemon_describe(err), KILL, EXIT_FAILURE);
 
 	if (opt.diagnostic & DIAGNOSTIC_OPT) {
 		options_display(&opt);
@@ -79,7 +64,7 @@ int main(int argc, char **argv)
 		err = run_file(&opt, argc, argv, argi);
 	}
 
-	EXIT_NONRECOVERABLE(err);
+	REPORT_ERROR(err, lemon_describe(err), KILL, EXIT_FAILURE);
 
 	return EXIT_SUCCESS;
 }
@@ -90,14 +75,14 @@ int main(int argc, char **argv)
  ******************************************************************************/
 lemon_error run_repl(options *opt)
 {
+	static const char *init_msg = "cannot init char vector";
+	static const char *push_msg = "cannot push to char vector";
+	static const char *run_msg  = "failed to run source from REPL";
 	lemon_error err = LEMON_EUNDEF;
+
 	CHARVEC_RAII char_vector buf = {0};
-
 	err = char_vector_init(&buf, 0, KILOBYTE);
-
-	if (err) {
-		return err;
-	}
+	REPORT_ERROR(err, init_msg, NOKILL, LEMON_ENOMEM);
 
 	display_header();
 
@@ -127,26 +112,17 @@ lemon_error run_repl(options *opt)
 			}
 			
 			err = char_vector_push(&buf, (char) curr);
-			
-			if (err) {
-				return err;
-			}
+			REPORT_ERROR(err, push_msg, NOKILL, err);
 
 			prev = curr;
 		}
 
 		//satisfy string requirement requested by run()
 		err = char_vector_push(&buf, '\0');
-
-		if (err) {
-			return err;
-		}
-
+		REPORT_ERROR(err, push_msg, NOKILL, err);
+		
 		err = run(opt, buf.data);
-
-		if (err) {
-			return err;
-		}
+		REPORT_ERROR(err, run_msg, NOKILL, err);
 
 		char_vector_reset(&buf, NULL);
 	}
@@ -168,22 +144,12 @@ void display_header(void)
 }
 
 /*******************************************************************************
- * @def FILE_ERROR
- * @brief system/library function error wrapper for run_file().
- ******************************************************************************/
-#define FILE_ERROR(fname)						       \
-	do {								       \
-		fprintf(stderr, "%s: ", (fname));			       \
-		perror(NULL);						       \
-		return LEMON_EFILE;					       \
-	} while (0)
-
-/*******************************************************************************
  * @fn run_file
  * @brief Compile from source file.
  * @details Lemon does not yet have a module system. Therefore, all files are
  * processed sequentially in isolation.
  ******************************************************************************/
+#include <errno.h>
 lemon_error run_file(options *opt, int argc, char **argv, int argi)
 {
 	lemon_error err = LEMON_EUNDEF;
@@ -196,34 +162,39 @@ lemon_error run_file(options *opt, int argc, char **argv, int argi)
 
 		//use raii idiom to avoid complicated goto chains for errors
 		FILE_RAII FILE *fp = fopen(fname, "r");
-		if (!fp) FILE_ERROR(fname);
+		fprintf(stderr, "%s\n", fname);
+		REPORT_ERROR(!fp, strerror(errno), NOKILL, LEMON_EFILE);
 
 		//move to the end of the file
 		ferr = fseek(fp, 0L, SEEK_END);
-		if (ferr == -1) FILE_ERROR(fname);
+		fprintf(stderr, "%s\n", fname);
+		REPORT_ERROR(ferr == -1, strerror(errno), NOKILL, LEMON_EFILE);
 
 		//count total bytes in file
 		ferr = ftell(fp);
-		if (ferr == -1) FILE_ERROR(fname);
+		fprintf(stderr, "%s\n", fname);
+		REPORT_ERROR(ferr == -1, strerror(errno), NOKILL, LEMON_EFILE);
 		bytes = (size_t) ferr;
 
 		//move to the beginning of the file
 		ferr = fseek(fp, 0L, SEEK_SET);
-		if (ferr == -1) FILE_ERROR(fname);
+		fprintf(stderr, "%s\n", fname);
+		REPORT_ERROR(ferr == -1, strerror(errno), NOKILL, LEMON_EFILE);
 
 		//allocate space for file including a null terminator
 		char *buf = malloc(sizeof(char) * bytes + 1);
-		if (!buf) return LEMON_ENOMEM;
+		REPORT_ERROR(!buf, "no heap for file read", NOKILL, LEMON_ENOMEM);
 
 		//read file into memory
 		serr = fread(buf, sizeof(char), bytes, fp);
-		if (serr != bytes) FILE_ERROR(fname);
+		fprintf(stderr, "%s\n", fname);
+		REPORT_ERROR(serr != bytes, strerror(errno), NOKILL, LEMON_EFILE);
 
 		//add null terminator as required by run()
 		buf[bytes] = '\0';
 
 		err = run(opt, buf);
-		if (err) return err;
+		REPORT_ERROR(err, "cannot compile from source file", NOKILL, err);
 	}
 
 	return LEMON_ESUCCESS;

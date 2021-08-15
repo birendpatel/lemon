@@ -25,8 +25,8 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [X] Refactor vector library to use lemon error codes
 - [X] Refactor vector free to allow NULL vector for RAII
 - [X] Refactor REPL to use updated vector mechanisms
-- [ ] Refactor main to propogate info up call chain on errors
-- [ ] Simplify error handling in main
+- [X] Refactor main to propogate info up call chain on errors
+- [X] Simplify error handling in main
 - [ ] Consider adding C11 Generic for RAII idioms
 - [ ] Add i flag to optionally drop run_file into run_repl
 - [ ] Add locale support to main
