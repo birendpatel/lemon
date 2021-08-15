@@ -51,7 +51,7 @@ int main(int argc, char **argv)
 	options opt = options_init();
 
 	err = options_parse(&opt, argc, argv, &argi);
-	
+
 	REPORT_ERROR(err, lemon_describe(err), KILL, EXIT_FAILURE);
 
 	if (opt.diagnostic & DIAGNOSTIC_OPT) {
@@ -97,7 +97,7 @@ lemon_error run_repl(options *opt)
 			fflush(stdout);
 
 			curr = fgetc(stdin);
-			
+
 			if (curr == EOF) {
 				fprintf(stdout, "\n");
 				return LEMON_ESUCCESS;
@@ -110,7 +110,7 @@ lemon_error run_repl(options *opt)
 
 				fprintf(stdout, "... ");
 			}
-			
+
 			err = char_vector_push(&buf, (char) curr);
 			REPORT_ERROR(err, push_msg, NOKILL, err);
 
@@ -120,7 +120,7 @@ lemon_error run_repl(options *opt)
 		//satisfy string requirement requested by run()
 		err = char_vector_push(&buf, '\0');
 		REPORT_ERROR(err, push_msg, NOKILL, err);
-		
+
 		err = run(opt, buf.data);
 		REPORT_ERROR(err, run_msg, NOKILL, err);
 
@@ -162,23 +162,23 @@ lemon_error run_file(options *opt, int argc, char **argv, int argi)
 
 		//use raii idiom to avoid complicated goto chains for errors
 		FILE_RAII FILE *fp = fopen(fname, "r");
-		fprintf(stderr, "%s\n", fname);
+		if (!fp) REPORT_STDERR(fname);
 		REPORT_ERROR(!fp, strerror(errno), NOKILL, LEMON_EFILE);
 
 		//move to the end of the file
 		ferr = fseek(fp, 0L, SEEK_END);
-		fprintf(stderr, "%s\n", fname);
+		if (!fname) REPORT_STDERR(fname);
 		REPORT_ERROR(ferr == -1, strerror(errno), NOKILL, LEMON_EFILE);
 
 		//count total bytes in file
 		ferr = ftell(fp);
-		fprintf(stderr, "%s\n", fname);
+		if (ferr == -1) REPORT_STDERR(fname);
 		REPORT_ERROR(ferr == -1, strerror(errno), NOKILL, LEMON_EFILE);
 		bytes = (size_t) ferr;
 
 		//move to the beginning of the file
 		ferr = fseek(fp, 0L, SEEK_SET);
-		fprintf(stderr, "%s\n", fname);
+		if (ferr == -1) REPORT_STDERR(fname);
 		REPORT_ERROR(ferr == -1, strerror(errno), NOKILL, LEMON_EFILE);
 
 		//allocate space for file including a null terminator
@@ -187,7 +187,7 @@ lemon_error run_file(options *opt, int argc, char **argv, int argi)
 
 		//read file into memory
 		serr = fread(buf, sizeof(char), bytes, fp);
-		fprintf(stderr, "%s\n", fname);
+		if (serr != bytes) REPORT_STDERR(fname);
 		REPORT_ERROR(serr != bytes, strerror(errno), NOKILL, LEMON_EFILE);
 
 		//add null terminator as required by run()
