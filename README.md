@@ -38,3 +38,4 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [X] Add ability to invoke shell commands on REPL
 - [ ] Add 60 second tutorial on root readme
 - [ ] Make C lemon compatible with Clang.
+- [ ] Add help info when REPL fires up.
