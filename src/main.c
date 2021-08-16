@@ -143,6 +143,7 @@ void display_header(void)
 {
 	fprintf(stdout, "Lemon %s ", LEMON_VERSION);
 	fprintf(stdout, "(Compiled %s %s)\n", __DATE__, __TIME__);
+	fprintf(stdout, "Copyright (C) 2021 Biren Patel\n"
 	fprintf(stdout, "GNU General Public License v3.0.\n\n");
 
 	return;
