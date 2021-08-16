@@ -215,7 +215,18 @@ lemon_error run_unknown(options *opt, char *source, size_t n)
 	assert(source[n - 1] == '\0');
 
 	if (source[0] == '$') {
-		int err = system(source + 1);
+		int err = 0;
+
+		//let user expect behavior that they would expect from the man 3
+		//system docs. Therefore, if user enters '$\n\0' then the return
+		//status indicates if the shell is available on the system. Since
+		//the REPL waits for a double-enter, the check for a final NULL
+		//terminator is necessary.
+		if (strncmp("$\n\0", source, 3) == 0) {
+			err = system(NULL);
+		} else {
+			err = system(source + 1);
+		}
 
 		switch (err) {
 		case -1:
