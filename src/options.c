@@ -17,6 +17,7 @@
 #define DIAGNOSTIC_TOKENS_KEY	259
 #define IR_DISASSEMBLE_KEY	'S'
 #define MACHINE_NORUN_KEY	'k'
+#define USER_INTERACTIVE_KEY	'i'
 
 //argp global parameters and docs
 const char *argp_program_version = LEMON_VERSION;
@@ -56,6 +57,10 @@ static struct argp_option options_info[] = {
 		.key = MACHINE_NORUN_KEY,
 		.doc = "Compile to bytecode but do not run the virtual machine."
 	},
+	{
+		.key = USER_INTERACTIVE_KEY,
+		.doc = "Launch the REPL after the input files have executed."
+	},
 	{0} //terminator required by argp, otherwise nonprintables will appear in -?
 };
 
@@ -89,6 +94,10 @@ error_t parser(int key, __attribute__((unused)) char *arg, struct argp_state *st
 		opt->machine |= MACHINE_NORUN;
 		break;
 
+	case USER_INTERACTIVE_KEY:
+		opt->user |= USER_INTERACTIVE;
+		break;
+
 	default:
 		return ARGP_ERR_UNKNOWN;
 	}
@@ -100,7 +109,8 @@ options options_init(void) {
 	options opt = {
 		.diagnostic = 0,
 		.ir = 0,
-		.machine = 0
+		.machine = 0,
+		.user = 0
 	};
 
 	return opt;
@@ -147,12 +157,15 @@ void options_display(options *self)
 	fprintf(stderr, "\topt: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_OPT));
 	fprintf(stderr, "\tpass: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_PASS));
 	fprintf(stderr, "\ttokens: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_TOKENS));
-	
+
 	fprintf(stderr, "\nintermediate representation\n");
 	fprintf(stderr, "\tdisassemble: %d\n", TO_BOOL(self->ir & IR_DISASSEMBLE));
-	
+
 	fprintf(stderr, "\nvirtual machine\n");
 	fprintf(stderr, "\tnorun: %d\n", TO_BOOL(self->machine & MACHINE_NORUN));
+
+	fprintf(stderr, "\nuser preferences\n");
+	fprintf(stderr, "\tinteractive: %d\n", TO_BOOL(self->user & USER_INTERACTIVE));
 
 	fprintf(stderr, "\nEND OPTIONS\n\n");
 }

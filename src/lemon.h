@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#define LEMON_VERSION "4.0.0.0 (alpha)"
+#define LEMON_VERSION "4.1.0.0 (alpha)"
 
 #ifndef __GNUC__
     #error "Lemon requires a GNU C compiler"

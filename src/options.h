@@ -12,6 +12,7 @@ typedef struct options {
 	uint8_t diagnostic;
 	uint8_t ir;
 	uint8_t machine;
+	uint8_t user;
 } options;
 
 //bitwise operations for reading the options struct
@@ -21,6 +22,7 @@ typedef struct options {
 #define DIAGNOSTIC_TOKENS	1 << 3
 #define IR_DISASSEMBLE		1 << 1
 #define MACHINE_NORUN		1 << 1
+#define USER_INTERACTIVE	1 << 0
 
 /*******************************************************************************
  * @fn options_init

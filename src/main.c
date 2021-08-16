@@ -60,9 +60,14 @@ int main(int argc, char **argv)
 	}
 
 	if (argi == argc) {
+		display_header();
 		err = run_repl(&opt);
 	} else {
 		err = run_file(&opt, argc, argv, argi);
+
+		if (!err && (opt.user & USER_INTERACTIVE)) {
+			err = run_repl(&opt);
+		}
 	}
 
 	EXIT_ERROR(err, lemon_describe(err), EXIT_FAILURE);
@@ -84,8 +89,6 @@ lemon_error run_repl(options *opt)
 	CHARVEC_RAII char_vector buf = {0};
 	err = char_vector_init(&buf, 0, KiB(1));
 	RETURN_ERROR(err, init_msg, LEMON_ENOMEM);
-
-	display_header();
 
 	while (true) {
 		int prev = 0;
