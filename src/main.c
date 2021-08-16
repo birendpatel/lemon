@@ -4,6 +4,7 @@
  * @brief Lemon compiler
  */
 
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -52,7 +53,7 @@ int main(int argc, char **argv)
 
 	err = options_parse(&opt, argc, argv, &argi);
 
-	REPORT_ERROR(err, lemon_describe(err), KILL, EXIT_FAILURE);
+	EXIT_ERROR(err, lemon_describe(err), EXIT_FAILURE);
 
 	if (opt.diagnostic & DIAGNOSTIC_OPT) {
 		options_display(&opt);
@@ -64,7 +65,7 @@ int main(int argc, char **argv)
 		err = run_file(&opt, argc, argv, argi);
 	}
 
-	REPORT_ERROR(err, lemon_describe(err), KILL, EXIT_FAILURE);
+	EXIT_ERROR(err, lemon_describe(err), EXIT_FAILURE);
 
 	return EXIT_SUCCESS;
 }
@@ -81,8 +82,8 @@ lemon_error run_repl(options *opt)
 	lemon_error err = LEMON_EUNDEF;
 
 	CHARVEC_RAII char_vector buf = {0};
-	err = char_vector_init(&buf, 0, KILOBYTE);
-	REPORT_ERROR(err, init_msg, NOKILL, LEMON_ENOMEM);
+	err = char_vector_init(&buf, 0, KiB(1));
+	RETURN_ERROR(err, init_msg, LEMON_ENOMEM);
 
 	display_header();
 
@@ -112,17 +113,17 @@ lemon_error run_repl(options *opt)
 			}
 
 			err = char_vector_push(&buf, (char) curr);
-			REPORT_ERROR(err, push_msg, NOKILL, err);
+			RETURN_ERROR(err, push_msg, err);
 
 			prev = curr;
 		}
 
 		//satisfy string requirement requested by run()
 		err = char_vector_push(&buf, '\0');
-		REPORT_ERROR(err, push_msg, NOKILL, err);
+		RETURN_ERROR(err, push_msg, err);
 
 		err = run(opt, buf.data);
-		REPORT_ERROR(err, run_msg, NOKILL, err);
+		RETURN_ERROR(err, run_msg, err);
 
 		char_vector_reset(&buf, NULL);
 	}
@@ -149,7 +150,6 @@ void display_header(void)
  * @details Lemon does not yet have a module system. Therefore, all files are
  * processed sequentially in isolation.
  ******************************************************************************/
-#include <errno.h>
 lemon_error run_file(options *opt, int argc, char **argv, int argi)
 {
 	lemon_error err = LEMON_EUNDEF;
@@ -162,39 +162,34 @@ lemon_error run_file(options *opt, int argc, char **argv, int argi)
 
 		//use raii idiom to avoid complicated goto chains for errors
 		FILE_RAII FILE *fp = fopen(fname, "r");
-		if (!fp) REPORT_STDERR(fname);
-		REPORT_ERROR(!fp, strerror(errno), NOKILL, LEMON_EFILE);
+		RETURN_ERROR_HEAD(!fp, fname, strerror(errno), LEMON_EFILE);
 
 		//move to the end of the file
 		ferr = fseek(fp, 0L, SEEK_END);
-		if (!fname) REPORT_STDERR(fname);
-		REPORT_ERROR(ferr == -1, strerror(errno), NOKILL, LEMON_EFILE);
+		RETURN_ERROR_HEAD(ferr == -1, fname, strerror(errno), LEMON_EFILE);
 
 		//count total bytes in file
 		ferr = ftell(fp);
-		if (ferr == -1) REPORT_STDERR(fname);
-		REPORT_ERROR(ferr == -1, strerror(errno), NOKILL, LEMON_EFILE);
+		RETURN_ERROR_HEAD(ferr == -1, fname, strerror(errno), LEMON_EFILE);
 		bytes = (size_t) ferr;
 
 		//move to the beginning of the file
 		ferr = fseek(fp, 0L, SEEK_SET);
-		if (ferr == -1) REPORT_STDERR(fname);
-		REPORT_ERROR(ferr == -1, strerror(errno), NOKILL, LEMON_EFILE);
+		RETURN_ERROR_HEAD(ferr == -1, fname, strerror(errno), LEMON_EFILE);
 
 		//allocate space for file including a null terminator
 		char *buf = malloc(sizeof(char) * bytes + 1);
-		REPORT_ERROR(!buf, "no heap for file read", NOKILL, LEMON_ENOMEM);
+		RETURN_ERROR(!buf, "no heap for file read", LEMON_ENOMEM);
 
 		//read file into memory
 		serr = fread(buf, sizeof(char), bytes, fp);
-		if (serr != bytes) REPORT_STDERR(fname);
-		REPORT_ERROR(serr != bytes, strerror(errno), NOKILL, LEMON_EFILE);
+		RETURN_ERROR_HEAD(serr != bytes, fname, strerror(errno), LEMON_EFILE);
 
 		//add null terminator as required by run()
 		buf[bytes] = '\0';
 
 		err = run(opt, buf);
-		REPORT_ERROR(err, "cannot compile from source file", NOKILL, err);
+		RETURN_ERROR(err, "cannot compile from source file", err);
 	}
 
 	return LEMON_ESUCCESS;
