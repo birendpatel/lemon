@@ -23,6 +23,7 @@ void display_header(void);
 lemon_error run_file(options *opt, int argc, char **argv, int argi);
 void char_vector_cleanup(char_vector *v);
 void file_cleanup(FILE **fp);
+lemon_error run_unknown(options *opt, char *source, size_t n);
 
 //vector raii - safe even when v->data is NULL
 void char_vector_cleanup(char_vector *v) {
@@ -125,7 +126,7 @@ lemon_error run_repl(options *opt)
 		err = char_vector_push(&buf, '\0');
 		RETURN_ERROR(err, push_msg, err);
 
-		err = run(opt, buf.data);
+		err = run_unknown(opt, buf.data, buf.len);
 		RETURN_ERROR(err, run_msg, err);
 
 		char_vector_reset(&buf, NULL);
@@ -199,12 +200,50 @@ lemon_error run_file(options *opt, int argc, char **argv, int argi)
 }
 
 /*******************************************************************************
+ * @fn run_unknown
+ * @brief Assess if the input is a shell command or if it is lemon source and
+ * invoke the correct actions.
+ * @param source Null terminated char array
+ ******************************************************************************/
+//TODO: refactor shell handling and include the waitpid information.
+lemon_error run_unknown(options *opt, char *source, size_t n)
+{
+	assert(opt);
+	assert(source);
+	assert(n > 0);
+	assert(source[n - 1] == '\0');
+
+	if (source[0] == '$') {
+		int err = system(source + 1);
+
+		switch (err) {
+		case -1:
+			perror(NULL);
+			break;
+		case 127:
+			fprintf(stderr, "cannot exec shell in child process");
+			break;
+		default:
+			fprintf(stdout, "shell termination status: %d\n", err);
+		}
+
+		/* dont shutdown the REPL when the shell fails */
+		return LEMON_ESUCCESS;
+	}
+
+	return run(opt, source);	
+}
+
+/*******************************************************************************
  * @fn run
  * @brief Compile source text to bytecode and execute it on the virtual machine.
  * @param source Null terminated char array.
  ******************************************************************************/
 lemon_error run(options *opt, char *source)
 {
+	assert(opt);
+	assert(source);
+
 	if (opt->diagnostic & DIAGNOSTIC_PASS) {
 		fprintf(stderr, "compiler pass: echo\n");
 	}

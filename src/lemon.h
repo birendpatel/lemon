@@ -31,6 +31,7 @@ typedef int lemon_error;
 #define LEMON_EOPTION  2 /**< @brief Options parsing failed. */
 #define LEMON_EFULL    3 /**< @brief A dynamic container is at capacity */
 #define LEMON_EFILE    4 /**< @brief Stdio file error */
+#define LEMON_ESHELL   5 /**< @brief Error when invoking shell on REPL */
 #define LEMON_EUNDEF   5 /**< @brief Undefined error code for initialization */
 
 /* mapping between ./lib/vector.h codes and C Lemon. */
