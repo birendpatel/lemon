@@ -31,3 +31,4 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Add i flag to optionally drop run_file into run_repl
 - [ ] Add locale support to main
 - [ ] Add GNU Compiler info and copyright to REPL header
+- [ ] Add ability to invoke shell commands on REPL
