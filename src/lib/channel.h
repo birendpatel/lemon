@@ -23,10 +23,17 @@
 	#error "channel.h requires user to implement CHANNEL_ESUCCESS int code"
 #endif
 
+//cannot allocate memory
+#ifndef CHANNEL_ENOMEM
+	#error "channel.h requires user to implement CHANNEL_ENOMEM int code"
+#endif
+
+#define CHANNEL_CLOSED 0
+#define CHANNEL_OPEN 1
+
 //typedef and forward declaration
 #define alias_channel(pfix)					  	       \
 typdef struct pfix##_channel pfix##_channel;
-
 
 //declares a channel struct with a pfixed tag and elements of type T
 #define declare_channel(T, pfix)					       \
@@ -43,8 +50,23 @@ struct pfix##_channel {							       \
 //prototypes
 //cls is the storage class and an optional inline directive
 #define api_channel(T, pfix, cls)					       \
-cls int pfix##_channel_init(pfix##_channel *self, size_t len);		       \
+cls int pfix##_channel_init(pfix##_channel *self, const size_t len);	       \
 cls int pfix##_channel_free(pfix##_channel *self, void (*cfree) (T));	       \
 cls int pfix##_channel_close(pfix##_channel *self);			       \
-cls int pfix##_channel_send(pfix##_channel *self, T datum);		       \
+cls int pfix##_channel_send(pfix##_channel *self, const T datum);	       \
 cls int pfix##_channel_recv(pfix##_channel *self, T *datum);
+
+/*******************************************************************************
+ * @def make_channel
+ * @brief Create a generic channel named pfix_channel which contains elements
+ * of type T and calls methods with storage class cls.
+ ******************************************************************************/
+#define make_channel(T, pfix, cls)					       \
+	alias_channel(pfix)						       \
+	declare_channel(T, pfix)					       \
+	api_channel(T, pfix, cls)					       \
+	impl_channel_init(T, pfix, cls)					       \
+	impl_channel_free(T, pfix, cls)					       \
+	impl_channel_close(T, pfix, cls)				       \
+	impl_channel_send(T, pfix, cls)					       \
+	impl_channel_recv(T, pfix, cls)
