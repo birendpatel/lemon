@@ -26,7 +26,7 @@
 //Enable tracing by setting the CHANNEL_TRACE macro to a nonzero value.
 //These messages will not provide the thread ID.
 
-#define CHANNEL_TRACE_ON 1
+#define CHANNEL_TRACE_ON 0
 
 #if CHANNEL_TRACE_ON
 	#include <stdio.h>
