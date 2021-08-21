@@ -173,33 +173,70 @@ cls void pfix##_channel_close(pfix##_channel *self)			       \
  ******************************************************************************/
 #define impl_channel_send(T, pfix, cls)					       \
 cls int pfix##_channel_send(pfix##_channel *self, const T datum)	       \
-{
-	assert(self);
+{									       \
+	assert(self);							       \
+									       \
+	int err = CHANNEL_ESUCCESS;					       \
+									       \
+	pthread_mutex_lock(&self->mutex);				       \
+									       \
+	if (self->flags & CHANNEL_CLOSED) {				       \
+		err = CHANNEL_ECLOSED;					       \
+		goto unlock;						       \
+	}								       \
+									       \
+	while (self->len == self->cap) {				       \
+		pthread_cond_wait(&self->cond_full, &self->mutex);	       \
+	}								       \
+									       \
+	self->data[self->tail] = datum;					       \
+	self->tail = (self->tail + 1) % self->cap;			       \
+	self->len++;							       \
+									       \
+	if (self->len == 1) {						       \
+		pthread_cond_signal(&self->cond_empty);			       \
+	}								       \
+									       \
+unlock:									       \
+	pthread_mutex_unlock(&self->mutex);				       \
+	return err;							       \
+}
 
-	int err = CHANNEL_ESUCCESS;
-
-	pthread_mutex_lock(&self->mutex);
-
-	if (self->flags & CHANNEL_CLOSED) {
-		err = CHANNEL_ECLOSED;
-		goto unlock;
-	}
-
-	while (self->len == self->cap) {
-		pthread_cond_wait(&self->cond_full, &self->mutex);
-	}
-
-	self->data[self->tail] = datum;
-	self->tail = (self->tail + 1) % self->cap;
-	self->len++;
-
-	if (self->len == 1) {
-		pthread_cond_signal(&self->cond_empty);
-	}
-
-unlock:
-	pthread_mutex_unlock(&self->mutex);
-	return err;
+/*******************************************************************************
+ * @def impl_channel_recv
+ * @brief Receive an item from the front of the channel.
+ * @details Thread will suspend without timeout if the channel is empty.
+ ******************************************************************************/
+#define impl_channel_recv(T, pfix, cls)					       \
+cls int pfix##_channel_recv(pfix##_channel *self, T *datum)		       \
+{									       \
+	assert(self);						               \
+	assert(datum);							       \
+									       \
+	int err = CHANNEL_ESUCCESS;					       \
+									       \
+	pthread_mutex_lock(&self->mutex);				       \
+									       \
+	if (self->flags & CHANNEL_CLOSED && self->len == 0) {		       \
+		err = CHANNEL_ECLOSED;					       \
+		goto unlock;						       \
+	}							               \
+									       \
+	while (self->len == 0) {					       \
+		pthread_cond_wait(&self->cond_empty, &self->mutex);	       \
+	}								       \
+									       \
+	*datum = self->data[self->head];			               \
+	self->head = (self->head + 1) % self->len;			       \
+	self->len--;							       \
+									       \
+	if (self->len == self->cap - 1) {				       \
+		pthread_cond_signal(&self->cond_full);			       \
+	}								       \
+									       \
+unlock:									       \
+	pthread_mutex_unlock(&self->mutex);				       \
+	return err;							       \
 }
 
 /*******************************************************************************
