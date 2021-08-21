@@ -227,7 +227,7 @@ cls int pfix##_channel_recv(pfix##_channel *self, T *datum)		       \
 	}								       \
 									       \
 	*datum = self->data[self->head];			               \
-	self->head = (self->head + 1) % self->len;			       \
+	self->head = (self->head + 1) % self->cap;			       \
 	self->len--;							       \
 									       \
 	if (self->len == self->cap - 1) {				       \
