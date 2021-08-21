@@ -47,16 +47,16 @@
 
 //typedef and forward declaration
 #define alias_channel(pfix)						       \
-typdef struct pfix##_channel pfix##_channel;
+typedef struct pfix##_channel pfix##_channel;
 
 //declares a channel struct with a pfixed tag and elements of type T
 #define declare_channel(T, pfix)					       \
 struct pfix##_channel {							       \
 	pthread_mutex_t mutex;						       \
 	pthread_cond_t cond_full;					       \
-	pthread_cont_t cond_empty;					       \
+	pthread_cond_t cond_empty;					       \
 	size_t len;							       \
-	size_t cap;
+	size_t cap;							       \
 	size_t head;							       \
 	size_t tail;							       \
 	T *data;							       \
@@ -98,7 +98,7 @@ cls int pfix##_channel_init(pfix##_channel *self, const size_t n)	       \
 	pthread_cond_init(&self->cond_full, NULL);			       \
 	pthread_cond_init(&self->cond_empty, NULL);			       \
 									       \
-	flags = CHANNEL_OPEN;						       \
+	self->flags = CHANNEL_OPEN;					       \
 									       \
 	return CHANNEL_ESUCCESS;					       \
 }
