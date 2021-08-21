@@ -21,6 +21,23 @@
 #include <stdlib.h>
 #include <string.h>
 
+//------------------------------------------------------------------------------
+//tracing; stderr notifications for the send, recv, and close methods.
+//Enable tracing by setting the CHANNEL_TRACE macro to a nonzero value.
+//These messages will not provide the thread ID.
+
+#define CHANNEL_TRACE_ON 1
+
+#if CHANNEL_TRACE_ON
+	#include <stdio.h>
+	#define CHANNEL_TRACE(msg) fprintf(stderr, "channel: %s\n", msg)
+#else
+	#define CHANNEL_TRACE(msg) do {} while (0)
+#endif
+
+//------------------------------------------------------------------------------
+//channel error codes
+
 //function returned successfully
 #ifndef CHANNEL_ESUCCESS
 	#error "channel.h requires user to implement CHANNEL_ESUCCESS int code"
@@ -40,6 +57,9 @@
 #ifndef CHANNEL_ECLOSED
 	#error "channel.h requires user to implement CHANNEL_ECLOSED int code"
 #endif
+
+//-----------------------------------------------------------------------------
+//template implementation
 
 //struct flags
 #define CHANNEL_OPEN	1 << 0
@@ -100,6 +120,7 @@ cls int pfix##_channel_init(pfix##_channel *self, const size_t n)	       \
 									       \
 	self->flags = CHANNEL_OPEN;					       \
 									       \
+	CHANNEL_TRACE("initialized");		                               \
 	return CHANNEL_ESUCCESS;					       \
 }
 
@@ -134,7 +155,11 @@ cls int pfix##_channel_free(pfix##_channel *self, void (*cfree) (T))	       \
 		goto unlock;						       \
 	}								       \
 									       \
+	CHANNEL_TRACE("cond variables removed");		               \
+									       \
 	if (cfree) {							       \
+		CHANNEL_TRACE("purging queue");             		       \
+									       \
 		for (size_t i = self->head; i < self->len; i++) {	       \
 			cfree(self->data[i]);				       \
 		}							       \
@@ -143,6 +168,8 @@ cls int pfix##_channel_free(pfix##_channel *self, void (*cfree) (T))	       \
 	free(self->data);						       \
 	memset(self, 0, sizeof(struct pfix##_channel));			       \
 	self->flags = CHANNEL_CLOSED;					       \
+									       \
+	CHANNEL_TRACE("destroyed and closed");		                       \
 									       \
 unlock:									       \
 	pthread_mutex_unlock(&self->mutex);				       \
@@ -163,6 +190,8 @@ cls void pfix##_channel_close(pfix##_channel *self)			       \
 									       \
 	self->flags = CHANNEL_CLOSED;					       \
 									       \
+	CHANNEL_TRACE("closed");				               \
+									       \
 	pthread_mutex_unlock(&self->mutex);				       \
 }
 
@@ -182,18 +211,22 @@ cls int pfix##_channel_send(pfix##_channel *self, const T datum)	       \
 									       \
 	if (self->flags & CHANNEL_CLOSED) {				       \
 		err = CHANNEL_ECLOSED;					       \
+		CHANNEL_TRACE("attempted send on closed queue");               \
 		goto unlock;						       \
 	}								       \
 									       \
 	while (self->len == self->cap) {				       \
+		CHANNEL_TRACE("full; suspending thread");	               \
 		pthread_cond_wait(&self->cond_full, &self->mutex);	       \
 	}								       \
 									       \
+	CHANNEL_TRACE("sending data");			                       \
 	self->data[self->tail] = datum;					       \
 	self->tail = (self->tail + 1) % self->cap;			       \
 	self->len++;							       \
 									       \
 	if (self->len == 1) {						       \
+		CHANNEL_TRACE("signal; now non-empty");	                       \
 		pthread_cond_signal(&self->cond_empty);			       \
 	}								       \
 									       \
@@ -219,18 +252,22 @@ cls int pfix##_channel_recv(pfix##_channel *self, T *datum)		       \
 									       \
 	if (self->flags & CHANNEL_CLOSED && self->len == 0) {		       \
 		err = CHANNEL_ECLOSED;					       \
+		CHANNEL_TRACE("recv fail; closed empty queue");                \
 		goto unlock;						       \
 	}							               \
 									       \
 	while (self->len == 0) {					       \
+		CHANNEL_TRACE("empty; suspending thread");	               \
 		pthread_cond_wait(&self->cond_empty, &self->mutex);	       \
 	}								       \
 									       \
+	CHANNEL_TRACE("receiving data");				       \
 	*datum = self->data[self->head];			               \
 	self->head = (self->head + 1) % self->cap;			       \
 	self->len--;							       \
 									       \
 	if (self->len == self->cap - 1) {				       \
+		CHANNEL_TRACE("signal; now non-full");	                       \
 		pthread_cond_signal(&self->cond_full);			       \
 	}								       \
 									       \
