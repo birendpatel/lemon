@@ -21,7 +21,7 @@ vpath %.h ./extern/unity
 vpath %.c ./src
 vpath %.c ./extern/unity
 
-objects := main.o lemon.o options.o
+objects := main.o lemon.o options.o compile.o parser.o 
 
 ###############################################################################
 # build
@@ -48,9 +48,11 @@ release: lemon
 lemon: $(objects)
 	$(CC) -o $@ $^
 
-main.o: lemon.h options.h vector.h
+main.o: lemon.h compile.h options.h vector.h
 lemon.o: lemon.h
 options.o : options.h
+compile.o : compile.h parser.h
+parser.o : parser.h
 
 ###############################################################################
 # docs

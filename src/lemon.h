@@ -12,7 +12,7 @@
 #include <stddef.h>
 #include <stdbool.h>
 
-#define LEMON_VERSION "4.1.0.0 (alpha)"
+#define LEMON_VERSION "5.0.0.0 (alpha)"
 
 #ifndef __GNUC__
     #error "Lemon requires a GNU C compiler"
@@ -31,12 +31,20 @@ typedef int lemon_error;
 #define LEMON_EOPTION  2 /**< @brief Options parsing failed. */
 #define LEMON_EFULL    3 /**< @brief A dynamic container is at capacity */
 #define LEMON_EFILE    4 /**< @brief Stdio file error */
-#define LEMON_EUNDEF   5 /**< @brief Undefined error code for initialization */
+#define LEMON_EBUSY    5 /**< @brief A thread is waiting on a condition var */
+#define LEMON_ECLOSED  6 /**< @brief Attempting to use a closed channel */
+#define LEMON_EUNDEF   7 /**< @brief Undefined error code for initialization */
 
 /* mapping between ./lib/vector.h codes and C Lemon. */
 #define VECTOR_ESUCCESS LEMON_ESUCCESS
 #define VECTOR_ENOMEM 	LEMON_ENOMEM
 #define VECTOR_EFULL 	LEMON_EFULL
+
+/* mapping between ./lib/channel.h codes and C Lemon. */
+#define CHANNEL_ESUCCESS LEMON_ESUCCESS
+#define CHANNEL_ENOMEM	 LEMON_ENOMEM
+#define CHANNEL_EBUSY	 LEMON_EBUSY
+#define CHANNEL_ECLOSED	 LEMON_ECLOSED
 
 /*******************************************************************************
  * @fn lemon_describe
