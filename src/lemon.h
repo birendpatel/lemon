@@ -33,7 +33,8 @@ typedef int lemon_error;
 #define LEMON_EFILE    4 /**< @brief Stdio file error */
 #define LEMON_EBUSY    5 /**< @brief A thread is waiting on a condition var */
 #define LEMON_ECLOSED  6 /**< @brief Attempting to use a closed channel */
-#define LEMON_EUNDEF   7 /**< @brief Undefined error code for initialization */
+#define LEMON_ETHREAD  7 /**< @brief A multithreading error has occured */
+#define LEMON_EUNDEF   8 /**< @brief Undefined error code for initialization */
 
 /* mapping between ./lib/vector.h codes and C Lemon. */
 #define VECTOR_ESUCCESS LEMON_ESUCCESS

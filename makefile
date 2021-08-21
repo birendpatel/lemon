@@ -5,7 +5,7 @@
 CC = gcc
 
 CFLAGS = -Wall -Wextra -Werror -Wpedantic -Wnull-dereference
-CFLAGS += -Wdouble-promotion -Wconversion -Wcast-qual -Wpacked -Wpadded
+CFLAGS += -Wdouble-promotion -Wconversion -Wcast-qual 
 CFLAGS += -march=native
 
 ################################################################################
@@ -21,7 +21,7 @@ vpath %.h ./extern/unity
 vpath %.c ./src
 vpath %.c ./extern/unity
 
-objects := main.o lemon.o options.o compile.o parser.o 
+objects := main.o lemon.o options.o compile.o parser.o scanner.o
 
 ###############################################################################
 # build
@@ -46,13 +46,14 @@ release: lemon
 	@echo "Issue 'make' or 'make debug' to turn on debugging."
 
 lemon: $(objects)
-	$(CC) -o $@ $^
+	$(CC) -o $@ $^ -lpthread
 
 main.o: lemon.h compile.h options.h vector.h
 lemon.o: lemon.h
 options.o : options.h
 compile.o : compile.h parser.h
-parser.o : parser.h
+parser.o : parser.h channel.h scanner.h
+scanner.o : scanner.h channel.h
 
 ###############################################################################
 # docs
