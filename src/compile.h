@@ -6,12 +6,12 @@
 
 #pragma once
 
-#include "lemon.h"
 #include "options.h"
+#include "xerror.h"
 
 /*******************************************************************************
  * @fn compile
  * @brief Transform source code into a program that can be loaded onto the C
  * Lemon virtual machine.
  ******************************************************************************/
-lemon_error compile(options *opt, char *src);
+xerror compile(options *opt, char *src);

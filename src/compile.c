@@ -7,12 +7,12 @@
 #include "compile.h"
 #include "parser.h"
 
-lemon_error compile(options *opt, char *src)
+xerror compile(options *opt, char *src)
 {
 	assert(opt);
 	assert(src);
 
 	parse(src);
 
-	return LEMON_ESUCCESS;
+	return XESUCCESS;
 }
