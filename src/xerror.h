@@ -28,10 +28,10 @@ typedef int xerror;
 
 /*******************************************************************************
  * @fn __xerror_log
- * @brief Log a verbose error description.
- * @details This function logs the description to an in-memory buffer but it
- * does not automatically flush the description to an IO channel unless the
- * buffer is full or the level is XFATAL.
+ * @brief Log a message to an in-memory buffer.
+ * @details This function will automatically flush its buffer to stderr when
+ * full or when the level is XFATAL. All messages are guaranteed to be newline
+ * terminated.
  ******************************************************************************/
 __attribute__((__format__(__printf__, 5, 6)))
 void __xerror_log
@@ -47,7 +47,7 @@ void __xerror_log
 //level codes
 #define XFATAL 0
 #define XERROR 1
-#define XTRACE  2
+#define XTRACE 2
 
 /*******************************************************************************
  * @def xerror_fatal

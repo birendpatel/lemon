@@ -4,28 +4,30 @@
  * @brief Error handling implementation.
  */
 
+#define __GNU_SOURCE  //allows static recursive mutex
+
 #include <assert.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 
-#include "xerror.c"
+#include "xerror.h"
 
 #define BUFLEN ((uint8_t) 64)
 #define STRLEN ((uint8_t) 128)
 
-//xqueue is an in-memory error queue.
-//The mutex is recursive to allow xerror_report to call xerror_flush, otherwise
-//the thread will deadlock on a fast mutex.
-static struct xqueue {
+//xqueue is an in-memory queue. xq is global because it simplifies application
+//code. There is no loss of safety because a) xqueue is thread safe b) xqueue
+//is completely encapsulated.
+struct xqueue {
 	pthread_mutex_t mutex;
 	char buf[BUFLEN][STRLEN];
 	uint8_t len;
-} xq = {
-	.mutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP,
-	.buf = {0},
-	.len = 0
+};
+
+static struct xqueue xq = {
+	.mutex = PTHREAD_MUTEX_INITIALIZER
 };
 
 //level codes lookup
@@ -35,7 +37,7 @@ static const char *level_lookup[] = {
 	[XTRACE] = "TRACE"
 };
 
-const char *get_level_name(int level)
+const char *get_level_name(const int level)
 {
 	if (level >= XFATAL && level <= XTRACE) {
 		return level_lookup[level];
@@ -57,7 +59,7 @@ static const char *error_lookup[] = {
 	[XEUNDEFINED] = "unspecified error"
 };
 
-const char *xerror_str(xerror err)
+const char *xerror_str(const xerror err)
 {
 	if (err >= XESUCCESS && err <= XEUNDEFINED) {
 		return error_lookup[err];
@@ -66,18 +68,30 @@ const char *xerror_str(xerror err)
 	return "no error description available";
 }
 
+//this private function is a thread unsafe buffer flush which lets us
+//avoid using a recursive mutex. Since locking has a large overhead, any
+//call stack that has already acquired the xqueue mutex along its chain
+//should call this function.
+//
+//In particular, __xerror_log will deadlock if we use the public variant.
+static void __xerror_flush(void)
+{
+	for (uint8_t i = 0; i < xq.len; i++) {
+		fprintf(stderr, "%s\n", xq.buf[i]);
+	}
+
+        xq.len = 0;
+}
+
+
 //lock return codes are not checked during a flush operation. The mutex is
-//initialized statically as a recursive variant, so we can be sure that
+//initialized statically as a fast variant, so we can be sure that
 //EINVAL and EDEADLK will not occur.
 void xerror_flush(void)
 {
 	(void) pthread_mutex_lock(&xq.mutex);
 
-	for (uint8_t i = 0; i < xq.len; i++) {
-		fprintf(stderr, buf[i];
-	}
-
-	xq.len = 0;
+	__xerror_flush();
 
 	(void) pthread_mutex_unlock(&xq.mutex);
 }
@@ -101,7 +115,7 @@ void __xerror_log
 )
 {
 	assert(file);
-	asesrt(func);
+	assert(func);
 	assert(line >= 0);
 	assert(level >= XFATAL && level <= XTRACE);
 	assert(msg);
@@ -110,29 +124,28 @@ void __xerror_log
 	va_start(args, msg);
 
 	const char *fmt = "%p %s:%s:%d %s ";
-	const char *level_name = get_level_name(level);
+	const char *lname = get_level_name(level);
 	const void *tid = (void *) pthread_self();
 	int n = 0;
 
 	pthread_mutex_lock(&xq.mutex);
 	
 	if (xq.len == BUFLEN) {
-		xerror_flush();
+		__xerror_flush();
 	}
 
-	n = snprintf(xq.buf[len], STRLEN, fmt, tid, file, func, line, level);
+	n = snprintf(xq.buf[xq.len], STRLEN, fmt, tid, file, func, line, lname);
+	
+	//buf + n points to the null char index or to the start of the buf row
+	//if snprintf failed
+	n = n < 0 ? 0 : n;
 
-	//remove null terminator; error values are ignored (see func comment)
-	if (n > 0) {
-		n--;
-	}
-
-	(void) vsnprintf(xq.buf[len] + n, STRLEN - n, msg, args);
+	(void) vsnprintf(xq.buf[xq.len] + n, STRLEN - n, msg, args);
 
 	xq.len++;
 
-	if (level = XFATAL) {
-		xerror_flush();
+	if (level == XFATAL) {
+		__xerror_flush();
 	}
 
 	pthread_mutex_unlock(&xq.mutex);
