@@ -16,6 +16,9 @@
 #define STR_CAPACITY ((uint8_t) 64)
 
 //xqueue is an in-memory error buffer.
+//It is a queue data structure but it does not need head and tail pointers
+//because the only push-pop operation is xerror_flush, which wipes out all of
+//the buffer contents at once.
 static struct xqueue {
 	pthread_mutex_t mutex;
 	char buf[BUF_CAPACITY][STR_CAPACITY];

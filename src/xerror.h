@@ -2,6 +2,18 @@
  * @file xerror.h
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v.3.0.
  * @brief Error handling API.
+ * @details
+ *
+ *
+ *               Thread   File   Func    Level
+ *                  |      |     |         |
+ *                  |      |     |         |
+ *                  |      |     |         |
+ *               1234567 main.c:main:123 TRACE hello, world!
+ *                                    |        \___________/
+ *                                    |             |
+ *                                    |             |
+ *                                   Line         Message
  */
 
 #pragma once
