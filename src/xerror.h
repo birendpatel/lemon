@@ -15,14 +15,14 @@
 typedef int xerror;
 
 /*******************************************************************************
- * @fn __xerror_report
+ * @fn __xerror_log
  * @brief Log a verbose error description.
  * @details This function logs the description to an in-memory buffer but it
  * does not automatically flush the description to an IO channel unless the
  * buffer is full. The buffer size, its storage, and its mechanism are opaque.
  ******************************************************************************/
 __attribute__((__format__(__printf__, 5, 6)))
-void __xerror_report
+void __xerror_log
 (
 	const char *file,
 	const char *func,
@@ -32,12 +32,31 @@ void __xerror_report
 	...
 );
 
+//level codes
+#define XFATAL 0
+#define XERROR 1
+#define XTRACE  2
+
 /*******************************************************************************
- * @def xerror_report
- * @brief Convenience wrapper over __xerror_report.
+ * @def xerror_fatal
+ * @brief Convenience wrapper over __xerror_log for level XFATAL
  ******************************************************************************/
-#define xerror_report(level, msg, ...) 				               \
-__xerror_report(__FILE__, __func__, __LINE__, level, msg, ##__VA_ARGS__)
+#define xerror_fatal(msg, ...) 				               \
+__xerror_log(__FILE__, __func__, __LINE__, XFATAL, msg, ##__VA_ARGS__)
+
+/*******************************************************************************
+* @def xerror_issue
+* @brief Convenience wrapper over __xerror_log for level XERROR
+******************************************************************************/
+#define xerror_issue(msg, ...) 				               \
+__xerror_log(__FILE__, __func__, __LINE__, XERROR, msg, ##__VA_ARGS__)
+
+/*******************************************************************************
+ * @def xerror_trace
+ * @brief Convenience wrapper over __xerror_log for level XTRACE
+ ******************************************************************************/
+#define xerror_trace(msg, ...) 				               \
+__xerror_log(__FILE__, __func__, __LINE__, XTRACE, msg, ##__VA_ARGS__)
 
 /*******************************************************************************
  * @fn xerror_flush
@@ -55,11 +74,6 @@ void xerror_flush(void);
  ******************************************************************************/
 const char *xerror_str(xerror err);
 
-//level codes
-#define XFATAL 0
-#define XERROR 1
-#define XINFO  2
-
 //error codes
 #define XESUCCESS     0 /**< @brief Function returned successfully. */
 #define XENOMEM       1 /**< @brief Dynamic allocation failed. */
@@ -69,7 +83,7 @@ const char *xerror_str(xerror err);
 #define XEBUSY        5 /**< @brief A thread is waiting on a condition. */
 #define XECLOSED      6 /**< @brief Attempted to use a closed channel. */
 #define XETHREAD      7 /**< @brief A Multithreading issue has occured. */
-#define XEUNDEFINED 999 /**< @brief A generic unspecified error has occured. */
+#define XEUNDEFINED   8 /**< @brief A generic unspecified error has occured. */
 
 //mapping between vector codes and xerror codes
 #define VECTOR_ESUCCESS XESUCCESS
