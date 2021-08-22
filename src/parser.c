@@ -12,25 +12,32 @@
 
 make_channel(token, token, static inline)
 
-lemon_error parse(char *src)
+xerror parse(char *src)
 {
 	assert(src);
 
-	lemon_error err = LEMON_ESUCCESS;
-	int perr = 0;
+	xerror err = XESUCCESS;
 
 	token_channel chan = {0};
 	err = token_channel_init(&chan, KiB(1));
-	RETURN_ERROR(err, "cannot initialize channel", err);
+
+	if (err) {
+		xerror_issue("cannot initialize channel");
+		return err;
+	}
 
 	payload data = {src, &chan};
 	pthread_t scanner_thread;
-	perr = pthread_create(&scanner_thread, NULL, scanner_spawn, &data);
-	RETURN_ERROR(perr, "cannot start new thread", LEMON_ETHREAD);
+	err = pthread_create(&scanner_thread, NULL, scanner_spawn, &data);
+	
+	if (err) {
+		xerror_issue("cannot create thread, pthread error: %d", err);
+		return XETHREAD;
+	}
 
 	//debug
 	token t = {0};
-	while (err != LEMON_ECLOSED) {
+	while (err != XECLOSED) {
 		err = token_channel_recv(&chan, &t);
 
 		if (!err) {
@@ -38,11 +45,19 @@ lemon_error parse(char *src)
 		}
 	}
 
-	perr = pthread_join(scanner_thread, NULL);
-	RETURN_ERROR(perr, "scanner join failed", LEMON_ETHREAD);
+	err = pthread_join(scanner_thread, NULL);
+	
+	if (err) {
+		xerror_issue("cannot join thread, pthread error: %d", err);
+		return XETHREAD;
+	}
 
 	err = token_channel_free(&chan, NULL);
-	RETURN_ERROR(err, "cannot free channel", err);
+
+	if (err) {
+		xerror_issue("cannot free channel");
+		return err;
+	}
 	
 	return err;
 }

@@ -6,11 +6,11 @@
 
 #pragma once
 
-#include "lemon.h"
+#include "xerror.h"
 
 /*******************************************************************************
  * @fn parse
  * @brief Transform raw source code to an abstract syntax tree.
  * @param src Null terminated char array
  ******************************************************************************/
-lemon_error parse(char *src);
+xerror parse(char *src);
