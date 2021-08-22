@@ -11,7 +11,10 @@ static const char *const lookup[LEMON_EUNDEF] = {
 	[LEMON_ENOMEM] = "dynamic allocation failed",
 	[LEMON_EOPTION] = "options parsing failed",
 	[LEMON_EFULL] = "dynamic container at capacity",
-	[LEMON_EFILE] = "cannot compile source from input file"
+	[LEMON_EFILE] = "cannot compile source from input file",
+	[LEMON_EBUSY] = "one or more threads waiting on condition",
+	[LEMON_ECLOSED] = "attempted to send/recv on a close channel",
+	[LEMON_ETHREAD] = "multithreading error"
 };
 
 const char *lemon_describe(lemon_error err)

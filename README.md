@@ -24,6 +24,7 @@ This project is licensed under the GNU General Public License v3.0. You may find
 
 # Todo
 
+- [ ] Fix diagnostic-all bug which doesn't set the interactive flag
 - [ ] Consider adding C11 Generic for RAII idioms
 - [ ] Add locale support to main
 - [ ] Add 60 second tutorial on root readme

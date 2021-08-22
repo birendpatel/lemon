@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "compile.h"
 #include "lemon.h"
 #include "lib/vector.h"
 #include "options.h"
@@ -249,20 +250,21 @@ lemon_error run_unknown(options *opt, char *source, size_t n)
 /*******************************************************************************
  * @fn run
  * @brief Compile source text to bytecode and execute it on the virtual machine.
- * @param source Null terminated char array.
+ * @param src Null terminated char array.
  ******************************************************************************/
-lemon_error run(options *opt, char *source)
+lemon_error run(options *opt, char *src)
 {
 	assert(opt);
-	assert(source);
+	assert(src);
+
+	lemon_error err = LEMON_ESUCCESS;
 
 	if (opt->diagnostic & DIAGNOSTIC_PASS) {
 		fprintf(stderr, "compiler pass: echo\n");
 	}
 
-	fprintf(stdout, "%s\n", source);
+	err = compile(opt, src);
 
-	return LEMON_ESUCCESS;
-
+	return err;
 }
 
