@@ -14,6 +14,12 @@
 #include "lib/vector.h"
 #include "options.h"
 
+#define LEMON_VERSION "6.0.0.0 (alpha)"
+
+#ifndef __GNUC__
+	#error "Lemon requires a GNU C compiler"
+#endif
+
 //vector<char> used by REPL for input buffering
 make_vector(char, char, static inline)
 
