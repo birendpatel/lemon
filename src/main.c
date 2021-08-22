@@ -14,8 +14,6 @@
 #include "options.h"
 #include "xerror.h"
 
-#define LEMON_VERSION "6.0.0.0 (alpha)"
-
 #ifndef __GNUC__
 	#error "Lemon requires a GNU C compiler"
 #endif

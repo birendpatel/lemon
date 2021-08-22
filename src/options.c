@@ -5,6 +5,7 @@
  */
 
 #include <argp.h>
+#include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 
@@ -20,7 +21,7 @@
 #define USER_INTERACTIVE_KEY	'i'
 
 //argp global parameters and docs
-const char *argp_program_version = LEMON_VERSION;
+const char *argp_program_version = "6.0.0.0 (alpha)";
 const char *argp_program_bug_address = "https://github.com/birendpatel/lemon/issues";
 static char args_doc[] = "<file 1> ... <file n>";
 static char doc[] = "\nThis is the C Lemon interpreter for the Lemon language.";
@@ -116,7 +117,7 @@ options options_init(void) {
 	return opt;
 }
 
-lemon_error options_parse(options *self, int argc, char **argv, int *argi)
+xerror options_parse(options *self, int argc, char **argv, int *argi)
 {
 	assert(self);
 	assert(argc > 0);
@@ -133,9 +134,9 @@ lemon_error options_parse(options *self, int argc, char **argv, int *argi)
 	error_t err = argp_parse(&args_data, argc, argv, 0, argi, self);
 
 	if (err == ENOMEM) {
-		return LEMON_ENOMEM;
+		return XENOMEM;
 	} else if (err == EINVAL) {
-		return LEMON_EOPTION;
+		return XEOPTION;
 	} else {
 		//catch unknown errnos in debug mode.
 		//argp documentation only lists ENOMEM and EINVAL
@@ -143,7 +144,7 @@ lemon_error options_parse(options *self, int argc, char **argv, int *argi)
 		assert(err == 0);
 	}
 
-	return LEMON_ESUCCESS;
+	return XESUCCESS;
 }
 
 #define TO_BOOL(x) ((x) ? 1 : 0)

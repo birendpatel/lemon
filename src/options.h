@@ -6,7 +6,9 @@
 
 #pragma once
 
-#include "lemon.h"
+#include <stdint.h>
+
+#include "xerror.h"
 
 typedef struct options {
 	uint8_t diagnostic;
@@ -38,7 +40,7 @@ options options_init(void);
  * are elements that were not parsed.
  * @returns Possibly LEMON_ENOMEM or LEMON_EOPTION.
  ******************************************************************************/
-lemon_error options_parse(options *self, int argc, char **argv, int *argi);
+xerror options_parse(options *self, int argc, char **argv, int *argi);
 
 /*******************************************************************************
  * @fn options_display
