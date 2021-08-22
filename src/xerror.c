@@ -12,19 +12,18 @@
 
 #include "xerror.c"
 
-#define BUF_CAPACITY ((uint8_t) 64)
-#define STR_CAPACITY ((uint8_t) 64)
+#define BUFLEN ((uint8_t) 64)
+#define STRLEN ((uint8_t) 128)
 
-//xqueue is an in-memory error buffer.
-//It is a queue data structure but it does not need head and tail pointers
-//because the only push-pop operation is xerror_flush, which wipes out all of
-//the buffer contents at once.
+//xqueue is an in-memory error queue.
+//The mutex is recursive to allow xerror_report to call xerror_flush, otherwise
+//the thread will deadlock on a fast mutex.
 static struct xqueue {
 	pthread_mutex_t mutex;
-	char buf[BUF_CAPACITY][STR_CAPACITY];
+	char buf[BUFLEN][STRLEN];
 	uint8_t len;
 } xq = {
-	.mutex = PTHREAD_MUTEX_INITIALIZER,
+	.mutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER_NP,
 	.buf = {0},
 	.len = 0
 };
@@ -67,13 +66,11 @@ const char *xerror_str(xerror err)
 	return "no error description available";
 }
 
-//lemon will never flush manually during compilation or in any spawned threads.
-//in general, manual flushes only occur in main.c outside of any compilation
-//context.
+//lock return codes are not checked during a flush operation. The mutex is
+//initialized statically as a recursive variant, so we can be sure that
+//EINVAL and EDEADLK will not occur.
 void xerror_flush(void)
 {
-	//don't check lock return code. The mutex was initialized statically
-	//as a fast variant, so it won't fail with EINVAL or EDEADLK.
 	(void) pthread_mutex_lock(&xq.mutex);
 
 	for (uint8_t i = 0; i < xq.len; i++) {
@@ -89,6 +86,10 @@ void xerror_flush(void)
 //the logger will fail silently. At that point, the application program is
 //still able to pass error codes up the call chain, so the program will at
 //least exit with a status code.
+//
+//This design choice means that the logger is not a necessary element of
+//the application. It's convenient, but if it breaks then the compiler
+//will still be able to finish successfully.
 void __xerror_log
 (
 	const char *file,
@@ -108,9 +109,31 @@ void __xerror_log
 	va_list args;
 	va_start(args, msg);
 
+	const char *fmt = "%p %s:%s:%d %s ";
 	const char *level_name = get_level_name(level);
+	const void *tid = (void *) pthread_self();
+	int n = 0;
 
 	pthread_mutex_lock(&xq.mutex);
+	
+	if (xq.len == BUFLEN) {
+		xerror_flush();
+	}
+
+	n = snprintf(xq.buf[len], STRLEN, fmt, tid, file, func, line, level);
+
+	//remove null terminator; error values are ignored (see func comment)
+	if (n > 0) {
+		n--;
+	}
+
+	(void) vsnprintf(xq.buf[len] + n, STRLEN - n, msg, args);
+
+	xq.len++;
+
+	if (level = XFATAL) {
+		xerror_flush();
+	}
 
 	pthread_mutex_unlock(&xq.mutex);
 

@@ -31,7 +31,7 @@ typedef int xerror;
  * @brief Log a verbose error description.
  * @details This function logs the description to an in-memory buffer but it
  * does not automatically flush the description to an IO channel unless the
- * buffer is full. The buffer size, its storage, and its mechanism are opaque.
+ * buffer is full or the level is XFATAL.
  ******************************************************************************/
 __attribute__((__format__(__printf__, 5, 6)))
 void __xerror_log
@@ -51,7 +51,8 @@ void __xerror_log
 
 /*******************************************************************************
  * @def xerror_fatal
- * @brief Convenience wrapper over __xerror_log for level XFATAL
+ * @brief Convenience wrapper over __xerror_log for level XFATAL. This triggers
+ * a buffer IO flush.
  ******************************************************************************/
 #define xerror_fatal(msg, ...) 				               \
 __xerror_log(__FILE__, __func__, __LINE__, XFATAL, msg, ##__VA_ARGS__)
@@ -72,9 +73,10 @@ __xerror_log(__FILE__, __func__, __LINE__, XTRACE, msg, ##__VA_ARGS__)
 
 /*******************************************************************************
  * @fn xerror_flush
- * @brief Flush the xerror buffer to stderr.
- * @details The xerror buffer will automatically flush when full. Invoke this
- * function when the errors must be delivered and they must be delivered NOW.
+ * @brief Manually flush the xerror buffer to stderr.
+ * @details The xerror buffer will automatically flush when full or when the
+ * __xerror_report function is invoked with a XFATAL level. You might want to
+ * manually flush before running a tight loop or calling time-sensitive code.
  ******************************************************************************/
 void xerror_flush(void);
 
@@ -84,7 +86,7 @@ void xerror_flush(void);
  * @details This function is constructivist. If the user provides an invalid
  * error code, a dummy description will be returned.
  ******************************************************************************/
-const char *xerror_str(xerror err);
+const char *xerror_str(const xerror err);
 
 //error codes
 #define XESUCCESS     0 /**< @brief Function returned successfully. */
