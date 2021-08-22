@@ -31,8 +31,8 @@ void *scanner_spawn(void *data)
 	return NULL;
 }
 
-lemon_error token_print(FILE *stream, token t)
+xerror token_print(FILE *stream, token t)
 {
 	fprintf(stream, "token: %d\n", t.type);
-	return LEMON_ESUCCESS;
+	return XESUCCESS;
 }

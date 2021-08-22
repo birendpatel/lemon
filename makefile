@@ -21,7 +21,7 @@ vpath %.h ./extern/unity
 vpath %.c ./src
 vpath %.c ./extern/unity
 
-objects := main.o lemon.o options.o compile.o parser.o scanner.o
+objects := main.o xerror.o options.o compile.o parser.o scanner.o
 
 ###############################################################################
 # build
@@ -48,12 +48,12 @@ release: lemon
 lemon: $(objects)
 	$(CC) -o $@ $^ -lpthread
 
-main.o: lemon.h compile.h options.h vector.h
-lemon.o: lemon.h
-options.o : options.h
-compile.o : compile.h parser.h
-parser.o : parser.h channel.h scanner.h
-scanner.o : scanner.h channel.h
+main.o: xerror.h compile.h options.h vector.h
+xerror.o: xerror.h
+options.o : xerror.h options.h
+compile.o : xerror.h compile.h parser.h
+parser.o : xerror.h parser.h channel.h scanner.h
+scanner.o : xerror.h scanner.h channel.h
 
 ###############################################################################
 # docs

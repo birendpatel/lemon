@@ -4,6 +4,8 @@
  * @brief Lemon-to-bytecode compiler implementation.
  */
 
+#include <assert.h>
+
 #include "compile.h"
 #include "parser.h"
 

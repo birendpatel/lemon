@@ -140,7 +140,9 @@ void __xerror_log
 	//if snprintf failed
 	n = n < 0 ? 0 : n;
 
-	(void) vsnprintf(xq.buf[xq.len] + n, STRLEN - n, msg, args);
+	assert(STRLEN - n >= 0);
+
+	(void) vsnprintf(xq.buf[xq.len] + n, (size_t) (STRLEN - n), msg, args);
 
 	xq.len++;
 

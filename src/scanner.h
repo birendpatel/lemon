@@ -8,7 +8,7 @@
 
 #include <stdio.h>
 
-#include "lemon.h"
+#include "xerror.h"
 
 /*******************************************************************************
  * @struct payload
@@ -52,4 +52,4 @@ void *scanner_spawn(void *data);
  * @fn token_print
  * @brief Pretty printer
  ******************************************************************************/
-lemon_error token_print(FILE *stream, token t);
+xerror token_print(FILE *stream, token t);

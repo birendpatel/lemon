@@ -5,11 +5,13 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "compile.h"
+#include "defs.h"
 #include "lib/vector.h"
 #include "options.h"
 #include "xerror.h"
@@ -93,9 +95,6 @@ int main(int argc, char **argv)
  ******************************************************************************/
 xerror run_repl(options *opt)
 {
-	static const char *push_msg = "cannot push to char vector";
-	static const char *run_msg  = "failed to run source from REPL";
-	
 	xerror err = XEUNDEFINED;
 	CHARVEC_RAII char_vector buf = {0};
 
@@ -196,7 +195,7 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		FILE_RAII FILE *fp = fopen(fname, "r");
 
 		if (!fp) {
-			xerror("%s: %s", fname, strerror(errno));
+			xerror_issue("%s: %s", fname, strerror(errno));
 			return XEFILE;
 		}
 
@@ -204,7 +203,7 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		ferr = fseek(fp, 0L, SEEK_END);
 		
 		if (ferr == -1) {
-			xerror("s: %s", fname, sterror(errno));
+			xerror_issue("%s: %s", fname, strerror(errno));
 			return XEFILE;
 		}
 
@@ -212,7 +211,7 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		ferr = ftell(fp);
 		
 		if (ferr == -1) {
-			xerror("%s: %s", fname, strerror(errno));
+			xerror_issue("%s: %s", fname, strerror(errno));
 			return XEFILE;
 		}
 		
@@ -222,7 +221,7 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		ferr = fseek(fp, 0L, SEEK_SET);
 		
 		if (ferr == -1) {
-			xerror("%s: %s", fname, strerror(errno));
+			xerror_issue("%s: %s", fname, strerror(errno));
 			return XEFILE;
 		}
 
@@ -230,7 +229,7 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		char *buf = malloc(sizeof(char) * bytes + 1);
 		
 		if (!buf) {
-			xerror("cannot allocate memory for file read");
+			xerror_issue("cannot allocate memory for file read");
 			return XENOMEM;
 		}
 
@@ -238,7 +237,7 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		serr = fread(buf, sizeof(char), bytes, fp);
 		
 		if (serr != bytes) {
-			xerror("%s: %s", fname, strerror(errno));
+			xerror_issue("%s: %s", fname, strerror(errno));
 			return XEFILE;
 		}
 
@@ -248,7 +247,7 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		err = run(opt, buf);
 		
 		if (err) {
-			xerror("cannot compile from file contents");
+			xerror_issue("cannot compile from file contents");
 			return err;
 		}
 	}
@@ -289,11 +288,11 @@ xerror run_unknown(options *opt, char *source, size_t n)
 			perror(NULL);
 			break;
 		case 127:
-			xerror("cannot exec shell in child process");
+			xerror_issue("cannot exec shell in child process");
 			xerror_flush();
 			break;
 		default:
-			xerror("shell termination status: %d", err);
+			xerror_issue("shell termination status: %d", err);
 			xerror_flush();
 		}
 

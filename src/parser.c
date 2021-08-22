@@ -6,6 +6,7 @@
 
 #include <pthread.h>
 
+#include "defs.h"
 #include "parser.h"
 #include "scanner.h"
 #include "lib/channel.h"
