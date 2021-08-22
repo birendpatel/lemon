@@ -38,3 +38,4 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Add full installation support in the makefile
 - [ ] Refactor file reader in main
 - [ ] Move parser channel to separate translation unit
+- [ ] Update src readme
