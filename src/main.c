@@ -10,9 +10,9 @@
 #include <string.h>
 
 #include "compile.h"
-#include "lemon.h"
 #include "lib/vector.h"
 #include "options.h"
+#include "xerror.h"
 
 #define LEMON_VERSION "6.0.0.0 (alpha)"
 
@@ -24,13 +24,13 @@
 make_vector(char, char, static inline)
 
 //prototypes
-lemon_error run_repl(options *opt);
-lemon_error run(options *opt, char *source);
+xerror run_repl(options *opt);
+xerror run(options *opt, char *source);
 void display_header(void);
-lemon_error run_file(options *opt, int argc, char **argv, int argi);
+xerror run_file(options *opt, int argc, char **argv, int argi);
 void char_vector_cleanup(char_vector *v);
 void file_cleanup(FILE **fp);
-lemon_error run_unknown(options *opt, char *source, size_t n);
+xerror run_unknown(options *opt, char *source, size_t n);
 
 //vector raii - safe even when v->data is NULL
 void char_vector_cleanup(char_vector *v) {
@@ -55,13 +55,16 @@ void file_cleanup(FILE **fp) {
  ******************************************************************************/
 int main(int argc, char **argv)
 {
-	lemon_error err = LEMON_EUNDEF;
+	xerror err = XEUNDEFINED;
 	int argi = 0;
 	options opt = options_init();
 
 	err = options_parse(&opt, argc, argv, &argi);
 
-	EXIT_ERROR(err, lemon_describe(err), EXIT_FAILURE);
+	if (err) {
+		xerror_fatal("%s", xerror_str(err));
+		exit(EXIT_FAILURE);
+	}
 
 	if (opt.diagnostic & DIAGNOSTIC_OPT) {
 		options_display(&opt);
@@ -78,7 +81,10 @@ int main(int argc, char **argv)
 		}
 	}
 
-	EXIT_ERROR(err, lemon_describe(err), EXIT_FAILURE);
+	if (err) {
+		xerror_fatal("%s", xerror_str(err));
+		exit(EXIT_FAILURE);
+	}
 
 	return EXIT_SUCCESS;
 }
@@ -87,16 +93,20 @@ int main(int argc, char **argv)
  * @fn run_repl
  * @returns LEMON_ENOMEM, LEMON_EFULL, or LEMON_ESUCCESS
  ******************************************************************************/
-lemon_error run_repl(options *opt)
+xerror run_repl(options *opt)
 {
-	static const char *init_msg = "cannot init char vector";
 	static const char *push_msg = "cannot push to char vector";
 	static const char *run_msg  = "failed to run source from REPL";
-	lemon_error err = LEMON_EUNDEF;
-
+	
+	xerror err = XEUNDEFINED;
 	CHARVEC_RAII char_vector buf = {0};
+
 	err = char_vector_init(&buf, 0, KiB(1));
-	RETURN_ERROR(err, init_msg, LEMON_ENOMEM);
+
+	if (err) {
+		xerror_issue("cannot init char vector");
+		return XENOMEM;
+	}
 
 	while (true) {
 		int prev = 0;
@@ -112,7 +122,7 @@ lemon_error run_repl(options *opt)
 
 			if (curr == EOF) {
 				fprintf(stdout, "\n");
-				return LEMON_ESUCCESS;
+				return XESUCCESS;
 			}
 
 			if (curr == '\n') {
@@ -124,22 +134,34 @@ lemon_error run_repl(options *opt)
 			}
 
 			err = char_vector_push(&buf, (char) curr);
-			RETURN_ERROR(err, push_msg, err);
+
+			if (err) {
+				xerror_issue("cannot push to char vector");
+				return err;
+			}
 
 			prev = curr;
 		}
 
 		//satisfy string requirement requested by run()
 		err = char_vector_push(&buf, '\0');
-		RETURN_ERROR(err, push_msg, err);
+		
+		if (err) {
+			xerror_issue("cannot push to char vector");
+			return err;
+		}
 
 		err = run_unknown(opt, buf.data, buf.len);
-		RETURN_ERROR(err, run_msg, err);
+
+		if (err) {
+			xerror_issue("failed to run source from REPL");
+			return err;
+		}
 
 		char_vector_reset(&buf, NULL);
 	}
 
-	return LEMON_ESUCCESS;
+	return XESUCCESS;
 }
 
 /*******************************************************************************
@@ -162,9 +184,9 @@ void display_header(void)
  * @details Lemon does not yet have a module system. Therefore, all files are
  * processed sequentially in isolation.
  ******************************************************************************/
-lemon_error run_file(options *opt, int argc, char **argv, int argi)
+xerror run_file(options *opt, int argc, char **argv, int argi)
 {
-	lemon_error err = LEMON_EUNDEF;
+	xerror err = XEUNDEFINED;
 	long ferr = -1;
 	size_t serr = 0;
 	size_t bytes = 0;
@@ -174,37 +196,66 @@ lemon_error run_file(options *opt, int argc, char **argv, int argi)
 
 		//use raii idiom to avoid complicated goto chains for errors
 		FILE_RAII FILE *fp = fopen(fname, "r");
-		RETURN_ERROR_HEAD(!fp, fname, strerror(errno), LEMON_EFILE);
+
+		if (!fp) {
+			xerror("%s: %s", fname, strerror(errno));
+			return XEFILE;
+		}
 
 		//move to the end of the file
 		ferr = fseek(fp, 0L, SEEK_END);
-		RETURN_ERROR_HEAD(ferr == -1, fname, strerror(errno), LEMON_EFILE);
+		
+		if (ferr == -1) {
+			xerror("s: %s", fname, sterror(errno));
+			return XEFILE;
+		}
 
 		//count total bytes in file
 		ferr = ftell(fp);
-		RETURN_ERROR_HEAD(ferr == -1, fname, strerror(errno), LEMON_EFILE);
+		
+		if (ferr == -1) {
+			xerror("%s: %s", fname, strerror(errno));
+			return XEFILE;
+		}
+		
 		bytes = (size_t) ferr;
 
 		//move to the beginning of the file
 		ferr = fseek(fp, 0L, SEEK_SET);
-		RETURN_ERROR_HEAD(ferr == -1, fname, strerror(errno), LEMON_EFILE);
+		
+		if (ferr == -1) {
+			xerror("%s: %s", fname, strerror(errno));
+			return XEFILE;
+		}
 
 		//allocate space for file including a null terminator
 		char *buf = malloc(sizeof(char) * bytes + 1);
-		RETURN_ERROR(!buf, "no heap for file read", LEMON_ENOMEM);
+		
+		if (!buf) {
+			xerror("cannot allocate memory for file read");
+			return XENOMEM;
+		}
 
 		//read file into memory
 		serr = fread(buf, sizeof(char), bytes, fp);
-		RETURN_ERROR_HEAD(serr != bytes, fname, strerror(errno), LEMON_EFILE);
+		
+		if (serr != bytes) {
+			xerror("%s: %s", fname, strerror(errno));
+			return XEFILE;
+		}
 
 		//add null terminator as required by run()
 		buf[bytes] = '\0';
 
 		err = run(opt, buf);
-		RETURN_ERROR(err, "cannot compile from source file", err);
+		
+		if (err) {
+			xerror("cannot compile from file contents");
+			return err;
+		}
 	}
 
-	return LEMON_ESUCCESS;
+	return XESUCCESS;
 }
 
 /*******************************************************************************
@@ -214,7 +265,7 @@ lemon_error run_file(options *opt, int argc, char **argv, int argi)
  * @param source Null terminated char array
  ******************************************************************************/
 //TODO: refactor shell handling and include the waitpid information.
-lemon_error run_unknown(options *opt, char *source, size_t n)
+xerror run_unknown(options *opt, char *source, size_t n)
 {
 	assert(opt);
 	assert(source);
@@ -240,14 +291,16 @@ lemon_error run_unknown(options *opt, char *source, size_t n)
 			perror(NULL);
 			break;
 		case 127:
-			fprintf(stderr, "cannot exec shell in child process");
+			xerror("cannot exec shell in child process");
+			xerror_flush();
 			break;
 		default:
-			fprintf(stdout, "shell termination status: %d\n", err);
+			xerror("shell termination status: %d", err);
+			xerror_flush();
 		}
 
 		/* dont shutdown the REPL when the shell fails */
-		return LEMON_ESUCCESS;
+		return XESUCCESS;
 	}
 
 	return run(opt, source);	
@@ -258,12 +311,12 @@ lemon_error run_unknown(options *opt, char *source, size_t n)
  * @brief Compile source text to bytecode and execute it on the virtual machine.
  * @param src Null terminated char array.
  ******************************************************************************/
-lemon_error run(options *opt, char *src)
+xerror run(options *opt, char *src)
 {
 	assert(opt);
 	assert(src);
 
-	lemon_error err = LEMON_ESUCCESS;
+	xerror err = XEUNDEFINED;
 
 	if (opt->diagnostic & DIAGNOSTIC_PASS) {
 		fprintf(stderr, "compiler pass: echo\n");
