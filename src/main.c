@@ -3,6 +3,27 @@
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
  * @brief The main file is responsible for options parsing, REPL management,
  * disk IO, and log management.
+ * @details call graph:
+ *
+ *
+ *   main ----> options_parse
+ *     |
+ *     |------> display_header
+ *     |
+ *     |------> help
+ *     |
+ *     |
+ *     |          |----------> char_vector_cleanup
+ *     |          |
+ *     |          |
+ *     |------> run_repl ----> run_unknown-------|
+ *     |	 	                         |----> run
+ *     |------> run_file-------------------------|
+ *                |
+ * 	          |-------> get_bytecount
+ *	          |
+ *	          |-------> disk_to_heapstr
+ *
  */
 
 #include <errno.h>
@@ -21,15 +42,14 @@
 	#error "Lemon requires a GNU C compiler"
 #endif
 
-//vector<char> used by REPL for input buffering.
-//uses raii idiom - safe even when v->data is NULL.
+//vector<char> is used by the REPL for input buffering.
 make_vector(char, char, static inline)
 
 void char_vector_cleanup(char_vector *v) {
 	char_vector_free(v, NULL);
 }
 
-#define CHARVEC_RAII __attribute__((__cleanup__(char_vector_cleanup)))
+#define RAII __attribute__((__cleanup__(char_vector_cleanup)))
 
 //prototypes
 xerror run_repl(options *opt);
@@ -41,27 +61,7 @@ void file_cleanup(FILE **fp);
 xerror run_unknown(options *opt, char *source, size_t n);
 xerror get_bytecount(FILE *fp, size_t *n);
 xerror disk_to_heapstr(FILE *fp, char **buf, size_t n);
-
-/*
- * call graph
- *
- *
- *   main ----> options_parse
- *     |
- *     |          |-------> char_vector_cleanup
- *     |          |
- *     |          |-------> display_header
- *     |          |
- *     |          |
- *     |------> run_repl ----> run_unknown-------|
- *     |	 	                         |----> run
- *     |------> run_file-------------------------|
- *                |
- * 	          |-------> get_bytecount
- *	          |
- *	          |-------> disk_to_heapstr
- *
- */
+void help(void);
 
 /*******************************************************************************
  * @fn main
@@ -77,8 +77,7 @@ int main(int argc, char **argv)
 	err = options_parse(&opt, argc, argv, &argi);
 
 	if (err) {
-		xerror_fatal("%s", xerror_str(err));
-		exit(EXIT_FAILURE);
+		goto fail;
 	}
 
 	if (opt.diagnostic & DIAGNOSTIC_OPT) {
@@ -97,11 +96,27 @@ int main(int argc, char **argv)
 	}
 
 	if (err) {
-		xerror_fatal("%s", xerror_str(err));
-		exit(EXIT_FAILURE);
+		goto fail;
 	}
 
 	return EXIT_SUCCESS;
+
+fail:;
+	xerror_fatal("%s", xerror_str(err));
+	help();
+	return EXIT_FAILURE;
+}
+
+/*******************************************************************************
+ * @fn help
+ * @brief Display message on fatal program termination
+ ******************************************************************************/
+void help(void)
+{
+	const char *help  = "\nProgram failed. Report an issue: " 
+			    "https://github.com/birendpatel/lemon/issues\n";
+
+	fprintf(stderr, "%s", help);
 }
 
 /*******************************************************************************
@@ -111,7 +126,7 @@ int main(int argc, char **argv)
 xerror run_repl(options *opt)
 {
 	xerror err = XEUNDEFINED;
-	CHARVEC_RAII char_vector buf = {0};
+	RAII char_vector buf = {0};
 
 	err = char_vector_init(&buf, 0, KiB(1));
 
@@ -184,7 +199,7 @@ void display_header(void)
 {
 	fprintf(stdout, "Lemon %s ", LEMON_VERSION);
 	fprintf(stdout, "(Compiled %s %s)\n", __DATE__, __TIME__);
-	fprintf(stdout, "Copyright (C) 2021 Biren Patel\n");
+	fprintf(stdout, "Copyright (C) 2021 Biren Patel. ");
 	fprintf(stdout, "GNU General Public License v3.0.\n\n");
 
 	fprintf(stdout, "- Double tap 'return' to execute your source code.\n");

@@ -74,6 +74,8 @@ const char *xerror_str(const xerror err)
 //In particular, __xerror_log will deadlock if we use the public variant.
 static void __xerror_flush(void)
 {
+	fprintf(stderr, "%s\n", "error log (most recent error last):");
+
 	for (uint8_t i = 0; i < xq.len; i++) {
 		fprintf(stderr, "%s\n", xq.buf[i]);
 	}
@@ -121,7 +123,7 @@ void __xerror_log
 	va_list args;
 	va_start(args, msg);
 
-	const char *fmt = "%p %s:%s:%d %s ";
+	const char *fmt = "(%p) %s %s:%s:%d ";
 	const char *lname = get_level_name(level);
 	const void *tid = (void *) pthread_self();
 	int n = 0;
@@ -132,7 +134,7 @@ void __xerror_log
 		__xerror_flush();
 	}
 
-	n = snprintf(xq.buf[xq.len], STRLEN, fmt, tid, file, func, line, lname);
+	n = snprintf(xq.buf[xq.len], STRLEN, fmt, tid, lname, file, func, line);
 	
 	//buf + n points to the null char index or to the start of the buf row
 	//if snprintf failed

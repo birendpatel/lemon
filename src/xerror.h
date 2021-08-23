@@ -5,15 +5,15 @@
  * @details
  *
  *
- *               Thread   File   Func    Level
- *                  |      |     |         |
- *                  |      |     |         |
- *                  |      |     |         |
- *               1234567 main.c:main:123 TRACE hello, world!
- *                                    |        \___________/
- *                                    |             |
- *                                    |             |
- *                                   Line         Message
+ *               Thread  Level  File      Line
+ *                  |      |     |          |
+ *                  |      |     |          |
+ *                  |      |     |          |
+ *               1234567 TRACE main.c:main:123 hello, world!
+ *                                     |       \___________/
+ *                                     |             |
+ *                                     |             |
+ *                                    Func         Message
  */
 
 #pragma once
