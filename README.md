@@ -39,3 +39,4 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [X] Refactor file reader in main
 - [ ] Encapsulate thread and channel within scanner API
 - [X] Update src readme
+- [X] Display instructions for user when program end in fatal state
