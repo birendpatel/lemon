@@ -11,13 +11,101 @@
 #include "xerror.h"
 
 /*******************************************************************************
- * @enum 
+ * @enum token_type 
  * @brief Tagged union type indicator for the token struct.
  ******************************************************************************/
 typedef enum token_type {
+	//marker tokens
 	_EOF = 0,
-	SEMICOLON = 1,
-	PLUS = 2,
+	_LABEL,		// goto label
+
+	//literals
+	_INTLIT,	//-1, 0, 1, ...
+	_FLOATLIT,      //-1.0, 0.0, 1.0 ...
+	_STRLIT,	//"foo", "bar", ...
+	_DISTLIT,	//norm, beta, cauchy, ...
+
+	//delimiters
+	_SEMICOLON,	// ;
+	_LEFTBRACKET,	// [
+	_RIGHTBRACKET	// ]
+	_LEFTPAREN,	// (
+	_RIGHTPAREN,	// )
+	_LEFTBRACE,	// {
+	_RIGHTBRACE,	// }
+	_DOT,		// .
+	_TILDE,		// ~
+
+	//operators
+	_EQUAL,		// =
+	_EQUALEQUAL,	// ==
+	_NOTEQUAL,	// !=
+	_NOT,		// !
+	_AND,		// &&
+	_OR,		// ||
+	_BITNOT,	// '
+	_BITAND,	// &
+	_BITOR,		// |
+	_BITXOR,	// ^
+	_LSHIFT,	// <<
+	_RSHIFT,	// >>
+	_GREATER,	// >
+	_GEQ,		// >=
+	_LESS,		// <
+	_LEQ,		// <=
+	_ADD,		// +
+	_SUB,		// -
+	_MULT,		// *
+	_DIV,		// /
+	_MOD,		// %
+
+	//keywords, control flow
+	_FOR,
+	_WHILE,
+	_BREAK,
+	_CONTINUE,
+	_IF,
+	_ELSE,
+	_SWITCH,
+	_CASE,
+	_FALLTHROUGH,
+	_GOTO,
+	_ASSERT,
+
+	//keywords, assignment
+	_LET,
+	_MUT,
+	
+	//keywords, basic types
+	_BOOL,
+	_I8,
+	_I16,
+	_I32,
+	_I64,
+	_I128,
+	_U8,
+	_U16,
+	_U32,
+	_U64,
+	_U128,
+	_F32,
+	_F64,
+
+	//keywords, composite types
+	_STR,
+	_MAP,
+	_ARR,
+	_MAT,
+	_VEC,
+	_RVAR,
+	_STRUCT,
+
+	//procedures
+	_FUNC,
+	_PRIV,
+	_PUB,
+	_RETURN,
+	_VOID,
 } token_type;
 
 /*******************************************************************************
