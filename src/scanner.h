@@ -1,7 +1,7 @@
 /**
  * @file scanner.h
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v.3.0.
- * @brief Scanner API
+ * @brief Scanner API.
  */
 
 #pragma once
@@ -11,21 +11,11 @@
 #include "xerror.h"
 
 /*******************************************************************************
- * @struct payload
- * @brief A payload contains the source text that the scanner needs to process
- * and the channel that it may use for communication.
- ******************************************************************************/
-typedef struct payload {
-	char *src;
-	void *chan;
-} payload;
-
-/*******************************************************************************
  * @enum 
  * @brief Tagged union type indicator for the token struct.
  ******************************************************************************/
 typedef enum token_type {
-	EEOF = 0,
+	_EOF = 0,
 	SEMICOLON = 1,
 	PLUS = 2,
 } token_type;
@@ -40,16 +30,41 @@ typedef struct token {
 } token;
 
 /*******************************************************************************
- * @fn scanner_spawn
- * @brief This is the scanner start routine. It must be passed to pthread_create
- * when a new thread is spawned for the scanner.
- * @param chan The channel must be initialized prior to this call.
- * @returns NULL
- ******************************************************************************/
-void *scanner_spawn(void *data);
-
-/*******************************************************************************
  * @fn token_print
  * @brief Pretty printer
  ******************************************************************************/
-xerror token_print(FILE *stream, token t);
+xerror token_print(FILE *stream, token tok);
+
+/*******************************************************************************
+ * @typedef scanner
+ * @brief Since the scanner uses a channel, we make its representation opaque.
+ * Otherwise we risk the parent thread accidentally modifying the channel
+ * attributes without a mutex.
+ ******************************************************************************/
+typedef struct scanner scanner;
+
+/*******************************************************************************
+ * @fn scanner_init
+ * @brief Initialize a scanner in a new thread
+ ******************************************************************************/
+xerror scanner_init(scanner **self, char *src);
+
+/*******************************************************************************
+ * @fn scanner_recv
+ * @brief Fetch a token, if any, from the front of the communication channel.
+ * @details If no token is available and the channel is in a valid open state,
+ * then the caller thread will suspend and wait until a token is available. The
+ * wait period will not timeout. If the caller receives a token of type _EOF,
+ * then this indicates and guarantees that the scanner will no longer send
+ * tokens.
+ ******************************************************************************/
+xerror scanner_recv(scanner *self, token *tok);
+
+/*******************************************************************************
+ * @fn scanner_free
+ * @brief Terminate the scanner thread, shutdown its communication channel, and
+ * release the scanner resource itself.
+ * @details This function will fail if the channel is non-empty.
+ * @param sfree Free the scanner handle if the parameter is not NULL.
+ ******************************************************************************/
+xerror scanner_free(scanner self, void (*sfree) (void *ptr));
