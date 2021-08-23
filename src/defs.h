@@ -4,7 +4,6 @@
  * @brief Miscellaneous definitions.
  */
 
-
 #pragma once
 
 //lemon compiler info

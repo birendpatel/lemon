@@ -4,8 +4,6 @@
  * @brief Error handling implementation.
  */
 
-#define __GNU_SOURCE  //allows static recursive mutex
-
 #include <assert.h>
 #include <pthread.h>
 #include <stdarg.h>

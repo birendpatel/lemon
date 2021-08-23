@@ -1,10 +1,12 @@
 # src 
-`lemon.h`: Common header file used by all other lemon source files. It contains compiler checks, error codes, and system headers.
+`main`: This is the lemon entry point. It parses command line arguments and then either compiles from a file or loads the REPL.
 
-`lemon.c`: Implements debugging and error functions specified in lemon.h.
+`options`: This contains the command line options parser, which is implemented with GNU argp.
 
-`main.c`: Lemon entry point. Parses command line arguments and then either compiles from a file or loads the REPL.
+`xerror`: Xerror is a lightweight error handler. It include a thread-safe logging facility.
 
-`options.h`: API for the command line options parser.
+`parser`: This constructs an AST via a Pratt parser. A parse tree is not constructed as an intermediate step.
 
-`options.c`: Implements the options parser via GNU argp.
+`scanner`: This is the source code tokenizer. It runs in a separate thread and communicates tokens to the parser via a thread-safe FIFO queue.
+
+`compile`: Controller for the front and backend portions of the compiler. Raw source code goes in and a VM-executable program comes out. Start here if you're reading the source code for the first time.

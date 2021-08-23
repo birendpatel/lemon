@@ -1,7 +1,8 @@
 /*
  * @file main.c
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Lemon compiler
+ * @brief The main file is responsible for options parsing, REPL management,
+ * disk IO, and log management.
  */
 
 #include <errno.h>
@@ -20,8 +21,15 @@
 	#error "Lemon requires a GNU C compiler"
 #endif
 
-//vector<char> used by REPL for input buffering
+//vector<char> used by REPL for input buffering.
+//uses raii idiom - safe even when v->data is NULL.
 make_vector(char, char, static inline)
+
+void char_vector_cleanup(char_vector *v) {
+	char_vector_free(v, NULL);
+}
+
+#define CHARVEC_RAII __attribute__((__cleanup__(char_vector_cleanup)))
 
 //prototypes
 xerror run_repl(options *opt);
@@ -31,22 +39,29 @@ xerror run_file(options *opt, int argc, char **argv, int argi);
 void char_vector_cleanup(char_vector *v);
 void file_cleanup(FILE **fp);
 xerror run_unknown(options *opt, char *source, size_t n);
+xerror get_bytecount(FILE *fp, size_t *n);
+xerror disk_to_heapstr(FILE *fp, char **buf, size_t n);
 
-//vector raii - safe even when v->data is NULL
-void char_vector_cleanup(char_vector *v) {
-	char_vector_free(v, NULL);
-}
-
-#define CHARVEC_RAII __attribute__((__cleanup__(char_vector_cleanup)))
-
-//file raii - stdio fclose is undefined when *fp is NULL.
-void file_cleanup(FILE **fp) {
-	if (*fp) {
-		fclose(*fp);
-	}
-}
-
-#define FILE_RAII __attribute__((__cleanup__(file_cleanup)))
+/*
+ * call graph
+ *
+ *
+ *   main ----> options_parse
+ *     |
+ *     |          |-------> char_vector_cleanup
+ *     |          |
+ *     |          |-------> display_header
+ *     |          |
+ *     |          |
+ *     |------> run_repl ----> run_unknown-------|
+ *     |	 	                         |----> run
+ *     |------> run_file-------------------------|
+ *                |
+ * 	          |-------> get_bytecount
+ *	          |
+ *	          |-------> disk_to_heapstr
+ *
+ */
 
 /*******************************************************************************
  * @fn main
@@ -172,6 +187,10 @@ void display_header(void)
 	fprintf(stdout, "Copyright (C) 2021 Biren Patel\n");
 	fprintf(stdout, "GNU General Public License v3.0.\n\n");
 
+	fprintf(stdout, "- Double tap 'return' to execute your source code.\n");
+	fprintf(stdout, "- Run shell commands by prefixing them with '$'.\n");
+	fprintf(stdout, "- Exit Lemon with a keyboard interrupt (Ctrl-C)\n\n");
+
 	return;
 }
 
@@ -183,74 +202,124 @@ void display_header(void)
  ******************************************************************************/
 xerror run_file(options *opt, int argc, char **argv, int argi)
 {
+	assert(opt);
+	assert(argc);
+	assert(argv);
+	assert(argi < argc);
+
 	xerror err = XEUNDEFINED;
-	long ferr = -1;
-	size_t serr = 0;
-	size_t bytes = 0;
+	FILE *fp = NULL;
 
 	for (int i = argi; i < argc; i++) {
-		char *fname = argv[i];
-
-		//use raii idiom to avoid complicated goto chains for errors
-		FILE_RAII FILE *fp = fopen(fname, "r");
+		fp = fopen(argv[i], "r");
 
 		if (!fp) {
-			xerror_issue("%s: %s", fname, strerror(errno));
-			return XEFILE;
+			xerror_issue("%s: %s", argv[i], strerror(errno));
+			err = XEFILE;
+			goto fail;
 		}
 
-		//move to the end of the file
-		ferr = fseek(fp, 0L, SEEK_END);
-		
-		if (ferr == -1) {
-			xerror_issue("%s: %s", fname, strerror(errno));
-			return XEFILE;
+		size_t len = 0;
+		err =  get_bytecount(fp, &len);
+
+		if (err) {
+			xerror_issue("%s: cannot get bytecount", argv[i]);
+			goto fail;
 		}
 
-		//count total bytes in file
-		ferr = ftell(fp);
-		
-		if (ferr == -1) {
-			xerror_issue("%s: %s", fname, strerror(errno));
-			return XEFILE;
-		}
-		
-		bytes = (size_t) ferr;
+		char *buf = NULL;
+		err = disk_to_heapstr(fp, &buf, len);
 
-		//move to the beginning of the file
-		ferr = fseek(fp, 0L, SEEK_SET);
-		
-		if (ferr == -1) {
-			xerror_issue("%s: %s", fname, strerror(errno));
-			return XEFILE;
+		if (err) {
+			xerror_issue("%s: cannot copy to memory", argv[i]);
+			goto fail;
 		}
 
-		//allocate space for file including a null terminator
-		char *buf = malloc(sizeof(char) * bytes + 1);
-		
-		if (!buf) {
-			xerror_issue("cannot allocate memory for file read");
-			return XENOMEM;
-		}
-
-		//read file into memory
-		serr = fread(buf, sizeof(char), bytes, fp);
-		
-		if (serr != bytes) {
-			xerror_issue("%s: %s", fname, strerror(errno));
-			return XEFILE;
-		}
-
-		//add null terminator as required by run()
-		buf[bytes] = '\0';
-
+		fclose(fp);
 		err = run(opt, buf);
+		free(buf);
 		
 		if (err) {
-			xerror_issue("cannot compile from file contents");
-			return err;
+			xerror_issue("%s: cannot compile contents", argv[i]);
+			goto fail;
 		}
 	}
+
+	return XESUCCESS;
+
+fail:
+	if (fp) {
+		fclose(fp);
+	}
+
+	return err;
+}
+
+/*******************************************************************************
+ * @fn get_bytecount
+ * @brief Extract the total number of bytes in a file
+ * @param fp fp must be an open file. On success, the file position indicator
+ * will be set to the beginning of the file.
+ ******************************************************************************/
+xerror get_bytecount(FILE *fp, size_t *n)
+{
+	assert(fp);
+	assert(n);
+
+	long file_err = 0;
+
+	rewind(fp);
+
+	//move to the end of the file
+	file_err = fseek(fp, 0L, SEEK_END);
+
+	if (file_err == -1) {
+		xerror_issue("fseek: %s", strerror(errno));
+		return XEFILE;
+	}
+
+	//extract total bytes
+	file_err = ftell(fp);
+
+	if (file_err == -1) {
+		xerror_issue("ftell: %s", strerror(errno));
+		return XEFILE;
+	}
+
+	*n = (size_t) file_err;
+
+	rewind(fp);
+
+	return XESUCCESS;
+}
+
+/*******************************************************************************
+ * @fn disk_to_heapstr
+ * @brief Read file contents into memory as a C string
+ * @param fp Must be an open file
+ * @param buf Will be a valid pointer to heap if function is successful. User
+ * is responsible for managing the memory.
+ * @param n Ok if zero
+ ******************************************************************************/
+xerror disk_to_heapstr(FILE *fp, char **buf, size_t n)
+{
+	assert(fp);
+
+	*buf = malloc(sizeof(char) * n + 1);
+
+	if (*buf == NULL) {
+		xerror_issue("cannot allocate enough memory for file size");
+		return XENOMEM;
+	}
+
+	size_t match = fread(*buf, sizeof(char), n, fp);
+
+	if (n != match) {
+		xerror_issue("%s", strerror(errno));
+		return XEFILE;
+	}
+
+	(*buf)[n] = '\0';
 
 	return XESUCCESS;
 }
@@ -283,17 +352,19 @@ xerror run_unknown(options *opt, char *source, size_t n)
 			err = system(source + 1);
 		}
 
+		//we dont use xerror handler here because shell failures are not
+		//compiler failures. Instead, we pass the shell information onto
+		//the user but otherwise the compiler itself hasn't encountered
+		//an issue and is in a perfectly usable state.
 		switch (err) {
 		case -1:
 			perror(NULL);
 			break;
 		case 127:
-			xerror_issue("cannot exec shell in child process");
-			xerror_flush();
+			fprintf(stderr, "cannot exec shell in child process\n");
 			break;
 		default:
-			xerror_issue("shell termination status: %d", err);
-			xerror_flush();
+			fprintf(stderr, "shell termination status: %d\n", err);
 		}
 
 		/* dont shutdown the REPL when the shell fails */

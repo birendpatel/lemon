@@ -25,17 +25,17 @@ This project is licensed under the GNU General Public License v3.0. You may find
 # Todo
 
 - [ ] Fix diagnostic-all bug which doesn't set the interactive flag
-- [ ] Consider adding C11 Generic for RAII idioms
+- [X] Consider adding C11 Generic for RAII idioms
 - [ ] Add locale support to main
 - [ ] Add 60 second tutorial on root readme
 - [ ] Make C lemon compatible with Clang
-- [ ] Add help info when REPL fires up
+- [X] Add help info when REPL fires up
 - [ ] Add diagnostic flag for multithreading
 - [ ] Add vector tracing
 - [ ] Write vector unit tests
 - [ ] Write channel unit tests
 - [ ] Create a thread pool for multi-file compilation
 - [ ] Add full installation support in the makefile
-- [ ] Refactor file reader in main
-- [ ] Move parser channel to separate translation unit
-- [ ] Update src readme
+- [X] Refactor file reader in main
+- [ ] Encapsulate thread and channel within scanner API
+- [X] Update src readme
