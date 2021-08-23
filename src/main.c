@@ -101,7 +101,7 @@ int main(int argc, char **argv)
 
 	return EXIT_SUCCESS;
 
-fail:;
+fail:
 	xerror_fatal("%s", xerror_str(err));
 	help();
 	return EXIT_FAILURE;
