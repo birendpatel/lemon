@@ -7,7 +7,6 @@
 #pragma once
 
 #include <stdint.h>
-#include <stdio.h>
 
 #include "xerror.h"
 
@@ -57,7 +56,7 @@ typedef enum token_type {
 	_LESS,		// <
 	_LEQ,		// <=
 	_ADD,		// +
-	_SUB,		// -
+	_MINUS,		// -
 	_MULT,		// *
 	_DIV,		// /
 	_MOD,		// %
@@ -86,6 +85,9 @@ typedef enum token_type {
 	_PRIV,
 	_PUB,
 	_RETURN,
+
+	//token count
+	_TOKEN_TYPE_COUNT,
 } token_type;
 
 /*******************************************************************************
@@ -108,9 +110,9 @@ typedef struct token {
 
 /*******************************************************************************
  * @fn token_print
- * @brief Pretty printer
+ * @brief Pretty printer to stderr
  ******************************************************************************/
-xerror token_print(FILE *stream, token tok);
+void token_print(token tok);
 
 /*******************************************************************************
  * @typedef scanner
