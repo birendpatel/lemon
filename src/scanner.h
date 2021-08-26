@@ -102,7 +102,7 @@ typedef enum token_type {
  ******************************************************************************/
 typedef struct token {
 	char *lexeme;
-	uint32_t token_type;
+	uint32_t type;
 	uint32_t line;
 	uint32_t len;
 	uint32_t flags; //reserved

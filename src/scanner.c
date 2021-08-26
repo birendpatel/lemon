@@ -7,7 +7,8 @@
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h> //printer
-#include <stdlib.h> //alloc
+#include <stdlib.h> //alloc, exit
+#include <string.h> //memcpy
 
 #include "defs.h"
 #include "lib/channel.h"
@@ -89,13 +90,26 @@ void token_print(token tok)
 }
 
 //since the scanner only needs to process one token at a time, it maintains an
-//embedded struct token as its temporary workspace.
+//embedded struct token as its temporary workspace. This same token is passed
+//by value to the channel when ready.
+//
+//the scanner acquires the top-level mutex when its thread is created and only
+//unlocks it when tokenization is complete. This prevents the main thread from
+//prematurely freeing scanner resources. The scanner thread runs detached.
+//
+//However, the chan itself (see the scanner_recv() implementation) bypasses 
+//the mutex. One, because it reduces lock overhead, two because the chan ref
+//is read-only, and three because chan resources are protected by their own 
+//mutex and its struct is encapsulated enough to avoid direct R/W from either 
+//thread.
 struct scanner {
 	pthread_t tid;
-	token_channel *chan;
+	pthread_mutex_t mutex;
+	token_channel *const chan;
 	char *src;
 	token tok;
 	uint32_t line;
+	bool failed; //signal to parent thread on any issue
 };
 
 //the scanner needs to perform heap allocations across three levels of indirection:
@@ -117,13 +131,16 @@ xerror scanner_init(scanner **self, char *src)
 		goto fail;
 	}
 
-	tmp->chan = malloc(sizeof(token_channel));
+	//the read-only channel pointer is bypassed via memcpy.
+	token_channel *tmp_chan = malloc(sizeof(token_channel));
 
-	if (!tmp->chan) {
+	if (!tmp_chan) {
 		err = XENOMEM;
 		xerror_issue("cannot allocate channel member");
 		goto cleanup_scanner;
 	}
+
+	memcpy(&(tmp->chan), &tmp_chan, sizeof(void *));
 
 	xerror err = token_channel_init(tmp->chan, KiB(1));
 
@@ -135,15 +152,26 @@ xerror scanner_init(scanner **self, char *src)
 	tmp->src = src;
 	tmp->tok = {NULL, 0, 0, 0, 0};
 	tmp->line = 1; //match the fact that most IDEs start at line 1
+	tmp->failed = false;
+
+	pthread_mutex_init(&tmp->mutex, NULL);
+
+	pthread_attr_t attr;
+	err = pthread_attr-setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+
+	if (err) {
+		xerror_issue("invalid detach state: pthread error %d", err);
+		goto cleanup_thread;
+	}
 	
-	//From this point, in this parent thread, the scanner members can no
-	//longer be read or written to since there is no top level mutex. The
-	//only exception is the channel member via scanner_recv().
-	//
-	//The tmp pointer itself is passed along as the thread payload. In OOP
-	//terms, it means this very instance of the scanner object will now
-	//exist in tandem in both threads
-	err = pthread_create(&tmp->tid, NULL, scanner_spawn, &tmp);
+	//scanner needs to acquire the top-level mutex as soon as it can.
+	//theoretically, the main thread could call scanner_free() before
+	//the scanner thread can acquire its mutex. Practically, this is
+	//this is a non-issue since the scanner signals task completion with
+	//an EOF token. The top-level mutex is a basic safeguard against the
+	//lexer but the lexer also  has too many safeguards of its own to
+	//actually trigger the issue.
+	err = pthread_create(&tmp->tid, &attr, scanner_spawn, &tmp);
 
 	if (err) {
 		xerror_issue("cannot create thread: pthread error: %d", err);
@@ -160,7 +188,7 @@ cleanup_thread:
 	(void) token_channel_free(tmp, NULL);
 
 cleanup_chan:
-	free(tmp->chan);
+	free(tmp_chan);
 
 cleanup_scanner:
 	free(tmp);
@@ -169,21 +197,31 @@ fail:
 	return err;
 }
 
-//------------------------------------------------------------------------------
+//entry point for the detached scanner thread
 static void* scanner_spawn(void *payload)
 {
+	xerror err = XESUCCESS;
+
 	scanner *self = (scanner *) payload;
 
-	xerror_trace("scanner thread spawned");
+	pthread_mutex_lock(&self->tid);
 
 	scan(self);
+
+	pthread_mutex_unlock(&self->tid);
+
+	pthread_exit(NULL);
 
 	return NULL;
 }
 
 //the actual lexical analysis of the target source code is initialized from this
 //function.
-static void scan(scanner *self)
+static xerror scan(scanner *self)
 {
-	return;
+	self->tok = {NULL, _EOF, 1, 2, 3}; //placeholder
+
+	(void) token_channel_send(self->chan, self->tok);
+
+	return XESUCCESS;
 }
