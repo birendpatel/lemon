@@ -28,7 +28,7 @@ typedef enum token_type {
 	//punctuation
 	_SEMICOLON,	// ;
 	_LEFTBRACKET,	// [
-	_RIGHTBRACKET	// ]
+	_RIGHTBRACKET,	// ]
 	_LEFTPAREN,	// (
 	_RIGHTPAREN,	// )
 	_LEFTBRACE,	// {

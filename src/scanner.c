@@ -7,18 +7,22 @@
 #include <assert.h>
 #include <pthread.h>
 #include <stdio.h> //printer
-#include <stdlib.h> //alloc, exit
-#include <string.h> //memcpy
+#include <stdlib.h> //alloc
 
+#include "scanner.h"
 #include "defs.h"
 #include "lib/channel.h"
-#include "scanner.h"
+
 
 //scanner sends tokens by value across a thread-safe channel
 make_channel(token, token, static inline)
 
+static void* scanner_spawn(void *payload);
+static xerror scan(scanner *self);
+static const char *get_token_name(token_type typ);
+
 //printing is used by certain diagnostic options flags
-static const char *token_name_lookup[] = {
+static const char *lookup[] = {
 	[_INVALID] = "INVALID",
 	[_EOF] = "EOF",
 	[_IDENTIFIER] = "IDENTIFIER",
@@ -72,20 +76,27 @@ static const char *token_name_lookup[] = {
 	[_RETURN] = "RETURN"
 };
 
-void token_print(token tok)
+static const char *get_token_name(token_type typ)
 {
-	static const char *lex_fmt = "line %-10d: %-17s: %.*s\n";
-	static const char *nolex_fmt = "line %-10d: %-17s\n";
-	char *tokname = "LOOKUP ERROR";
+	static const char *err = "LOOKUP ERROR";
 
-	if (tok.token_type >= _INVALID && tok.token_type < _TOKEN_TYPE_COUNT) {
-		tokname = token_name_lookup[tok.token_type];
+	if (typ < _TOKEN_TYPE_COUNT) {
+		return lookup[typ];
 	}
 
+	return err;
+}
+
+void token_print(token tok)
+{
+	static const char *lexfmt = "line %-10d: %-17s: %.*s\n";
+	static const char *nolexfmt = "line %-10d: %-17s\n";
+	const char *tokname = get_token_name(tok.type);
+
 	if (tok.lexeme) {
-		fprintf(stderr, lex_fmt, tok.line, tokname, tok.len, tok.lexeme);
+		fprintf(stderr, lexfmt, tok.line, tokname, tok.len, tok.lexeme);
 	} else {
-		fprintf(stderr, nolex_fmt, tok.line, tokname);
+		fprintf(stderr, nolexfmt, tok.line, tokname);
 	}
 }
 
@@ -131,18 +142,29 @@ xerror scanner_init(scanner **self, char *src)
 		goto fail;
 	}
 
-	//the read-only channel pointer is bypassed via memcpy.
-	token_channel *tmp_chan = malloc(sizeof(token_channel));
 
-	if (!tmp_chan) {
+//We need to cast the channel pointer to remove the const qualifier so that
+//the pointer can be re-targeted to heap. This does not violate the C
+//standard section 6.7.3 since the original object, the underlying memory
+//region malloced for the scanner, is not originally const.
+//
+//Regardless, GCC's analyser will complain so for this very short section 
+//we temporarily remove the diagnostic.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wcast-qual"
+
+	* (token_channel **) &tmp->chan = malloc(sizeof(token_channel));
+
+#pragma GCC diagnostic pop
+//and from here onwards we're back to the normal compiler state
+
+	if (!tmp->chan) {
 		err = XENOMEM;
 		xerror_issue("cannot allocate channel member");
 		goto cleanup_scanner;
 	}
 
-	memcpy(&(tmp->chan), &tmp_chan, sizeof(void *));
-
-	xerror err = token_channel_init(tmp->chan, KiB(1));
+	err = token_channel_init(tmp->chan, KiB(1));
 
 	if (err) {
 		xerror_issue("cannot init the allocated channel");
@@ -150,14 +172,14 @@ xerror scanner_init(scanner **self, char *src)
 	}
 
 	tmp->src = src;
-	tmp->tok = {NULL, 0, 0, 0, 0};
+	tmp->tok = (token) { NULL, 0, 0, 0, 0 };
 	tmp->line = 1; //match the fact that most IDEs start at line 1
 	tmp->failed = false;
 
 	pthread_mutex_init(&tmp->mutex, NULL);
 
 	pthread_attr_t attr;
-	err = pthread_attr-setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
+	err = pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
 	if (err) {
 		xerror_issue("invalid detach state: pthread error %d", err);
@@ -185,10 +207,10 @@ xerror scanner_init(scanner **self, char *src)
 cleanup_thread:
 	//don't check error, function will always success because the thread
 	//creation failed, so we already know its never been used.
-	(void) token_channel_free(tmp, NULL);
+	(void) token_channel_free(tmp->chan, NULL);
 
 cleanup_chan:
-	free(tmp_chan);
+	free(tmp->chan);
 
 cleanup_scanner:
 	free(tmp);
@@ -204,11 +226,15 @@ static void* scanner_spawn(void *payload)
 
 	scanner *self = (scanner *) payload;
 
-	pthread_mutex_lock(&self->tid);
+	pthread_mutex_lock(&self->mutex);
 
 	scan(self);
 
-	pthread_mutex_unlock(&self->tid);
+	if (err) {
+		self->failed = true;
+	}
+
+	pthread_mutex_unlock(&self->mutex);
 
 	pthread_exit(NULL);
 
@@ -219,7 +245,7 @@ static void* scanner_spawn(void *payload)
 //function.
 static xerror scan(scanner *self)
 {
-	self->tok = {NULL, _EOF, 1, 2, 3}; //placeholder
+	self->tok = (token) { NULL, _EOF, 1, 2, 3 }; //placeholder
 
 	(void) token_channel_send(self->chan, self->tok);
 

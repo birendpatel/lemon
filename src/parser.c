@@ -4,6 +4,8 @@
  * @brief Top-down operator precedence parser (aka the Pratt Parser).
  */
 
+#include <assert.h>
+
 #include "scanner.h"
 
 xerror parse(char *src)
