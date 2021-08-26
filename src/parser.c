@@ -4,61 +4,32 @@
  * @brief Top-down operator precedence parser (aka the Pratt Parser).
  */
 
-#include <pthread.h>
+#include <assert.h>
 
-#include "defs.h"
-#include "parser.h"
 #include "scanner.h"
-#include "lib/channel.h"
 
-make_channel(token, token, static inline)
-
+//this function is not yet implemented,
+//just a quick test loop  for now.
 xerror parse(char *src)
 {
 	assert(src);
 
 	xerror err = XESUCCESS;
 
-	token_channel chan = {0};
-	err = token_channel_init(&chan, KiB(1));
+	scanner *scn;
 
-	if (err) {
-		xerror_issue("cannot initialize channel");
-		return err;
-	}
+	err = scanner_init(&scn, src);
 
-	payload data = {src, &chan};
-	pthread_t scanner_thread;
-	err = pthread_create(&scanner_thread, NULL, scanner_spawn, &data);
-	
-	if (err) {
-		xerror_issue("cannot create thread, pthread error: %d", err);
-		return XETHREAD;
-	}
+	xerror_trace("scanner init with return: %d", err);
+	xerror_flush();
 
-	//debug
-	token t = {0};
-	while (err != XECLOSED) {
-		err = token_channel_recv(&chan, &t);
+	token t;
 
-		if (!err) {
-			(void) token_print(stderr, t);
-		}
-	}
+	err = scanner_recv(scn, &t);
+	xerror_trace("scanner recv with return: %d", err);
+	xerror_flush();
 
-	err = pthread_join(scanner_thread, NULL);
-	
-	if (err) {
-		xerror_issue("cannot join thread, pthread error: %d", err);
-		return XETHREAD;
-	}
+	token_print(t);
 
-	err = token_channel_free(&chan, NULL);
-
-	if (err) {
-		xerror_issue("cannot free channel");
-		return err;
-	}
-	
 	return err;
 }

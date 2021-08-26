@@ -22,15 +22,28 @@ Clone this repository and issue `make release`. The executable `lemon` will be p
 
 This project is licensed under the GNU General Public License v3.0. You may find a copy of this license in this project's root directory.
 
+# Contribute
+
+First, welcome! I'm genuinely surprised that another human being has stumbled upon this project!
+
+If you'd like to contribute, the todo list below has a list of tasks that need to be done, but don't let that stop you from working on whatever you like. Raise an issue first to make sure its something we can agree on.
+
+C code style rules for the project are pretty relaxed. All I really ask is that you check all error paths, add braces on control flow, verify memory leaks with valgrind, and document your code. Happy hacking!
+
 # Todo
 
-- [ ] Fix diagnostic-all bug which doesn't set the interactive flag
-- [ ] Add locale support to main
-- [ ] Add 60 second tutorial on root readme
-- [ ] Make C lemon compatible with Clang
-- [ ] Add diagnostic flag for multithreading
-- [ ] Add vector tracing
-- [ ] Write vector unit tests
-- [ ] Write channel unit tests
-- [ ] Create a thread pool for multi-file compilation
-- [ ] Add full installation support in the makefile
+- [ ] Fix the diagnostic-all flag  which doesn't set the interactive flag (EASY)
+- [ ] Add locale support to main.c (MEDIUM)
+- [ ] Add a 60 second language tutorial on this readme (EASY)
+- [ ] Make the project compatible with Clang (MEDIUM)
+- [ ] Add a diagnostic flag for multithreading (EASY)
+- [ ] Add tracing to the vector template (EASY)
+- [ ] Write vector unit tests (MEDIUM)
+- [ ] Write channel unit tests (HARD)
+- [ ] Create a thread pool for multi-file compilation (HARD)
+- [ ] Add full installation support in the makefile (EASY)
+- [ ] Add a macro called XERROR_DEBUG to xerror.h, default it to 0 or OFF (TRIVIAL)
+- [ ] Update xerror trace to cause a flush in debug mode (EASY)
+- [ ] Add thread ID tracing to the channel template (EASY)
+- [ ] Add a lookup table for pthreads errors (EASY)
+- [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
