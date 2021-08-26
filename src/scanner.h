@@ -105,7 +105,7 @@ typedef struct token {
 	uint32_t type;
 	uint32_t line;
 	uint32_t len;
-	uint32_t flags; //reserved
+	uint32_t flags; //reserved, zeroed out to allow a shallow memcmp
 } token;
 
 /*******************************************************************************

@@ -18,18 +18,17 @@ xerror parse(char *src)
 
 	scanner *scn;
 
-	err = scanner_init(&scn, src);
-
-	xerror_trace("scanner init with return: %d", err);
-	xerror_flush();
+	scanner_init(&scn, src);
 
 	token t;
+	scanner_recv(scn, &t);
 
-	err = scanner_recv(scn, &t);
-	xerror_trace("scanner recv with return: %d", err);
-	xerror_flush();
+	while (t.type != _EOF) {
+		token_print(t);
+		scanner_recv(scn, &t);
+	}
 
-	token_print(t);
+	scanner_free(scn);
 
 	return err;
 }

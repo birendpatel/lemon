@@ -11,12 +11,14 @@
 #include <stdlib.h> //malloc
 
 #include "scanner.h"
-#include "defs.h" //kib
+#include "defs.h" //kib, fallthrough
 #include "lib/channel.h"
 
 static void* start_routine(void *data);
 static void scan(scanner *self);
 static const char *get_token_name(token_type typ);
+static void end_routine(scanner *self);
+static void consume(scanner *self, token_type typ);
 
 make_channel(token, token, static inline)
 
@@ -128,9 +130,9 @@ struct scanner {
 	pthread_mutex_t mutex;
 	token_channel *const chan;
 	char *src;
+	char *pos;
+	char *curr;
 	uint32_t line;
-	uint32_t pos;
-	uint32_t curr;
 	token tok;
 };
 
@@ -214,10 +216,10 @@ xerror scanner_init(scanner **self, char *src)
 	}
 
 	tmp->src = src;
+	tmp->pos = src;
+	tmp->curr = NULL;
 	tmp->tok = (token) { NULL, 0, 0, 0, 0 };
 	tmp->line = 1;
-	tmp->pos = 0;
-	tmp->curr = 0;
 	
 	err = pthread_create(&tmp->tid, &attr, start_routine, tmp);
 
@@ -273,9 +275,30 @@ static void* start_routine(void *data)
 
 	scan(self);
 
+	end_routine(self);
+
 	pthread_mutex_unlock(&self->mutex);
 	pthread_exit(NULL);
 	return NULL;
+}
+
+/*******************************************************************************
+ * @fn end_routine
+ * @brief Exit call for scanner thread. Send EOF token and close channel.
+ * @note It is undefined behavior in release mode to call this routine on a 
+ * closed channel.
+ ******************************************************************************/
+static void end_routine(scanner *self)
+{
+	assert(self);
+	assert(self->chan);
+	assert(self->chan->flags == CHANNEL_OPEN);
+
+	self->tok = (token) { NULL, _EOF, self->line, 0, 0};
+
+	(void) token_channel_send(self->chan, self->tok);
+
+	token_channel_close(self->chan);
 }
 
 /*******************************************************************************
@@ -329,6 +352,7 @@ easy to verify.
 xerror scanner_recv(scanner *self, token *tok)
 {
 	assert(self);
+	assert(self->chan);
 	assert(tok);
 
 	//the one and only mutex bypass in the entirety of the scanner
@@ -349,12 +373,54 @@ xerror scanner_recv(scanner *self, token *tok)
  ******************************************************************************/
 static void scan(scanner *self)
 {
-	//placeholder testing
-	self->tok = (token) { "hello", _IDENTIFIER, 42, 5, 123456};
+	assert(self);
+	assert(self->chan);
+	assert(self->chan->flags == CHANNEL_OPEN);
+	
+	while (*self->pos) {
+		switch (*self->pos) {
+		case '\n':
+			self->line++;
+			fallthrough;
 
+		case ' ':
+			fallthrough;
+
+		case '\r':
+			fallthrough;
+
+		case '\t':
+			fallthrough;
+
+		case '\v':
+			fallthrough;
+
+		case '\f':
+			self->pos++;
+			break;
+
+		case ';':
+			consume(self, _SEMICOLON);
+			break;
+
+		case '{':
+			consume(self, _LEFTBRACKET);
+			break;
+
+		case '}':
+			consume(self, _RIGHTBRACKET);
+			break;
+		}
+	}
+}
+
+/*******************************************************************************
+ * @fn consume
+ * @brief Process a single character token.
+ *******************************************************************************/
+static void consume(scanner *self, token_type typ)
+{
+	self->tok = (token) { self->pos, typ, self->line, 1, 0 };
 	(void) token_channel_send(self->chan, self->tok);
-
-	self->tok = (token) { NULL, _EOF, 1, 2, 3 };
-
-	(void) token_channel_send(self->chan, self->tok);
+	self->pos++;
 }
