@@ -34,3 +34,4 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Write channel unit tests
 - [ ] Create a thread pool for multi-file compilation
 - [ ] Add full installation support in the makefile
+- [ ] Update xerror trace to cause flush in debug mode

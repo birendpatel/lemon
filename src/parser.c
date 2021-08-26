@@ -12,5 +12,14 @@ xerror parse(char *src)
 {
 	assert(src);
 
-	return XESUCCESS;
+	xerror err = XESUCCESS;
+
+	scanner *scn;
+
+	err = scanner_init(&scn, src);
+
+	xerror_trace("scanner init with return: %d", err);
+	xerror_flush();
+
+	return err;
 }
