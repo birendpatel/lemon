@@ -89,8 +89,8 @@ static const char *get_token_name(token_type typ)
 
 void token_print(token tok)
 {
-	static const char *lexfmt = "line %-10d: %-17s: %.*s\n";
-	static const char *nolexfmt = "line %-10d: %-17s\n";
+	static const char *lexfmt = "TOKEN { line %-10d: %-17s: %.*s }\n";
+	static const char *nolexfmt = "TOKEN { line %-10d: %-17s }\n";
 	const char *tokname = get_token_name(tok.type);
 
 	if (tok.lexeme) {
@@ -279,13 +279,82 @@ static void* start_routine(void *data)
 }
 
 /*******************************************************************************
+The top-level mutex here is a safeguard to prevent the main thread (the lexer)
+from shutting down the scanner prematurely. The scanner refuses to unlock its
+mutex until it has sent its EOF token.
+*/
+xerror scanner_free(scanner *self)
+{
+	assert(self);
+
+	xerror err = XESUCCESS;
+
+	pthread_mutex_lock(&self->mutex);
+
+	err = token_channel_free(self->chan, NULL);
+
+	if (err) {
+		xerror_issue("cannot free channel");
+		pthread_mutex_unlock(&self->mutex);
+		return err;
+	}
+
+	free(self->chan);
+
+	pthread_mutex_unlock(&self->mutex);
+
+	free(self);
+
+	return XESUCCESS;
+}
+
+/*******************************************************************************
+This function bypasses the top-level mutex. Three reasons: 1) to reduce lock
+overhead 2) the channel pointer is read-only so we know the scanner thread has
+not retargeted it 3) the channel has its own thread safety. All operations on
+on the channel never directly access a channel member for reads or writes
+unless it is through a thread-safe channel function.
+
+Granted, this function relies on the implementation details of channels and
+causes a degree of function coupling. In return, the scan() function does not
+constantly have to constantly deal with threading overhead every single time
+it needs to modify its temporary workspace. The overhead is murder on the
+runtime speed.
+
+All of this relies on an implicit contract; the main thread promises to never
+modify or read anything in the scanner except the channel. Since this is
+the only unsafe function provided by the scanner in its API, the contract is 
+easy to verify.
+*/
+xerror scanner_recv(scanner *self, token *tok)
+{
+	assert(self);
+	assert(tok);
+
+	//the one and only mutex bypass in the entirety of the scanner
+	//occurs in this function call.
+	xerror err = token_channel_recv(self->chan, tok);
+
+	if (err) {
+		xerror_issue("channel is closed and empty");
+	}
+
+	return err;
+}
+
+/*******************************************************************************
  * @fn scan
  * @brief This function initiates the actual lexical analysis once the scanner
  * and its thread are configured.
  ******************************************************************************/
 static void scan(scanner *self)
 {
-	self->tok = (token) { NULL, _EOF, 1, 2, 3 }; //placeholder
+	//placeholder testing
+	self->tok = (token) { "hello", _IDENTIFIER, 42, 5, 123456};
+
+	(void) token_channel_send(self->chan, self->tok);
+
+	self->tok = (token) { NULL, _EOF, 1, 2, 3 };
 
 	(void) token_channel_send(self->chan, self->tok);
 }

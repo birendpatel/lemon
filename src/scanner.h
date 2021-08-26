@@ -143,7 +143,6 @@ xerror scanner_recv(scanner *self, token *tok);
  * @fn scanner_free
  * @brief Terminate the scanner thread, shutdown its communication channel, and
  * release the scanner resource itself.
- * @details This function will fail if the channel is non-empty.
- * @param sfree Free the scanner handle if the parameter is not NULL.
+ * @details This function may fail if the channel is busy.
  ******************************************************************************/
-xerror scanner_free(scanner self, void (*sfree) (void *ptr));
+xerror scanner_free(scanner *self);

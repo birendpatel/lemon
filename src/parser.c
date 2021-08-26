@@ -8,6 +8,8 @@
 
 #include "scanner.h"
 
+//this function is not yet implemented,
+//just a quick test loop  for now.
 xerror parse(char *src)
 {
 	assert(src);
@@ -20,6 +22,14 @@ xerror parse(char *src)
 
 	xerror_trace("scanner init with return: %d", err);
 	xerror_flush();
+
+	token t;
+
+	err = scanner_recv(scn, &t);
+	xerror_trace("scanner recv with return: %d", err);
+	xerror_flush();
+
+	token_print(t);
 
 	return err;
 }
