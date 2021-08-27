@@ -18,7 +18,8 @@ static void* start_routine(void *data);
 static void scan(scanner *self);
 static const char *get_token_name(token_type typ);
 static void end_routine(scanner *self);
-static void consume(scanner *self, token_type typ);
+static void consume(scanner *self, token_type typ, uint32_t n);
+char peek(scanner *self);
 
 make_channel(token, token, static inline)
 
@@ -380,6 +381,8 @@ static void scan(scanner *self)
 	assert(self->chan);
 	assert(self->chan->flags == CHANNEL_OPEN);
 	
+	char next = '\0';
+
 	while (*self->pos) {
 		switch (*self->pos) {
 		case '\n':
@@ -403,75 +406,82 @@ static void scan(scanner *self)
 			break;
 
 		case ';':
-			consume(self, _SEMICOLON);
+			consume(self, _SEMICOLON, 1);
 			break;
 
 		case '[':
-			consume(self, _LEFTBRACKET);
+			consume(self, _LEFTBRACKET, 1);
 			break;
 
 		case ']':
-			consume(self, _RIGHTBRACKET);
+			consume(self, _RIGHTBRACKET, 1);
 			break;
 
 		case '(':
-			consume(self, _LEFTPAREN);
+			consume(self, _LEFTPAREN, 1);
 			break;
 
 		case ')':
-			consume(self, _RIGHTPAREN);
+			consume(self, _RIGHTPAREN, 1);
 			break;
 
 		case '{':
-			consume(self, _LEFTBRACE);
+			consume(self, _LEFTBRACE, 1);
 			break;
 
 		case '}':
-			consume(self, _RIGHTBRACE);
+			consume(self, _RIGHTBRACE, 1);
 			break;
 
 		case '.':
-			consume(self, _DOT);
+			consume(self, _DOT, 1);
 			break;
 
 		case '~':
-			consume(self, _TILDE);
+			consume(self, _TILDE, 1);
 			break;
 
 		case ',':
-			consume(self, _COMMA);
+			consume(self, _COMMA, 1);
 			break;
 
 		case '*':
-			consume(self, _STAR);
+			consume(self, _STAR, 1);
 			break;
 
 		case '\'':
-			consume(self, _BITNOT);
-			break;
-
-		case '!':
-			consume(self, _NOT);
+			consume(self, _BITNOT, 1);
 			break;
 
 		case '^':
-			consume(self, _BITXOR);
+			consume(self, _BITXOR, 1);
 			break;
 
 		case '+':
-			consume(self, _ADD);
+			consume(self, _ADD, 1);
 			break;
 
 		case '-':
-			consume(self, _MINUS);
+			consume(self, _MINUS, 1);
 			break;
 
 		case '/':
-			consume(self, _DIV);
+			consume(self, _DIV, 1);
 			break;
 
 		case '%':
-			consume(self, _MOD);
+			consume(self, _MOD, 1);
+			break;
+
+		case '=':
+			next = peek(self);
+
+			if (next == '=') {
+				consume(self, _EQUALEQUAL, 2);
+			} else {
+				consume(self, _EQUAL, 1);
+			}
+
 			break;
 
 		default:
@@ -486,11 +496,33 @@ exit:;
 
 /*******************************************************************************
  * @fn consume
- * @brief Process a single character token.
- *******************************************************************************/
-static void consume(scanner *self, token_type typ)
+ * @brief Create a token for the next n characters at the current position and
+ * advance the scanner to consume the lexeme.
+ ******************************************************************************/
+static void consume(scanner *self, token_type typ, uint32_t n)
 {
-	self->tok = (token) { self->pos, typ, self->line, 1, 0 };
+	assert(self);
+	assert(n > 0);
+	assert(typ < _TOKEN_TYPE_COUNT);
+
+	self->tok = (token) { self->pos, typ, self->line, n, 0 };
 	(void) token_channel_send(self->chan, self->tok);
-	self->pos++;
+
+	self->pos += n;
+}
+
+/*******************************************************************************
+ * @fn peek
+ * @brief Look at the next character in the source buffer but do not move to
+ * its position.
+ ******************************************************************************/
+char peek(scanner *self)
+{
+	assert(self);
+	
+	if (*self->pos == '\0') {
+		return '\0';	
+	}
+
+	return *(self->pos + 1);
 }
