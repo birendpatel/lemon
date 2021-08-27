@@ -34,10 +34,13 @@ static const char *lookup[] = {
 	[_SEMICOLON] = "SEMICOLON",
 	[_LEFTBRACKET] = "LEFT BRACKET",
 	[_RIGHTBRACKET] = "RIGHT BRACKET",
+	[_LEFTPAREN] = "LEFT PARENTHESIS",
+	[_RIGHTPAREN] = "RIGHT PARENTHESIS",
+	[_LEFTBRACE] = "LEFT BRACE",
+	[_RIGHTBRACE] = "RIGHT BRACE",
 	[_DOT] = "DOT",
 	[_TILDE] = "TILDE",
 	[_COMMA] = "COMMA",
-	[_STAR] = "STAR",
 	[_EQUAL] = "EQUAL",
 	[_EQUALEQUAL] = "EQUAL EQUAL",
 	[_NOTEQUAL] = "NOT EQUAL",
@@ -56,7 +59,7 @@ static const char *lookup[] = {
 	[_LEQ] = "LESS OR EQUAL",
 	[_ADD] = "ADD",
 	[_MINUS] = "MINUS",
-	[_MULT] = "MULTIPLICATION",
+	[_STAR] = "STAR",
 	[_DIV] = "DIVISION",
 	[_MOD] = "MODULO",
 	[_FOR] = "FOR LOOP",
@@ -403,15 +406,82 @@ static void scan(scanner *self)
 			consume(self, _SEMICOLON);
 			break;
 
-		case '{':
+		case '[':
 			consume(self, _LEFTBRACKET);
 			break;
 
-		case '}':
+		case ']':
 			consume(self, _RIGHTBRACKET);
 			break;
+
+		case '(':
+			consume(self, _LEFTPAREN);
+			break;
+
+		case ')':
+			consume(self, _RIGHTPAREN);
+			break;
+
+		case '{':
+			consume(self, _LEFTBRACE);
+			break;
+
+		case '}':
+			consume(self, _RIGHTBRACE);
+			break;
+
+		case '.':
+			consume(self, _DOT);
+			break;
+
+		case '~':
+			consume(self, _TILDE);
+			break;
+
+		case ',':
+			consume(self, _COMMA);
+			break;
+
+		case '*':
+			consume(self, _STAR);
+			break;
+
+		case '\'':
+			consume(self, _BITNOT);
+			break;
+
+		case '!':
+			consume(self, _NOT);
+			break;
+
+		case '^':
+			consume(self, _BITXOR);
+			break;
+
+		case '+':
+			consume(self, _ADD);
+			break;
+
+		case '-':
+			consume(self, _MINUS);
+			break;
+
+		case '/':
+			consume(self, _DIV);
+			break;
+
+		case '%':
+			consume(self, _MOD);
+			break;
+
+		default:
+			self->tok = (token) {NULL, _INVALID, self->line, 0, 0};
+			(void) token_channel_send(self->chan, self->tok);
+			goto exit;
 		}
 	}
+
+exit:;
 }
 
 /*******************************************************************************
