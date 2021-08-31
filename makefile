@@ -16,12 +16,15 @@ CFLAGS += -march=native
 
 vpath %.h ./src
 vpath %.h ./src/lib
+vpath %.h ./src/assets
 vpath %.h ./extern/unity
 
 vpath %.c ./src
+vpath %.c ./src/lib
+vpath %.c ./src/assets
 vpath %.c ./extern/unity
 
-objects := main.o xerror.o options.o compile.o parser.o scanner.o
+objects := main.o xerror.o options.o compile.o parser.o scanner.o kmap.o
 
 ###############################################################################
 # build
@@ -53,7 +56,8 @@ xerror.o: xerror.h
 options.o : xerror.h options.h
 compile.o : xerror.h compile.h parser.h
 parser.o : xerror.h parser.h channel.h scanner.h
-scanner.o : xerror.h scanner.h channel.h
+scanner.o : xerror.h scanner.h channel.h kmap.h
+kmap.o : kmap.h scanner.h
 
 ###############################################################################
 # docs

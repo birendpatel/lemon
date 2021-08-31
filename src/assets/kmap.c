@@ -2,6 +2,15 @@
 /* Command-line: gperf -t --hash-function-name=kmap_hash --lookup-function-name=kmap_lookup -C --null-strings --output-file=kmap.c keywords.txt  */
 /* Computed positions: -k'1-2' */
 
+//TODO
+//three gperf modifications which need to be automated:
+//include string.h
+//include gcc pragmas to override gperf size_t conversions
+//swap strcmp for strncmp
+//remove struct def and place in kmap.h
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wconversion"
+
 #if !((' ' == 32) && ('!' == 33) && ('"' == 34) && ('#' == 35) \
       && ('%' == 37) && ('&' == 38) && ('\'' == 39) && ('(' == 40) \
       && (')' == 41) && ('*' == 42) && ('+' == 43) && (',' == 44) \
@@ -31,9 +40,8 @@
 
 #line 1 "keywords.txt"
 
+#include <string.h>
 #include "kmap.h"
-#line 4 "keywords.txt"
-struct kv_pair { char *name; token_type typ; };
 
 #define TOTAL_KEYWORDS 17
 #define MIN_WORD_LENGTH 2
@@ -139,9 +147,24 @@ kmap_lookup (register const char *str, register size_t len)
         {
           register const char *s = wordlist[key].name;
 
-          if (s && *str == *s && !strcmp (str + 1, s + 1))
+	  //GPERF MODIFICATION:
+	  //old code: if (s && *str == *s && !strcmp (str + 1, s + 1))
+	  //
+	  //since the lemon scanner points to in-memory source code, it
+	  //does not guarantee that the current lexeme is null-terminated.
+	  //indeed, the null terminator only appears at the end of the
+	  //in-memory block.
+	  //
+	  //therefore, the code that gperf automatically generates will never
+	  //trigger because strcmp requires two null-terminated strings.
+	  
+	  if (s && !strncmp(str, s, len))
+	  {
             return &wordlist[key];
+	  }
         }
     }
   return 0;
 }
+
+#pragma GCC diagnostic pop

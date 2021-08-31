@@ -13,6 +13,7 @@
 
 #include "scanner.h"
 #include "defs.h" //kib, fallthrough
+#include "assets/kmap.h"
 #include "lib/channel.h"
 
 static void* start_routine(void *data);
@@ -32,6 +33,7 @@ static bool is_letter_digit(char ch);
 static bool is_letter(char ch);
 static bool is_digit(char ch);
 static bool is_whitespace_eof(char ch);
+static void make_id_or_kw_token(scanner *self, uint32_t len);
 
 make_channel(token, token, static inline)
 
@@ -595,22 +597,38 @@ static xerror send_id_or_kw(scanner *self)
 			return XEUNDEFINED;
 		}
 	}
-
+	
 	ptrdiff_t delta = self->curr - self->pos;
+	assert(delta >= 0);
 
-	self->tok = (token) {
-		.lexeme = self->pos,
-		.type = _IDENTIFIER,
-		.line = self->line,
-		.len = (uint32_t) delta,
-		.flags = TOKEN_OKAY
-	};
-
+	make_id_or_kw_token(self, (uint32_t) delta);
 	(void) token_channel_send(self->chan, self->tok);
-
 	self->pos = self->curr;
 
 	return XESUCCESS;
+}
+
+//determine if the word with len chars at the current position is a keyword
+//or an identifier, and construct its token.
+static void make_id_or_kw_token(scanner *self, uint32_t len)
+{
+	assert(self);
+	assert(len);
+
+	self->tok.line = self->line;
+	self->tok.flags = TOKEN_OKAY;
+
+	const kv_pair *kv = kmap_lookup(self->pos, len);
+
+	if (kv) {
+		self->tok.type = kv->typ;
+		self->tok.lexeme = NULL;
+		self->tok.len = 0;
+	} else {
+		self->tok.type = _IDENTIFIER;
+		self->tok.lexeme = self->pos;
+		self->tok.len = len;
+	}
 }
 
 //latin alphabet, underscores, zero thru nine

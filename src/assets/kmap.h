@@ -9,6 +9,11 @@
 
 #include "../scanner.h"
 
-typedef struct kv_pair kv_pair;
+#include <stddef.h>
+
+typedef struct kv_pair {
+	char *name;
+	token_type typ;
+} kv_pair;
 
 const struct kv_pair *kmap_lookup(const char *str, size_t len);
