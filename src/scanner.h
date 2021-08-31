@@ -36,7 +36,6 @@ typedef enum token_type {
 	_DOT,		// .
 	_TILDE,		// ~
 	_COMMA,		// ,
-	_STAR,		// *
 
 	//operators
 	_EQUAL,		// =
@@ -57,7 +56,7 @@ typedef enum token_type {
 	_LEQ,		// <=
 	_ADD,		// +
 	_MINUS,		// -
-	_MULT,		// *
+	_STAR,		// *
 	_DIV,		// /
 	_MOD,		// %
 
@@ -99,14 +98,22 @@ typedef enum token_type {
  * 	@brief Pointer into the input src provided on scanner_init
  * @var token::len
  * 	@brief Lexeme byte length
+ * @var token::flags
+ * 	@brief May contain set bits for any of the flags macro definitions.
+ * @note shallow memcmp and memcpy are valid operations on this struct.
  ******************************************************************************/
 typedef struct token {
 	char *lexeme;
 	uint32_t type;
 	uint32_t line;
 	uint32_t len;
-	uint32_t flags; //reserved
+	uint32_t flags;
 } token;
+
+//flag bits
+#define TOKEN_OKAY	0
+#define TOKEN_BAD_NUM	1 << 0 /**< @brief Ill-formed number literal */
+#define TOKEN_BAD_STR	1 << 1 /**< @brief Ill-formed string literal */
 
 /*******************************************************************************
  * @fn token_print

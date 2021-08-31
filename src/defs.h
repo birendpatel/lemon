@@ -11,3 +11,6 @@
 
 //allocation helpers
 #define KiB(x) ((size_t) x * (size_t) 1024)
+
+//wrapper for gcc fallthrough extension
+#define fallthrough __attribute__((fallthrough))

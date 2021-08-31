@@ -7,16 +7,33 @@
 #include <assert.h>
 #include <pthread.h> //mutex, attr, create, detach
 #include <stdbool.h>
+#include <stddef.h> //ptrdiff_t
 #include <stdio.h> //fprintf
 #include <stdlib.h> //malloc
 
 #include "scanner.h"
-#include "defs.h" //kib
+#include "defs.h" //kib, fallthrough
+#include "assets/kmap.h"
 #include "lib/channel.h"
 
 static void* start_routine(void *data);
 static void scan(scanner *self);
 static const char *get_token_name(token_type typ);
+static void end_routine(scanner *self);
+static void consume(scanner *self, token_type typ, uint32_t n);
+static void consume_ifpeek(scanner *self, char next, token_type a, token_type b);
+static char peek(scanner *self);
+static void consume_comment(scanner *self);
+void consume_number(scanner *self);
+void consume_string(scanner *self);
+static uint32_t synchronize(scanner *self);
+static inline void send_invalid(scanner *self);
+static xerror send_id_or_kw(scanner *self);
+static bool is_letter_digit(char ch);
+static bool is_letter(char ch);
+static bool is_digit(char ch);
+static bool is_whitespace_eof(char ch);
+static void make_id_or_kw_token(scanner *self, uint32_t len);
 
 make_channel(token, token, static inline)
 
@@ -32,10 +49,13 @@ static const char *lookup[] = {
 	[_SEMICOLON] = "SEMICOLON",
 	[_LEFTBRACKET] = "LEFT BRACKET",
 	[_RIGHTBRACKET] = "RIGHT BRACKET",
+	[_LEFTPAREN] = "LEFT PARENTHESIS",
+	[_RIGHTPAREN] = "RIGHT PARENTHESIS",
+	[_LEFTBRACE] = "LEFT BRACE",
+	[_RIGHTBRACE] = "RIGHT BRACE",
 	[_DOT] = "DOT",
 	[_TILDE] = "TILDE",
 	[_COMMA] = "COMMA",
-	[_STAR] = "STAR",
 	[_EQUAL] = "EQUAL",
 	[_EQUALEQUAL] = "EQUAL EQUAL",
 	[_NOTEQUAL] = "NOT EQUAL",
@@ -54,7 +74,7 @@ static const char *lookup[] = {
 	[_LEQ] = "LESS OR EQUAL",
 	[_ADD] = "ADD",
 	[_MINUS] = "MINUS",
-	[_MULT] = "MULTIPLICATION",
+	[_STAR] = "STAR",
 	[_DIV] = "DIVISION",
 	[_MOD] = "MODULO",
 	[_FOR] = "FOR LOOP",
@@ -87,10 +107,13 @@ static const char *get_token_name(token_type typ)
 	return err;
 }
 
+//note: lexemes point to regions of the in-memory source code so they are not
+//guaranteed to be null-terminated strings. Therefore we use the %.*s format
+//directive.
 void token_print(token tok)
 {
-	static const char *lexfmt = "TOKEN { line %-10d: %-17s: %.*s }\n";
-	static const char *nolexfmt = "TOKEN { line %-10d: %-17s }\n";
+	static const char *lexfmt = "TOKEN { line %-10d: %-20s: %.*s }\n";
+	static const char *nolexfmt = "TOKEN { line %-10d: %-20s }\n";
 	const char *tokname = get_token_name(tok.type);
 
 	if (tok.lexeme) {
@@ -121,16 +144,18 @@ void token_print(token tok)
  * 	@brief The position of the current byte being analysed by the scanner.
  * @var scanner::curr
  * 	@brief For multi-character lexemes, curr saves the position of the
- * 	first byte in the lexeme while pos advances forwards.
+ * 	first byte in the lexeme while pos advances forwards. Curr is another
+ * 	temporary workspace like tok, and its value can be overridden or reset
+ * 	by any function call at any time.
  ******************************************************************************/
 struct scanner {
 	pthread_t tid;
 	pthread_mutex_t mutex;
 	token_channel *const chan;
 	char *src;
+	char *pos;
+	char *curr;
 	uint32_t line;
-	uint32_t pos;
-	uint32_t curr;
 	token tok;
 };
 
@@ -214,11 +239,11 @@ xerror scanner_init(scanner **self, char *src)
 	}
 
 	tmp->src = src;
+	tmp->pos = src;
+	tmp->curr = NULL;
 	tmp->tok = (token) { NULL, 0, 0, 0, 0 };
 	tmp->line = 1;
-	tmp->pos = 0;
-	tmp->curr = 0;
-	
+
 	err = pthread_create(&tmp->tid, &attr, start_routine, tmp);
 
 	if (err) {
@@ -273,9 +298,30 @@ static void* start_routine(void *data)
 
 	scan(self);
 
+	end_routine(self);
+
 	pthread_mutex_unlock(&self->mutex);
 	pthread_exit(NULL);
 	return NULL;
+}
+
+/*******************************************************************************
+ * @fn end_routine
+ * @brief Exit call for scanner thread. Send EOF token and close channel.
+ * @note It is undefined behavior in release mode to call this routine on a
+ * closed channel.
+ ******************************************************************************/
+static void end_routine(scanner *self)
+{
+	assert(self);
+	assert(self->chan);
+	assert(self->chan->flags == CHANNEL_OPEN);
+
+	self->tok = (token) { NULL, _EOF, self->line, 0, 0};
+
+	(void) token_channel_send(self->chan, self->tok);
+
+	token_channel_close(self->chan);
 }
 
 /*******************************************************************************
@@ -323,12 +369,13 @@ runtime speed.
 
 All of this relies on an implicit contract; the main thread promises to never
 modify or read anything in the scanner except the channel. Since this is
-the only unsafe function provided by the scanner in its API, the contract is 
+the only unsafe function provided by the scanner in its API, the contract is
 easy to verify.
 */
 xerror scanner_recv(scanner *self, token *tok)
 {
 	assert(self);
+	assert(self->chan);
 	assert(tok);
 
 	//the one and only mutex bypass in the entirety of the scanner
@@ -349,12 +396,508 @@ xerror scanner_recv(scanner *self, token *tok)
  ******************************************************************************/
 static void scan(scanner *self)
 {
-	//placeholder testing
-	self->tok = (token) { "hello", _IDENTIFIER, 42, 5, 123456};
+	assert(self);
+	assert(self->chan);
+	assert(self->chan->flags == CHANNEL_OPEN);
+
+	xerror err = XESUCCESS;
+
+	while (*self->pos) {
+		switch (*self->pos) {
+		//whitespace
+		case '\n':
+			self->line++;
+			fallthrough;
+
+		case ' ':
+			fallthrough;
+
+		case '\r':
+			fallthrough;
+
+		case '\t':
+			fallthrough;
+
+		case '\v':
+			fallthrough;
+
+		case '\f':
+			self->pos++;
+			break;
+
+		case '#':
+			consume_comment(self);
+			break;
+
+		//single symbols
+		case ';':
+			consume(self, _SEMICOLON, 1);
+			break;
+
+		case '[':
+			consume(self, _LEFTBRACKET, 1);
+			break;
+
+		case ']':
+			consume(self, _RIGHTBRACKET, 1);
+			break;
+
+		case '(':
+			consume(self, _LEFTPAREN, 1);
+			break;
+
+		case ')':
+			consume(self, _RIGHTPAREN, 1);
+			break;
+
+		case '{':
+			consume(self, _LEFTBRACE, 1);
+			break;
+
+		case '}':
+			consume(self, _RIGHTBRACE, 1);
+			break;
+
+		case '.':
+			consume(self, _DOT, 1);
+			break;
+
+		case '~':
+			consume(self, _TILDE, 1);
+			break;
+
+		case ',':
+			consume(self, _COMMA, 1);
+			break;
+
+		case '*':
+			consume(self, _STAR, 1);
+			break;
+
+		case '\'':
+			consume(self, _BITNOT, 1);
+			break;
+
+		case '^':
+			consume(self, _BITXOR, 1);
+			break;
+
+		case '+':
+			consume(self, _ADD, 1);
+			break;
+
+		case '-':
+			consume(self, _MINUS, 1);
+			break;
+
+		case '/':
+			consume(self, _DIV, 1);
+			break;
+
+		case '%':
+			consume(self, _MOD, 1);
+			break;
+
+		//single or double symbols
+		case '=':
+			consume_ifpeek(self, '=', _EQUALEQUAL, _EQUAL);
+			break;
+
+		case '!':
+			consume_ifpeek(self, '=', _NOTEQUAL, _NOT);
+			break;
+
+		case '&':
+			consume_ifpeek(self, '&', _AND, _BITAND);
+			break;
+
+		case '|':
+			consume_ifpeek(self, '|', _OR, _BITOR);
+			break;
+
+		case '<':
+			if (peek(self) == '<') {
+				consume(self, _LSHIFT, 2);
+			} else {
+				consume_ifpeek(self, '=', _LEQ, _LESS);
+			}
+
+			break;
+
+		case '>':
+			if (peek(self) == '>') {
+				consume(self, _RSHIFT, 2);
+			} else {
+				consume_ifpeek(self, '=', _GEQ, _GREATER);
+			}
+
+			break;
+
+		//literals
+		case '0':
+			fallthrough;
+		case '1':
+			fallthrough;
+		case '2':
+			fallthrough;
+		case '3':
+			fallthrough;
+		case '4':
+			fallthrough;
+		case '5':
+			fallthrough;
+		case '6':
+			fallthrough;
+		case '7':
+			fallthrough;
+		case '8':
+			fallthrough;
+		case '9':
+			consume_number(self);
+			break;
+
+		case '"':
+			consume_string(self);
+			break;
+
+		//identifiers and keywords
+		default:
+			err = send_id_or_kw(self);
+
+			if (err) {
+				send_invalid(self);
+			}
+		}
+	}
+}
+
+/*******************************************************************************
+ * @fn send_id_or_kw
+ * @brief Send the current word if it is a valid identifier or keyword
+ * @return XEUNDEFINED if the current word is not valid
+ ******************************************************************************/
+static xerror send_id_or_kw(scanner *self)
+{
+	assert(self);
+
+	self->curr = self->pos;
+
+	if (!is_letter(*self->curr)) {
+		return XEUNDEFINED;
+	}
+
+	self->curr++;
+
+	for (;;) {
+		if (is_letter_digit(*self->curr)) {
+			self->curr++;
+		} else if (is_whitespace_eof(*self->curr)) {
+			break;
+		} else {
+			return XEUNDEFINED;
+		}
+	}
+	
+	ptrdiff_t delta = self->curr - self->pos;
+	assert(delta >= 0);
+
+	make_id_or_kw_token(self, (uint32_t) delta);
+	(void) token_channel_send(self->chan, self->tok);
+	self->pos = self->curr;
+
+	return XESUCCESS;
+}
+
+//determine if the word with len chars at the current position is a keyword
+//or an identifier, and construct its token.
+static void make_id_or_kw_token(scanner *self, uint32_t len)
+{
+	assert(self);
+	assert(len);
+
+	self->tok.line = self->line;
+	self->tok.flags = TOKEN_OKAY;
+
+	const kv_pair *kv = kmap_lookup(self->pos, len);
+
+	if (kv) {
+		self->tok.type = kv->typ;
+		self->tok.lexeme = NULL;
+		self->tok.len = 0;
+	} else {
+		self->tok.type = _IDENTIFIER;
+		self->tok.lexeme = self->pos;
+		self->tok.len = len;
+	}
+}
+
+//latin alphabet, underscores, zero thru nine
+static bool is_letter_digit(char ch) 
+{
+	return is_letter(ch) || is_digit(ch);
+}
+
+//latin alphabet, underscores
+static bool is_letter(char ch)
+{
+	if (ch == '_') {
+		return true;
+	}
+
+	if (ch >= 65 && ch <= 90) {
+		return true;
+	}
+
+	if (ch >= 97 && ch <= 122) {
+		return true;
+	}
+
+	return false;
+}
+
+//zero thru nine
+static bool is_digit(char ch)
+{
+	if (ch >= 48 && ch <= 57) {
+		return true;
+	}
+
+	return false;
+}
+
+//form feed, carriage return, line feed, horizontal tab, vertical tab,
+//space, null character
+static bool is_whitespace_eof(char ch)
+{
+	if (ch == '\0') {
+		return true;
+	}
+
+	if (ch == ' ') {
+		return true;
+	}
+
+	if (ch >= 9 && ch <= 13) {
+		return true;
+	}
+
+	return false;
+}
+
+/*******************************************************************************
+ * @fn send_invalid
+ * @brief Send an invalid token and synchronize scanner to the next word.
+ ******************************************************************************/
+static inline void send_invalid(scanner *self)
+{
+	assert(self);
+	
+	char *start = self->pos;
+	uint32_t n = synchronize(self);
+
+	self->tok = (token) {
+		.lexeme = start,
+		.type = _INVALID,
+		.line = self->line,
+		.len = n,
+		.flags = TOKEN_OKAY
+	};
+
+	(void) token_channel_send(self->chan, self->tok);
+}
+
+/*******************************************************************************
+ * @fn consume
+ * @brief Create a token for the next n characters at the current position and
+ * advance the scanner to consume the lexeme.
+ ******************************************************************************/
+static void consume(scanner *self, token_type typ, uint32_t n)
+{
+	assert(self);
+	assert(n > 0);
+	assert(typ < _TOKEN_TYPE_COUNT);
+
+	self->tok = (token) {
+		.lexeme = self->pos,
+		.type = typ,
+		.line = self->line,
+		.len = n,
+		.flags = TOKEN_OKAY
+	};
 
 	(void) token_channel_send(self->chan, self->tok);
 
-	self->tok = (token) { NULL, _EOF, 1, 2, 3 };
+	self->pos += n;
+}
+
+/*******************************************************************************
+ * @fn consume_ifpeek
+ * @brief Peek the next character in the source. If it matches next, then
+ * consume token a. Otherwise, consume token b.
+ * @param a Token with a two-character lexeme
+ * @param b Token with a one-character lexeme
+ ******************************************************************************/
+static void consume_ifpeek(scanner *self, char next, token_type a, token_type b)
+{
+	assert(self);
+	assert(next);
+	assert(a < _TOKEN_TYPE_COUNT && a != _INVALID);
+	assert(b < _TOKEN_TYPE_COUNT && b != _INVALID);
+
+	char ch = peek(self);
+
+	assert(ch);
+
+	if (ch == next) {
+		consume(self, a, 2);
+	} else {
+		consume(self, b, 1);
+	}
+}
+
+/*******************************************************************************
+ * @fn consume_comment
+ * @brief Throw away source characters until '\0' or '\n' is encountered.
+ ******************************************************************************/
+static void consume_comment(scanner *self)
+{
+	assert(self);
+
+	self->pos++;
+
+	while (*self->pos != '\0' && *self->pos != '\n') {
+		self->pos++;
+	}
+}
+
+/*******************************************************************************
+ * @fn consume_number
+ * @brief Tokenize a suspected number.
+ * @details This function is a weak consumer and will stop early at the first
+ * sight of a non-digit. For example, 3.14e3 will be scanned as two tokens;
+ * a float 3.14 and an identifier e3.
+ * @return If the string is not a valid float or integer form then an invalid
+ * token will be sent with the TOKEN_BAD_NUM flag set.
+ ******************************************************************************/
+void consume_number(scanner *self)
+{
+	assert(self);
+
+	bool seen_dot = false;
+	uint32_t guess = _LITERALINT;
+	ptrdiff_t delta = 0;
+	self->curr = self->pos + 1;
+
+	for (;;) {
+		if (*self->curr == '.') {
+			if (seen_dot) {
+				break;
+			}
+
+			guess = _LITERALFLOAT;
+			seen_dot = true;
+			self->curr++;
+		} else if (is_digit(*self->curr)) {
+			self->curr++;
+		} else {
+			break;
+		}
+	}
+	
+	delta = self->curr - self->pos;
+
+	self->tok = (token) {
+		.lexeme = self->pos,
+		.type = guess,
+		.line = self->line,
+		.len = (uint32_t) delta,
+		.flags = TOKEN_OKAY
+	};
 
 	(void) token_channel_send(self->chan, self->tok);
+	self->pos = self->curr;
+	return;
+}
+
+/*******************************************************************************
+ * @fn synchronize
+ * @brief Advance scanner position to the next whitespace or EOF token.
+ * @returns Total characters consumed.
+ ******************************************************************************/
+static uint32_t synchronize(scanner *self)
+{
+	assert(self);
+
+	uint32_t i = 0;
+
+	while (!is_whitespace_eof(*self->pos)) {
+		i++;
+		self->pos++;
+	}
+
+	return i;
+}
+
+/*******************************************************************************
+ * @fn consume_string
+ * @brief Tokenize a suspected string.
+ * @return If the string literal is not terminated with a quote then an invalid
+ * token will be sent with the TOKEN_BAD_STR flag set.
+ ******************************************************************************/
+void consume_string(scanner *self)
+{
+	assert(self);
+
+	self->curr = self->pos + 1;
+
+	while (*self->curr != '"') {
+		if (*self->curr == '\0') {
+			self->tok = (token) {
+				.lexeme = NULL,
+				.type = _INVALID,
+				.line = self->line,
+				.len = 0,
+				.flags = TOKEN_BAD_STR
+			};
+
+			(void) token_channel_send(self->chan, self->tok);
+			
+			self->pos = self->curr;
+
+			return;
+		}
+
+		self->curr++;
+	}
+
+	ptrdiff_t delta = (self->curr - self->pos) - 1;
+	assert(delta >= 0 && "conversion to uint32 will fail");
+
+	self->tok = (token) {
+		.lexeme = self->pos + 1,
+		.type = _LITERALSTR,
+		.line = self->line,
+		.len = (uint32_t) delta,
+		.flags = TOKEN_OKAY
+	};
+
+	(void) token_channel_send(self->chan, self->tok);
+
+	self->pos = self->curr + 1;
+}
+
+/*******************************************************************************
+ * @fn peek
+ * @brief Look at the next character in the source buffer but do not move to
+ * its position.
+ ******************************************************************************/
+static char peek(scanner *self)
+{
+	assert(self);
+
+	if (*self->pos == '\0') {
+		return '\0';
+	}
+
+	return *(self->pos + 1);
 }
