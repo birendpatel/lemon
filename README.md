@@ -47,3 +47,4 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Add thread ID tracing to the channel template (EASY)
 - [ ] Add a lookup table for pthreads errors (EASY)
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
+- [ ] Add arrow key support for REPL (MEDIUM)
