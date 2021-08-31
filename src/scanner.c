@@ -27,6 +27,11 @@ void consume_number(scanner *self);
 void consume_string(scanner *self);
 static uint32_t synchronize(scanner *self);
 static inline void send_invalid(scanner *self);
+static xerror send_id_or_kw(scanner *self);
+static bool is_letter_digit(char ch);
+static bool is_letter(char ch);
+static bool is_digit(char ch);
+static bool is_whitespace_eof(char ch);
 
 make_channel(token, token, static inline)
 
@@ -393,6 +398,8 @@ static void scan(scanner *self)
 	assert(self->chan);
 	assert(self->chan->flags == CHANNEL_OPEN);
 
+	xerror err = XESUCCESS;
+
 	while (*self->pos) {
 		switch (*self->pos) {
 		//whitespace
@@ -553,9 +560,110 @@ static void scan(scanner *self)
 
 		//identifiers and keywords
 		default:
-			send_invalid(self);
+			err = send_id_or_kw(self);
+
+			if (err) {
+				send_invalid(self);
+			}
 		}
 	}
+}
+
+/*******************************************************************************
+ * @fn send_id_or_kw
+ * @brief Send the current word if it is a valid identifier or keyword
+ * @return XEUNDEFINED if the current word is not valid
+ ******************************************************************************/
+static xerror send_id_or_kw(scanner *self)
+{
+	assert(self);
+
+	self->curr = self->pos;
+
+	if (!is_letter(*self->curr)) {
+		return XEUNDEFINED;
+	}
+
+	self->curr++;
+
+	for (;;) {
+		if (is_letter_digit(*self->curr)) {
+			self->curr++;
+		} else if (is_whitespace_eof(*self->curr)) {
+			break;
+		} else {
+			return XEUNDEFINED;
+		}
+	}
+
+	ptrdiff_t delta = self->curr - self->pos;
+
+	self->tok = (token) {
+		.lexeme = self->pos,
+		.type = _IDENTIFIER,
+		.line = self->line,
+		.len = (uint32_t) delta,
+		.flags = TOKEN_OKAY
+	};
+
+	(void) token_channel_send(self->chan, self->tok);
+
+	self->pos = self->curr;
+
+	return XESUCCESS;
+}
+
+//latin alphabet, underscores, zero thru nine
+static bool is_letter_digit(char ch) 
+{
+	return is_letter(ch) || is_digit(ch);
+}
+
+//latin alphabet, underscores
+static bool is_letter(char ch)
+{
+	if (ch == '_') {
+		return true;
+	}
+
+	if (ch >= 65 && ch <= 90) {
+		return true;
+	}
+
+	if (ch >= 97 && ch <= 122) {
+		return true;
+	}
+
+	return false;
+}
+
+//zero thru nine
+static bool is_digit(char ch)
+{
+	if (ch >= 48 && ch <= 57) {
+		return true;
+	}
+
+	return false;
+}
+
+//form feed, carriage return, line feed, horizontal tab, vertical tab,
+//space, null character
+static bool is_whitespace_eof(char ch)
+{
+	if (ch == '\0') {
+		return true;
+	}
+
+	if (ch == ' ') {
+		return true;
+	}
+
+	if (ch >= 9 && ch <= 13) {
+		return true;
+	}
+
+	return false;
 }
 
 /*******************************************************************************
@@ -647,6 +755,9 @@ static void consume_comment(scanner *self)
 /*******************************************************************************
  * @fn consume_number
  * @brief Tokenize a suspected number.
+ * @details This function is a weak consumer and will stop early at the first
+ * sight of a non-digit. For example, 3.14e3 will be scanned as two tokens;
+ * a float 3.14 and an identifier e3.
  * @return If the string is not a valid float or integer form then an invalid
  * token will be sent with the TOKEN_BAD_NUM flag set.
  ******************************************************************************/
@@ -654,77 +765,40 @@ void consume_number(scanner *self)
 {
 	assert(self);
 
+	bool seen_dot = false;
 	uint32_t guess = _LITERALINT;
 	ptrdiff_t delta = 0;
 	self->curr = self->pos + 1;
 
 	for (;;) {
-		switch (*self->curr) {
-		case '.':
+		if (*self->curr == '.') {
+			if (seen_dot) {
+				break;
+			}
+
 			guess = _LITERALFLOAT;
-			fallthrough;
-		case '0':
-			fallthrough;
-		case '1':
-			fallthrough;
-		case '2':
-			fallthrough;
-		case '3':
-			fallthrough;
-		case '4':
-			fallthrough;
-		case '5':
-			fallthrough;
-		case '6':
-			fallthrough;
-		case '7':
-			fallthrough;
-		case '8':
-			fallthrough;
-		case '9':
+			seen_dot = true;
 			self->curr++;
+		} else if (is_digit(*self->curr)) {
+			self->curr++;
+		} else {
 			break;
-
-		case '\0':
-			fallthrough;
-		case ' ':
-			fallthrough;
-		case '\t':
-			fallthrough;
-		case '\r':
-			fallthrough;
-		case '\v':
-			fallthrough;
-		case '\f':
-			fallthrough;
-		case '\n':
-			delta = self->curr - self->pos;
-
-			self->tok = (token) {
-				.lexeme = self->pos,
-				.type = guess,
-				.line = self->line,
-				.len = (uint32_t) delta,
-				.flags = TOKEN_OKAY
-			};
-
-			(void) token_channel_send(self->chan, self->tok);
-			self->pos = self->curr;
-			return;
-
-		default:
-			self->tok = (token) {
-				.lexeme = NULL,
-				.type = _INVALID,
-				.line = self->line,
-				.len = 0,
-				.flags = TOKEN_BAD_NUM
-			};
-
-			send_invalid(self);
-			return;
 		}
 	}
+	
+	delta = self->curr - self->pos;
+
+	self->tok = (token) {
+		.lexeme = self->pos,
+		.type = guess,
+		.line = self->line,
+		.len = (uint32_t) delta,
+		.flags = TOKEN_OKAY
+	};
+
+	(void) token_channel_send(self->chan, self->tok);
+	self->pos = self->curr;
+	return;
 }
 
 /*******************************************************************************
@@ -738,28 +812,12 @@ static uint32_t synchronize(scanner *self)
 
 	uint32_t i = 0;
 
-	for (;;) {
-		switch (*self->pos) {
-		case '\0':
-			fallthrough;
-		case ' ':
-			fallthrough;
-		case '\t':
-			fallthrough;
-		case '\r':
-			fallthrough;
-		case '\v':
-			fallthrough;
-		case '\f':
-			fallthrough;
-		case '\n':
-			return i;
-
-		default:
-			i++;
-			self->pos++;
-		}
+	while (!is_whitespace_eof(*self->pos)) {
+		i++;
+		self->pos++;
 	}
+
+	return i;
 }
 
 /*******************************************************************************
