@@ -7,6 +7,7 @@
 #include <assert.h>
 #include <pthread.h> //mutex, attr, create, detach
 #include <stdbool.h>
+#include <stddef.h> //ptrdiff_t
 #include <stdio.h> //fprintf
 #include <stdlib.h> //malloc
 
@@ -22,6 +23,8 @@ static void consume(scanner *self, token_type typ, uint32_t n);
 static void consume_ifpeek(scanner *self, char next, token_type a, token_type b);
 static char peek(scanner *self);
 static void consume_comment(scanner *self);
+void consume_number(scanner *self);
+void consume_string(scanner *self);
 
 make_channel(token, token, static inline)
 
@@ -129,7 +132,9 @@ void token_print(token tok)
  * 	@brief The position of the current byte being analysed by the scanner.
  * @var scanner::curr
  * 	@brief For multi-character lexemes, curr saves the position of the
- * 	first byte in the lexeme while pos advances forwards.
+ * 	first byte in the lexeme while pos advances forwards. Curr is another
+ * 	temporary workspace like tok, and its value can be overridden or reset
+ * 	by any function call at any time.
  ******************************************************************************/
 struct scanner {
 	pthread_t tid;
@@ -226,7 +231,7 @@ xerror scanner_init(scanner **self, char *src)
 	tmp->curr = NULL;
 	tmp->tok = (token) { NULL, 0, 0, 0, 0 };
 	tmp->line = 1;
-	
+
 	err = pthread_create(&tmp->tid, &attr, start_routine, tmp);
 
 	if (err) {
@@ -291,7 +296,7 @@ static void* start_routine(void *data)
 /*******************************************************************************
  * @fn end_routine
  * @brief Exit call for scanner thread. Send EOF token and close channel.
- * @note It is undefined behavior in release mode to call this routine on a 
+ * @note It is undefined behavior in release mode to call this routine on a
  * closed channel.
  ******************************************************************************/
 static void end_routine(scanner *self)
@@ -352,7 +357,7 @@ runtime speed.
 
 All of this relies on an implicit contract; the main thread promises to never
 modify or read anything in the scanner except the channel. Since this is
-the only unsafe function provided by the scanner in its API, the contract is 
+the only unsafe function provided by the scanner in its API, the contract is
 easy to verify.
 */
 xerror scanner_recv(scanner *self, token *tok)
@@ -514,6 +519,35 @@ static void scan(scanner *self)
 
 			break;
 
+		//literals
+		case '0':
+			fallthrough;
+		case '1':
+			fallthrough;
+		case '2':
+			fallthrough;
+		case '3':
+			fallthrough;
+		case '4':
+			fallthrough;
+		case '5':
+			fallthrough;
+		case '6':
+			fallthrough;
+		case '7':
+			fallthrough;
+		case '8':
+			fallthrough;
+		case '9':
+			consume_number(self);
+			break;
+
+		case '"':
+			consume_string(self);
+			break;
+
+		//identifiers and keywords
+
 		default:
 			self->tok = (token) {NULL, _INVALID, self->line, 0, 0};
 			(void) token_channel_send(self->chan, self->tok);
@@ -535,7 +569,14 @@ static void consume(scanner *self, token_type typ, uint32_t n)
 	assert(n > 0);
 	assert(typ < _TOKEN_TYPE_COUNT);
 
-	self->tok = (token) { self->pos, typ, self->line, n, 0 };
+	self->tok = (token) {
+		.lexeme = self->pos,
+		.type = typ,
+		.line = self->line,
+		.len = n,
+		.flags = TOKEN_OKAY
+	};
+
 	(void) token_channel_send(self->chan, self->tok);
 
 	self->pos += n;
@@ -582,6 +623,62 @@ static void consume_comment(scanner *self)
 }
 
 /*******************************************************************************
+ * @fn consume_number
+ * @brief Tokenize a suspected number.
+ * @return If the string is not a valid float or integer form then an invalid
+ * token will be sent with the TOKEN_BAD_NUM flag set.
+ ******************************************************************************/
+void consume_number(scanner *self)
+{
+	assert(self);
+}
+
+/*******************************************************************************
+ * @fn consume_string
+ * @brief Tokenize a suspected string.
+ * @return If the string literal is not terminated with a quote then an invalid
+ * token will be sent with the TOKEN_BAD_STR flag set.
+ ******************************************************************************/
+void consume_string(scanner *self)
+{
+	assert(self);
+
+	self->curr = self->pos + 1;
+
+	while (*self->curr != '"') {
+		if (*self->curr == '\0') {
+			self->tok = (token) {
+				.lexeme = NULL,
+				.type = _INVALID,
+				.line = self->line,
+				.len = 0,
+				.flags = TOKEN_BAD_STR
+			};
+
+			(void) token_channel_send(self->chan, self->tok);
+			return;
+		}
+
+		self->curr++;
+	}
+
+	ptrdiff_t delta = (self->curr - self->pos) - 1;
+	assert(delta >= 0 && "conversion to uint32 will fail");
+
+	self->tok = (token) {
+		.lexeme = self->pos + 1,
+		.type = _LITERALSTR,
+		.line = self->line,
+		.len = (uint32_t) delta,
+		.flags = TOKEN_OKAY
+	};
+
+	(void) token_channel_send(self->chan, self->tok);
+
+	self->pos = self->curr + 1;
+}
+
+/*******************************************************************************
  * @fn peek
  * @brief Look at the next character in the source buffer but do not move to
  * its position.
@@ -589,9 +686,9 @@ static void consume_comment(scanner *self)
 static char peek(scanner *self)
 {
 	assert(self);
-	
+
 	if (*self->pos == '\0') {
-		return '\0';	
+		return '\0';
 	}
 
 	return *(self->pos + 1);
