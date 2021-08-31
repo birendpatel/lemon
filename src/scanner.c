@@ -25,7 +25,8 @@ static char peek(scanner *self);
 static void consume_comment(scanner *self);
 void consume_number(scanner *self);
 void consume_string(scanner *self);
-static void synchronize(scanner *self);
+static uint32_t synchronize(scanner *self);
+static inline void send_invalid(scanner *self);
 
 make_channel(token, token, static inline)
 
@@ -551,15 +552,32 @@ static void scan(scanner *self)
 			break;
 
 		//identifiers and keywords
-
 		default:
-			self->tok = (token) {NULL, _INVALID, self->line, 0, 0};
-			(void) token_channel_send(self->chan, self->tok);
-			goto exit;
+			send_invalid(self);
 		}
 	}
+}
 
-exit:;
+/*******************************************************************************
+ * @fn send_invalid
+ * @brief Send an invalid token and synchronize scanner to the next word.
+ ******************************************************************************/
+static inline void send_invalid(scanner *self)
+{
+	assert(self);
+	
+	char *start = self->pos;
+	uint32_t n = synchronize(self);
+
+	self->tok = (token) {
+		.lexeme = start,
+		.type = _INVALID,
+		.line = self->line,
+		.len = n,
+		.flags = TOKEN_OKAY
+	};
+
+	(void) token_channel_send(self->chan, self->tok);
 }
 
 /*******************************************************************************
@@ -690,7 +708,9 @@ void consume_number(scanner *self)
 				.flags = TOKEN_OKAY
 			};
 
-			goto exit;
+			(void) token_channel_send(self->chan, self->tok);
+			self->pos = self->curr;
+			return;
 
 		default:
 			self->tok = (token) {
@@ -701,23 +721,22 @@ void consume_number(scanner *self)
 				.flags = TOKEN_BAD_NUM
 			};
 
-			goto exit;
+			send_invalid(self);
+			return;
 		}
 	}
-
-exit:
-	(void) token_channel_send(self->chan, self->tok);
-	self->pos = self->curr;
-	synchronize(self); //no-op unless exiting from invalid token
 }
 
 /*******************************************************************************
  * @fn synchronize
  * @brief Advance scanner position to the next whitespace or EOF token.
+ * @returns Total characters consumed.
  ******************************************************************************/
-static void synchronize(scanner *self)
+static uint32_t synchronize(scanner *self)
 {
 	assert(self);
+
+	uint32_t i = 0;
 
 	for (;;) {
 		switch (*self->pos) {
@@ -734,9 +753,10 @@ static void synchronize(scanner *self)
 		case '\f':
 			fallthrough;
 		case '\n':
-			return;
+			return i;
 
 		default:
+			i++;
 			self->pos++;
 		}
 	}
