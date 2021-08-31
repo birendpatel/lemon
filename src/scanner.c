@@ -25,6 +25,7 @@ static char peek(scanner *self);
 static void consume_comment(scanner *self);
 void consume_number(scanner *self);
 void consume_string(scanner *self);
+static void synchronize(scanner *self);
 
 make_channel(token, token, static inline)
 
@@ -707,6 +708,38 @@ void consume_number(scanner *self)
 exit:
 	(void) token_channel_send(self->chan, self->tok);
 	self->pos = self->curr;
+	synchronize(self); //no-op unless exiting from invalid token
+}
+
+/*******************************************************************************
+ * @fn synchronize
+ * @brief Advance scanner position to the next whitespace or EOF token.
+ ******************************************************************************/
+static void synchronize(scanner *self)
+{
+	assert(self);
+
+	for (;;) {
+		switch (*self->pos) {
+		case '\0':
+			fallthrough;
+		case ' ':
+			fallthrough;
+		case '\t':
+			fallthrough;
+		case '\r':
+			fallthrough;
+		case '\v':
+			fallthrough;
+		case '\f':
+			fallthrough;
+		case '\n':
+			return;
+
+		default:
+			self->pos++;
+		}
+	}
 }
 
 /*******************************************************************************
