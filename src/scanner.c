@@ -21,6 +21,7 @@ static void end_routine(scanner *self);
 static void consume(scanner *self, token_type typ, uint32_t n);
 static void consume_ifpeek(scanner *self, char next, token_type a, token_type b);
 static char peek(scanner *self);
+static void consume_comment(scanner *self);
 
 make_channel(token, token, static inline)
 
@@ -384,6 +385,7 @@ static void scan(scanner *self)
 
 	while (*self->pos) {
 		switch (*self->pos) {
+		//whitespace
 		case '\n':
 			self->line++;
 			fallthrough;
@@ -404,6 +406,11 @@ static void scan(scanner *self)
 			self->pos++;
 			break;
 
+		case '#':
+			consume_comment(self);
+			break;
+
+		//single symbols
 		case ';':
 			consume(self, _SEMICOLON, 1);
 			break;
@@ -472,6 +479,7 @@ static void scan(scanner *self)
 			consume(self, _MOD, 1);
 			break;
 
+		//single or double symbols
 		case '=':
 			consume_ifpeek(self, '=', _EQUALEQUAL, _EQUAL);
 			break;
@@ -555,6 +563,21 @@ static void consume_ifpeek(scanner *self, char next, token_type a, token_type b)
 		consume(self, a, 2);
 	} else {
 		consume(self, b, 1);
+	}
+}
+
+/*******************************************************************************
+ * @fn consume_comment
+ * @brief Throw away source characters until '\0' or '\n' is encountered.
+ ******************************************************************************/
+static void consume_comment(scanner *self)
+{
+	assert(self);
+
+	self->pos++;
+
+	while (*self->pos != '\0' && *self->pos != '\n') {
+		self->pos++;
 	}
 }
 
