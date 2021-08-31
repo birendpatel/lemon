@@ -1,38 +1,22 @@
-for
-while
-break
-continue
-if
-else
-switch
-case
-fallthrough
-goto
-let
-mut
-bool
-i8
-i16
-i32
-i64
-i128
-u8
-u16
-u32
-u64
-u128
-f32
-f64
-str
-map
-arr
-mat
-vec
-rvar
-struct
-pub
-priv
-func
-return
-assert
-void
+%{
+#include "kmap.h"
+%}
+struct kv_pair { char *name; token_type typ; };
+%%
+for, _FOR
+while, _WHILE,
+break, _BREAK,
+continue, _CONTINUE,
+if, _IF
+else, _ELSE,
+switch, _SWITCH
+case, _CASE
+fallthrough, _FALLTHROUGH
+goto, _GOTO
+let, _LET
+mut, _MUT
+struct, _STRUCT
+pub, _PUB
+priv, _PRIV
+func, _FUNC
+return, _RETURN

@@ -1,6 +1,6 @@
 /* ANSI-C code produced by gperf version 3.1 */
-/* Command-line: gperf --output-file=kmap.c keywords.txt  */
-/* Computed positions: -k'1-3' */
+/* Command-line: gperf -t --hash-function-name=kmap_hash --lookup-function-name=kmap_lookup -C --null-strings --output-file=kmap.c keywords.txt  */
+/* Computed positions: -k'1-2' */
 
 #if !((' ' == 32) && ('!' == 33) && ('"' == 34) && ('#' == 35) \
       && ('%' == 37) && ('&' == 38) && ('\'' == 39) && ('(' == 40) \
@@ -29,13 +29,18 @@
 #error "gperf generated tables don't work with this execution character set. Please report a bug to <bug-gperf@gnu.org>."
 #endif
 
+#line 1 "keywords.txt"
 
-#define TOTAL_KEYWORDS 38
+#include "kmap.h"
+#line 4 "keywords.txt"
+struct kv_pair { char *name; token_type typ; };
+
+#define TOTAL_KEYWORDS 17
 #define MIN_WORD_LENGTH 2
 #define MAX_WORD_LENGTH 11
 #define MIN_HASH_VALUE 3
-#define MAX_HASH_VALUE 73
-/* maximum key range = 71, duplicates = 0 */
+#define MAX_HASH_VALUE 26
+/* maximum key range = 24, duplicates = 0 */
 
 #ifdef __GNUC__
 __inline
@@ -45,126 +50,97 @@ inline
 #endif
 #endif
 static unsigned int
-hash (register const char *str, register size_t len)
+kmap_hash (register const char *str, register size_t len)
 {
-  static unsigned char asso_values[] =
+  static const unsigned char asso_values[] =
     {
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 15,
-       0, 40, 10, 74,  5, 74,  5, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 10, 25, 31,
-      74,  5,  0,  0,  0,  5, 74, 74,  0, 50,
-      10,  1, 10, 74,  0,  0,  0, 15,  0, 15,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74, 74, 74, 74, 74,
-      74, 74, 74, 74, 74, 74
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27,  5,  5, 10,
+      27,  5, 10, 20,  0,  0, 27, 27,  0, 20,
+      27,  0,  0, 27,  0,  0, 10,  0, 27,  0,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
+      27, 27, 27, 27, 27, 27
     };
-  register unsigned int hval = len;
-
-  switch (hval)
-    {
-      default:
-        hval += asso_values[(unsigned char)str[2]];
-      /*FALLTHROUGH*/
-      case 2:
-        hval += asso_values[(unsigned char)str[1]];
-      /*FALLTHROUGH*/
-      case 1:
-        hval += asso_values[(unsigned char)str[0]];
-        break;
-    }
-  return hval;
+  return len + asso_values[(unsigned char)str[1]] + asso_values[(unsigned char)str[0]];
 }
 
-const char *
-in_word_set (register const char *str, register size_t len)
+const struct kv_pair *
+kmap_lookup (register const char *str, register size_t len)
 {
-  static const char * wordlist[] =
+  static const struct kv_pair wordlist[] =
     {
-      "", "", "",
-      "str",
-      "for",
-      "goto",
-      "struct",
-      "if",
-      "let",
-      "else",
-      "void",
-      "return",
-      "i8",
-      "arr",
-      "rvar",
-      "",
-      "assert",
-      "",
-      "f64",
-      "priv",
-      "",
-      "fallthrough",
-      "u8",
-      "i64",
-      "i128",
-      "while",
-      "switch",
-      "",
-      "i16",
-      "func",
-      "",
-      "bool",
-      "",
-      "u64",
-      "u128",
-      "break",
-      "", "",
-      "u16",
-      "vec",
-      "", "", "",
-      "f32",
-      "",
-      "case",
-      "", "",
-      "i32",
-      "",
-      "continue",
-      "", "",
-      "pub",
-      "", "", "", "",
-      "u32",
-      "", "", "", "",
-      "mat",
-      "", "", "", "",
-      "mut",
-      "", "", "", "",
-      "map"
+      {(char*)0}, {(char*)0}, {(char*)0},
+#line 19 "keywords.txt"
+      {"pub", _PUB},
+#line 20 "keywords.txt"
+      {"priv", _PRIV},
+#line 7 "keywords.txt"
+      {"while", _WHILE,},
+#line 12 "keywords.txt"
+      {"switch", _SWITCH},
+      {(char*)0},
+#line 16 "keywords.txt"
+      {"let", _LET},
+#line 11 "keywords.txt"
+      {"else", _ELSE,},
+#line 8 "keywords.txt"
+      {"break", _BREAK,},
+#line 22 "keywords.txt"
+      {"return", _RETURN},
+#line 10 "keywords.txt"
+      {"if", _IF},
+#line 6 "keywords.txt"
+      {"for", _FOR},
+#line 21 "keywords.txt"
+      {"func", _FUNC},
+      {(char*)0},
+#line 18 "keywords.txt"
+      {"struct", _STRUCT},
+      {(char*)0},
+#line 9 "keywords.txt"
+      {"continue", _CONTINUE,},
+#line 13 "keywords.txt"
+      {"case", _CASE},
+      {(char*)0}, {(char*)0}, {(char*)0},
+#line 17 "keywords.txt"
+      {"mut", _MUT},
+#line 15 "keywords.txt"
+      {"goto", _GOTO},
+      {(char*)0},
+#line 14 "keywords.txt"
+      {"fallthrough", _FALLTHROUGH}
     };
 
   if (len <= MAX_WORD_LENGTH && len >= MIN_WORD_LENGTH)
     {
-      register unsigned int key = hash (str, len);
+      register unsigned int key = kmap_hash (str, len);
 
       if (key <= MAX_HASH_VALUE)
         {
-          register const char *s = wordlist[key];
+          register const char *s = wordlist[key].name;
 
-          if (*str == *s && !strcmp (str + 1, s + 1))
-            return s;
+          if (s && *str == *s && !strcmp (str + 1, s + 1))
+            return &wordlist[key];
         }
     }
   return 0;
