@@ -98,6 +98,9 @@ static const char *get_token_name(token_type typ)
 	return err;
 }
 
+//note: lexemes point to regions of the in-memory source code so they are not
+//guaranteed to be null-terminated strings. Therefore we use the %.*s format
+//directive.
 void token_print(token tok)
 {
 	static const char *lexfmt = "TOKEN { line %-10d: %-20s: %.*s }\n";
@@ -631,6 +634,79 @@ static void consume_comment(scanner *self)
 void consume_number(scanner *self)
 {
 	assert(self);
+
+	uint32_t guess = _LITERALINT;
+	ptrdiff_t delta = 0;
+	self->curr = self->pos + 1;
+
+	for (;;) {
+		switch (*self->curr) {
+		case '.':
+			guess = _LITERALFLOAT;
+			fallthrough;
+		case '0':
+			fallthrough;
+		case '1':
+			fallthrough;
+		case '2':
+			fallthrough;
+		case '3':
+			fallthrough;
+		case '4':
+			fallthrough;
+		case '5':
+			fallthrough;
+		case '6':
+			fallthrough;
+		case '7':
+			fallthrough;
+		case '8':
+			fallthrough;
+		case '9':
+			self->curr++;
+			break;
+
+		case '\0':
+			fallthrough;
+		case ' ':
+			fallthrough;
+		case '\t':
+			fallthrough;
+		case '\r':
+			fallthrough;
+		case '\v':
+			fallthrough;
+		case '\f':
+			fallthrough;
+		case '\n':
+			delta = self->curr - self->pos;
+
+			self->tok = (token) {
+				.lexeme = self->pos,
+				.type = guess,
+				.line = self->line,
+				.len = (uint32_t) delta,
+				.flags = TOKEN_OKAY
+			};
+
+			goto exit;
+
+		default:
+			self->tok = (token) {
+				.lexeme = NULL,
+				.type = _INVALID,
+				.line = self->line,
+				.len = 0,
+				.flags = TOKEN_BAD_NUM
+			};
+
+			goto exit;
+		}
+	}
+
+exit:
+	(void) token_channel_send(self->chan, self->tok);
+	self->pos = self->curr;
 }
 
 /*******************************************************************************
@@ -656,6 +732,9 @@ void consume_string(scanner *self)
 			};
 
 			(void) token_channel_send(self->chan, self->tok);
+			
+			self->pos = self->curr;
+
 			return;
 		}
 
