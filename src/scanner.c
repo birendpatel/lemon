@@ -19,7 +19,8 @@ static void scan(scanner *self);
 static const char *get_token_name(token_type typ);
 static void end_routine(scanner *self);
 static void consume(scanner *self, token_type typ, uint32_t n);
-char peek(scanner *self);
+static void consume_ifpeek(scanner *self, char next, token_type a, token_type b);
+static char peek(scanner *self);
 
 make_channel(token, token, static inline)
 
@@ -95,8 +96,8 @@ static const char *get_token_name(token_type typ)
 
 void token_print(token tok)
 {
-	static const char *lexfmt = "TOKEN { line %-10d: %-17s: %.*s }\n";
-	static const char *nolexfmt = "TOKEN { line %-10d: %-17s }\n";
+	static const char *lexfmt = "TOKEN { line %-10d: %-20s: %.*s }\n";
+	static const char *nolexfmt = "TOKEN { line %-10d: %-20s }\n";
 	const char *tokname = get_token_name(tok.type);
 
 	if (tok.lexeme) {
@@ -380,8 +381,6 @@ static void scan(scanner *self)
 	assert(self);
 	assert(self->chan);
 	assert(self->chan->flags == CHANNEL_OPEN);
-	
-	char next = '\0';
 
 	while (*self->pos) {
 		switch (*self->pos) {
@@ -474,12 +473,35 @@ static void scan(scanner *self)
 			break;
 
 		case '=':
-			next = peek(self);
+			consume_ifpeek(self, '=', _EQUALEQUAL, _EQUAL);
+			break;
 
-			if (next == '=') {
-				consume(self, _EQUALEQUAL, 2);
+		case '!':
+			consume_ifpeek(self, '=', _NOTEQUAL, _NOT);
+			break;
+
+		case '&':
+			consume_ifpeek(self, '&', _AND, _BITAND);
+			break;
+
+		case '|':
+			consume_ifpeek(self, '|', _OR, _BITOR);
+			break;
+
+		case '<':
+			if (peek(self) == '<') {
+				consume(self, _LSHIFT, 2);
 			} else {
-				consume(self, _EQUAL, 1);
+				consume_ifpeek(self, '=', _LEQ, _LESS);
+			}
+
+			break;
+
+		case '>':
+			if (peek(self) == '>') {
+				consume(self, _RSHIFT, 2);
+			} else {
+				consume_ifpeek(self, '=', _GEQ, _GREATER);
 			}
 
 			break;
@@ -512,11 +534,36 @@ static void consume(scanner *self, token_type typ, uint32_t n)
 }
 
 /*******************************************************************************
+ * @fn consume_ifpeek
+ * @brief Peek the next character in the source. If it matches next, then
+ * consume token a. Otherwise, consume token b.
+ * @param a Token with a two-character lexeme
+ * @param b Token with a one-character lexeme
+ ******************************************************************************/
+static void consume_ifpeek(scanner *self, char next, token_type a, token_type b)
+{
+	assert(self);
+	assert(next);
+	assert(a < _TOKEN_TYPE_COUNT && a != _INVALID);
+	assert(b < _TOKEN_TYPE_COUNT && b != _INVALID);
+
+	char ch = peek(self);
+
+	assert(ch);
+
+	if (ch == next) {
+		consume(self, a, 2);
+	} else {
+		consume(self, b, 1);
+	}
+}
+
+/*******************************************************************************
  * @fn peek
  * @brief Look at the next character in the source buffer but do not move to
  * its position.
  ******************************************************************************/
-char peek(scanner *self)
+static char peek(scanner *self)
 {
 	assert(self);
 	
