@@ -24,11 +24,11 @@ static void consume(scanner *self, token_type typ, uint32_t n);
 static void consume_ifpeek(scanner *self, char next, token_type a, token_type b);
 static char peek(scanner *self);
 static void consume_comment(scanner *self);
-void consume_number(scanner *self);
-void consume_string(scanner *self);
+static void consume_number(scanner *self);
+static void consume_string(scanner *self);
 static uint32_t synchronize(scanner *self);
-static inline void send_invalid(scanner *self);
-static xerror send_id_or_kw(scanner *self);
+static inline void consume_invalid(scanner *self);
+static void consume_ident_kw(scanner *self);
 static bool is_letter_digit(char ch);
 static bool is_letter(char ch);
 static bool is_digit(char ch);
@@ -400,8 +400,6 @@ static void scan(scanner *self)
 	assert(self->chan);
 	assert(self->chan->flags == CHANNEL_OPEN);
 
-	xerror err = XESUCCESS;
-
 	while (*self->pos) {
 		switch (*self->pos) {
 		//whitespace
@@ -562,39 +560,31 @@ static void scan(scanner *self)
 
 		//identifiers and keywords
 		default:
-			err = send_id_or_kw(self);
-
-			if (err) {
-				send_invalid(self);
+			if (is_letter(*self->pos)) {
+				consume_ident_kw(self);
+			} else {
+				consume_invalid(self);
 			}
 		}
 	}
 }
 
 /*******************************************************************************
- * @fn send_id_or_kw
- * @brief Send the current word if it is a valid identifier or keyword
- * @return XEUNDEFINED if the current word is not valid
+ * @fn consume_ident_kw
+ * @brief Consume the current word as either a keyword or an identifier
  ******************************************************************************/
-static xerror send_id_or_kw(scanner *self)
+static void consume_ident_kw(scanner *self)
 {
 	assert(self);
+	assert(is_letter(*self->pos));
 
-	self->curr = self->pos;
-
-	if (!is_letter(*self->curr)) {
-		return XEUNDEFINED;
-	}
-
-	self->curr++;
+	self->curr = self->pos + 1;
 
 	for (;;) {
 		if (is_letter_digit(*self->curr)) {
 			self->curr++;
-		} else if (is_whitespace_eof(*self->curr)) {
-			break;
 		} else {
-			return XEUNDEFINED;
+			break;
 		}
 	}
 	
@@ -604,30 +594,28 @@ static xerror send_id_or_kw(scanner *self)
 	make_id_or_kw_token(self, (uint32_t) delta);
 	(void) token_channel_send(self->chan, self->tok);
 	self->pos = self->curr;
-
-	return XESUCCESS;
 }
 
 //determine if the word with len chars at the current position is a keyword
-//or an identifier, and construct its token.
+//or an identifier, and construct its token. Like punctuation, we don't
+//really need the lexeme for keywords but we capture them anyways (in case
+//parser requirements change in the future or we add aliasing keywords).
 static void make_id_or_kw_token(scanner *self, uint32_t len)
 {
 	assert(self);
 	assert(len);
 
+	self->tok.lexeme = self->pos;
 	self->tok.line = self->line;
+	self->tok.len = len;
 	self->tok.flags = TOKEN_OKAY;
 
 	const kv_pair *kv = kmap_lookup(self->pos, len);
 
 	if (kv) {
 		self->tok.type = kv->typ;
-		self->tok.lexeme = NULL;
-		self->tok.len = 0;
 	} else {
 		self->tok.type = _IDENTIFIER;
-		self->tok.lexeme = self->pos;
-		self->tok.len = len;
 	}
 }
 
@@ -685,10 +673,11 @@ static bool is_whitespace_eof(char ch)
 }
 
 /*******************************************************************************
- * @fn send_invalid
- * @brief Send an invalid token and synchronize scanner to the next word.
+ * @fn consume_invalid
+ * @brief Consume an invalid token and attempt to recover the scanner to a valid
+ position.
  ******************************************************************************/
-static inline void send_invalid(scanner *self)
+static inline void consume_invalid(scanner *self)
 {
 	assert(self);
 	
@@ -779,7 +768,7 @@ static void consume_comment(scanner *self)
  * @return If the string is not a valid float or integer form then an invalid
  * token will be sent with the TOKEN_BAD_NUM flag set.
  ******************************************************************************/
-void consume_number(scanner *self)
+static void consume_number(scanner *self)
 {
 	assert(self);
 
@@ -844,7 +833,7 @@ static uint32_t synchronize(scanner *self)
  * @return If the string literal is not terminated with a quote then an invalid
  * token will be sent with the TOKEN_BAD_STR flag set.
  ******************************************************************************/
-void consume_string(scanner *self)
+static void consume_string(scanner *self)
 {
 	assert(self);
 
