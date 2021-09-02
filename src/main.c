@@ -99,6 +99,7 @@ int main(int argc, char **argv)
 		goto fail;
 	}
 
+	xerror_flush();
 	return EXIT_SUCCESS;
 
 fail:
