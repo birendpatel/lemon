@@ -37,7 +37,7 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Make the project compatible with Clang (MEDIUM)
 - [ ] Add a diagnostic flag for multithreading (EASY)
-- [ ] Add tracing to the vector template (EASY)
+- [X] Add tracing to the vector template (EASY)
 - [ ] Write vector unit tests (MEDIUM)
 - [ ] Write channel unit tests (HARD)
 - [ ] Create a thread pool for multi-file compilation (HARD)

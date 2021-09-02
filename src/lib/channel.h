@@ -21,12 +21,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-//------------------------------------------------------------------------------
 //tracing; stderr notifications for the send, recv, and close methods.
 //Enable tracing by defining the CHANNEL_TRACE_STDERR macro. Thread IDs are
-//provided but may collide since the pthread_self() transformation is
-//performed in a portable manner.
-
+//provided but they may collide because the opaque pthread_t struct is
+//transformed to a numeric value in a portable manner.
 #ifdef CHANNEL_TRACE_STDERR
 	#include <stdio.h>
 
@@ -38,9 +36,6 @@
 #else
 	#define CHANNEL_TRACE(msg) do {} while (0)
 #endif
-
-//------------------------------------------------------------------------------
-//channel error codes
 
 //function returned successfully
 #ifndef CHANNEL_ESUCCESS
@@ -61,9 +56,6 @@
 #ifndef CHANNEL_ECLOSED
 	#error "channel.h requires user to implement CHANNEL_ECLOSED int code"
 #endif
-
-//-----------------------------------------------------------------------------
-//template implementation
 
 //struct flags
 #define CHANNEL_OPEN	1 << 0

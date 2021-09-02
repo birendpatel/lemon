@@ -20,6 +20,20 @@
 #include <stdlib.h>
 #include <string.h>
 
+//vector tracing on stderr if VECTOR_TRACE_STDERR is defined.
+//Thread IDs are provided but they may collide because the opaque pthread_t
+//struct is transformed to a numeric value in a portable manner.
+#ifdef VECTOR_TRACE_STDERR
+	#include <pthread.h>
+	#include <stdio.h>
+
+	#define TID ((void *) pthread_self())
+	static const char *fmt = "vector: thread %p: %s\n";
+	#define VECTOR_TRACE(msg) fprintf(stderr, fmt, TID, msg)
+#else
+	#define VECTOR_TRACE(msg) do { } while (0)
+#endif
+
 //function returned successfully
 #ifndef VECTOR_ESUCCESS
 	#error "vector.h requires user to implement VECTOR_ESUCCESS int code"
@@ -78,10 +92,13 @@ cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)        \
 	self->data = malloc(cap * sizeof(T));                                  \
 									       \
 	if (!self->data) {                                                     \
+		VECTOR_TRACE("init fail; cannot allocate memory");	       \
 		return VECTOR_ENOMEM;                                          \
 	}                                                                      \
                       	 	 	 	 	                       \
 	memset(self->data, 0, len * sizeof(T));				       \
+									       \
+	VECTOR_TRACE("vector initialized");				       \
 									       \
 	return VECTOR_ESUCCESS;						       \
 }
@@ -103,9 +120,13 @@ cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T))	       \
 			for (size_t i = 0; i < self->len; i++) {               \
 				vfree(self->data[i]);			       \
 			}         					       \
+									       \
+			VECTOR_TRACE("vfree successful on vector elements");   \
 		}							       \
 									       \
 		free(self->data);					       \
+									       \
+		VECTOR_TRACE("returned system resources");		       \
 									       \
 		self->len = 0;						       \
 		self->cap = 0;						       \
@@ -129,6 +150,9 @@ cls int pfix##_vector_push(pfix##_vector *self, const T datum)                 \
 	}                                                                      \
 									       \
 	if (self->len == self->cap) {					       \
+									       \
+		VECTOR_TRACE("vector at capacity; growing");		       \
+									       \
 		size_t new_cap = 0;					       \
       									       \
 		if (self->len >= CAP_THRESHOLD) {			       \
@@ -140,6 +164,7 @@ cls int pfix##_vector_push(pfix##_vector *self, const T datum)                 \
 		T *tmp = malloc(new_cap * sizeof(T));			       \
 									       \
 		if (!tmp) {						       \
+			VECTOR_TRACE("push fail; cannot allocate memory");     \
 			return VECTOR_ENOMEM;				       \
 		}							       \
 									       \
@@ -149,11 +174,15 @@ cls int pfix##_vector_push(pfix##_vector *self, const T datum)                 \
   									       \
 		self->cap = new_cap;					       \
 		self->data = tmp;					       \
+									       \
+		VECTOR_TRACE("grow succeeded");				       \
 	}								       \
 									       \
 	self->data[self->len] = datum;					       \
 	self->len++;							       \
     									       \
+	VECTOR_TRACE("push successful");				       \
+									       \
 	return VECTOR_ESUCCESS;						       \
 }
 
@@ -170,6 +199,8 @@ cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
 	assert(i < self->len);                                                 \
 									       \
 	*datum = self->data[i];						       \
+									       \
+	VECTOR_TRACE("get; data copied");				       \
 }
 
 /*******************************************************************************
@@ -185,6 +216,8 @@ cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum)    \
 									       \
 	T old = self->data[i];						       \
 	self->data[i] = datum;						       \
+									       \
+	VECTOR_TRACE("set; data swapped");				       \
 									       \
 	return old;							       \
 }
@@ -206,6 +239,8 @@ cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T))	       \
 			vfree(self->data[i]);				       \
 		}							       \
 	}								       \
+									       \
+	VECTOR_TRACE("reset successful");				       \
 									       \
 	self->len = 0;							       \
 }
