@@ -14,6 +14,12 @@
  *                                     |             |
  *                                     |             |
  *                                    Func         Message
+ *
+ *
+ * The xerror logger stores messages in an internal buffer and flushes to stderr
+ * when full or when fatal messages are passed. If the macro XERROR_DEBUG is
+ * defined, then all log levels on all log calls will trigger an immediate 
+ * flush.
  */
 
 #pragma once

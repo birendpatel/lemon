@@ -146,9 +146,13 @@ void __xerror_log
 
 	xq.len++;
 
+#ifdef XERROR_DEBUG
+	__xerror_flush();
+#else
 	if (level == XFATAL) {
 		__xerror_flush();
 	}
+#endif
 
 	pthread_mutex_unlock(&xq.mutex);
 

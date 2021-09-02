@@ -73,7 +73,7 @@ int main(int argc, char **argv)
 	xerror err = XEUNDEFINED;
 	int argi = 0;
 	options opt = options_init();
-
+	
 	err = options_parse(&opt, argc, argv, &argi);
 
 	if (err) {

@@ -23,12 +23,11 @@
 
 //------------------------------------------------------------------------------
 //tracing; stderr notifications for the send, recv, and close methods.
-//Enable tracing by setting the CHANNEL_TRACE macro to a nonzero value.
+//Enable tracing by defining the CHANNEL_TRACE_STDERR macro.
 //These messages will not provide the thread ID.
 
-#define CHANNEL_TRACE_ON 0
 
-#if CHANNEL_TRACE_ON
+#ifdef CHANNEL_TRACE_STDERR
 	#include <stdio.h>
 	#define CHANNEL_TRACE(msg) fprintf(stderr, "channel: %s\n", msg)
 #else

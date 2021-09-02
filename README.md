@@ -32,7 +32,7 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 
 # Todo
 
-- [ ] Fix the diagnostic-all flag  which doesn't set the interactive flag (EASY)
+- [X] Fix the diagnostic-all flag  which doesn't set the interactive flag (EASY)
 - [ ] Add locale support to main.c (MEDIUM)
 - [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Make the project compatible with Clang (MEDIUM)
@@ -42,8 +42,8 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Write channel unit tests (HARD)
 - [ ] Create a thread pool for multi-file compilation (HARD)
 - [ ] Add full installation support in the makefile (EASY)
-- [ ] Add a macro called XERROR_DEBUG to xerror.h. Default it to OFF (TRIVIAL)
-- [ ] Update xerror trace to cause a flush in debug mode (EASY)
+- [X] Add a macro called XERROR_DEBUG to xerror.h. Default it to OFF (TRIVIAL)
+- [X] Update xerror trace to cause a flush in debug mode (EASY)
 - [ ] Add thread ID tracing to the channel template (EASY)
 - [ ] Add a lookup table for pthreads errors (EASY)
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
