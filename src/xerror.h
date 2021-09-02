@@ -5,15 +5,15 @@
  * @details
  *
  *
- *               Thread  Level  File      Line
- *                  |      |     |          |
- *                  |      |     |          |
- *                  |      |     |          |
- *               1234567 TRACE main.c:main:123 hello, world!
- *                                     |       \___________/
- *                                     |             |
- *                                     |             |
- *                                    Func         Message
+ *                Thread   Level  File      Line
+ *                   |       |     |          |
+ *                   |       |     |          |
+ *                   |       |     |          |
+ *               (1234567) TRACE main.c:main:123 hello, world!
+ *                                       |       \___________/
+ *                                       |             |
+ *                                       |             |
+ *                                      Func         Message
  *
  *
  * The xerror logger stores messages in an internal buffer and flushes to stderr

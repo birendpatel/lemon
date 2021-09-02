@@ -44,7 +44,7 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Add full installation support in the makefile (EASY)
 - [X] Add a macro called XERROR_DEBUG to xerror.h. Default it to OFF (TRIVIAL)
 - [X] Update xerror trace to cause a flush in debug mode (EASY)
-- [ ] Add thread ID tracing to the channel template (EASY)
+- [X] Add thread ID tracing to the channel template (EASY)
 - [ ] Add a lookup table for pthreads errors (EASY)
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add arrow key support for REPL (MEDIUM)

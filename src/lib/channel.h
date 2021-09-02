@@ -23,13 +23,18 @@
 
 //------------------------------------------------------------------------------
 //tracing; stderr notifications for the send, recv, and close methods.
-//Enable tracing by defining the CHANNEL_TRACE_STDERR macro.
-//These messages will not provide the thread ID.
-
+//Enable tracing by defining the CHANNEL_TRACE_STDERR macro. Thread IDs are
+//provided but may collide since the pthread_self() transformation is
+//performed in a portable manner.
 
 #ifdef CHANNEL_TRACE_STDERR
 	#include <stdio.h>
-	#define CHANNEL_TRACE(msg) fprintf(stderr, "channel: %s\n", msg)
+
+	#define TID ((void *) pthread_self())
+	
+	static const char *fmt = "channel: thread %p: %s\n";
+	
+	#define CHANNEL_TRACE(msg) fprintf(stderr, fmt, TID, msg)
 #else
 	#define CHANNEL_TRACE(msg) do {} while (0)
 #endif

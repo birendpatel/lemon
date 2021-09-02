@@ -56,6 +56,7 @@ static const char *lookup[] = {
 	[_DOT] = "DOT",
 	[_TILDE] = "TILDE",
 	[_COMMA] = "COMMA",
+	[_COLON] = "COLON",
 	[_EQUAL] = "EQUAL",
 	[_EQUALEQUAL] = "EQUAL EQUAL",
 	[_NOTEQUAL] = "NOT EQUAL",
@@ -466,6 +467,10 @@ static void scan(scanner *self)
 
 		case ',':
 			consume(self, _COMMA, 1);
+			break;
+		
+		case ':':
+			consume(self, _COLON, 1);
 			break;
 
 		case '*':
