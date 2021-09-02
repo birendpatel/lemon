@@ -6,19 +6,20 @@
 # Notation
 #-------------------------------------------------------------------------------
 
-derives			::=
+derive			::=
 rule terminator		;
 terminal		<foo>
 non-terminal		"bar"
-logical or		|
+or			|
 optional		?
 repeat one or more	+
 repeat zero or more	*
 grouping		(baz)
-start terminal		@
+goal symbol		@
+epsilon			ε
 
 #-------------------------------------------------------------------------------
 # Grammar
 #-------------------------------------------------------------------------------
 
-@ <program> ::= <statement>* ;
+@ <program> ::= <statement>+ | ε ;
