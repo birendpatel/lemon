@@ -8,15 +8,19 @@ Lemon is a programming language. It includes features such as:
 - Random variable types
 - Matrix types
 
-This repository implements Lemon in C. C-Lemon is an interpreter and has a bytecode compiler that performs high-level optimisations.
+Lemon is compiled to bytecode and executed on a virtual machine written in C.
 
 # Requirements
 
-To build Lemon, you should have the GCC compiler version 9.3.0 or greater installed. You'll also need GNU Make and a 64-bit machine running the Linux OS. To build the documentation, you need to install Doxygen.
+To build Lemon, you need a POSIX compliant system or comptability layer with the following software installed:
+
+- GCC 8.3.0+
+- GNU Make 4.2.1+
+- Doxygen 1.8.13+ (optional)
 
 # Install
 
-Clone this repository and issue `make release`. The executable `lemon` will be placed in the newly created `release` directory. You can issue `make docs` to generate the source code documentation via Doxygen.
+Clone this repository and issue `make release`. The executable `lemon` will be placed in the newly created `release` directory.
 
 # License
 
@@ -32,20 +36,14 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 
 # Todo
 
-- [X] Fix the diagnostic-all flag  which doesn't set the interactive flag (EASY)
 - [ ] Add locale support to main.c (MEDIUM)
 - [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Make the project compatible with Clang (MEDIUM)
-- [X] Add a diagnostic flag for multithreading (EASY)
 - [ ] Implement diagnostic flag for multithreading on scanner (EASY)
-- [X] Add tracing to the vector template (EASY)
 - [ ] Write vector unit tests (MEDIUM)
 - [ ] Write channel unit tests (HARD)
 - [ ] Create a thread pool for multi-file compilation (HARD)
 - [ ] Add full installation support in the makefile (EASY)
-- [X] Add a macro called XERROR_DEBUG to xerror.h. Default it to OFF (TRIVIAL)
-- [X] Update xerror trace to cause a flush in debug mode (EASY)
-- [X] Add thread ID tracing to the channel template (EASY)
 - [ ] Add a lookup table for pthreads errors (EASY)
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add arrow key support for REPL (MEDIUM)
