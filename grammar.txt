@@ -1,0 +1,24 @@
+# EBNF grammar for the Lemon programming Language
+# Copyright (C) 2021 Biren Patel
+# GNU General Public License v3.0
+
+#-------------------------------------------------------------------------------
+# Notation
+#-------------------------------------------------------------------------------
+
+derives			::=
+rule terminator		;
+terminal		<foo>
+non-terminal		"bar"
+logical or		|
+optional		?
+repeat one or more	+
+repeat zero or more	*
+grouping		(baz)
+start terminal		@
+
+#-------------------------------------------------------------------------------
+# Grammar
+#-------------------------------------------------------------------------------
+
+@ <program> ::= <statement>* ;
