@@ -1,4 +1,4 @@
-# EBNF grammar for the Lemon programming Language
+# Language Specification for the Lemon programming Language
 # Copyright (C) 2021 Biren Patel
 # GNU General Public License v3.0
 
@@ -6,20 +6,62 @@
 # Notation
 #-------------------------------------------------------------------------------
 
-derive			::=
-rule terminator		;
-terminal		<foo>
-non-terminal		"bar"
-or			|
-optional		?
-repeat one or more	+
+The metasyntax for the Lemon grammar is specified via extended Backus-Naur form.
+Some standard EBNF notation has been replaced with regex-like equivalents for
+readability, familiarity, and simplicity.
+
+nonterminal		foo
+terminal		"foo"
+rule termination	\n\n
+definition		:=
+empty string		ε
+goal			@
+
+Metasyntax operators in order of decreasing precedence:
+
 repeat zero or more	*
-grouping		(baz)
-goal symbol		@
-epsilon			ε
+repeat one or more	+
+optional		?
+grouping		()
+alternation		|
+
+#-------------------------------------------------------------------------------
+# Lemon operator precedence
+#-------------------------------------------------------------------------------
+
+Priority	Operators	Grouping	Comment
+--------	---------	--------	-------
+1		()		LR		Function call, grouping
+-		[]		LR		Composite types indexing/decls
+-		.		LR		Method and attribute access
+2		!		RL		Logical NOT
+-		'		RL		Bitwise NOT
+-		+		RL		Unary positive
+-		-		RL		Unary minus
+-		(foo)		RL		Type casting
+3		*		LR		Multiplication
+-		/		LR		Division
+-		%		LR		Mod
+4		+		LR		Binary addition
+-		-		LR		Binary subtraction
+5		>>		LR		Right shift
+-		<<		LR		Left Shift
+6		>		LR		Greater than
+-		<		LR		Less than
+-		>=		LR		Greater than or equal to
+-		<=		LR		Less than or equal to
+7		==		LR		Logical equals
+-		!=		LR		Logical not equals
+8		&		LR		Bitwise AND
+9		^		LR		Bitwise XOR
+10		|		LR		Bitwise OR
+11		&&		LR		Logical AND
+12		||		LR		Logical OR
+13		~		RL		Random variable parameterization
+14		=		RL		Assignment
 
 #-------------------------------------------------------------------------------
 # Grammar
 #-------------------------------------------------------------------------------
 
-@ <program> ::= <statement>+ | ε ;
+@ program := statement+ | ε
