@@ -32,6 +32,9 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 
 # Todo
 
+- [ ] Implement addressof, rvar literal, bool literal, array literal, self, void, null in scanner
+- [ ] Add self, void, null to grammar
+- [ ] Add rvar literal to var declaration in grammar
 - [ ] Fix the diagnostic-all flag  which doesn't set the interactive flag (EASY)
 - [ ] Add locale support to main.c (MEDIUM)
 - [ ] Add a 60 second language tutorial on this readme (EASY)

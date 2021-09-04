@@ -13,7 +13,7 @@ readability, familiarity, and simplicity.
 nonterminal		<foo>
 terminal		"foo"
 lexical element		FOO
-rule termination	;
+rule termination	\n\n
 definition		::=
 empty string		ε
 
@@ -38,6 +38,8 @@ Priority	Operators	Grouping	Comment
 -		'		RL		Bitwise NOT
 -		+		RL		Unary positive
 -		-		RL		Unary minus
+-		*		RL		Indirection
+-		&		RL		Address of
 -		(foo)		RL		Type casting
 3		*		LR		Multiplication
 -		/		LR		Division
@@ -57,14 +59,13 @@ Priority	Operators	Grouping	Comment
 10		|		LR		Bitwise OR
 11		&&		LR		Logical AND
 12		||		LR		Logical OR
-13		~		RL		Random variable parameterization
-14		=		RL		Assignment
+13		=		RL		Assignment
 
 #-------------------------------------------------------------------------------
 # Lexical Grammar
 #-------------------------------------------------------------------------------
 
-IDENTIFIER ::= [a-zA-Z_][a-zA-Z_0-9]* ;
+IDENTIFIER ::= [a-zA-Z_][a-zA-Z_0-9]*
 
 LITERAL ::= INT_LITERAL
 	  | FLOAT_LITERAL
@@ -72,7 +73,6 @@ LITERAL ::= INT_LITERAL
 	  | BOOL_LITERAL
 	  | RVAR_LITERAL
 	  | ARRAY_LITERAL
-	  ;
 
 #-------------------------------------------------------------------------------
 # Syntactical Grammar
@@ -89,14 +89,76 @@ LITERAL ::= INT_LITERAL
 		| <function declaration>
 		| <variable declaration>
 		| <statement>
-		;
+
+#TODO
+<type declaration> ::= "struct" IDENTIFIER "{" "}" ";"
+
+#TODO
+<function declaration> ::= "func" IDENTIFIER
 
 #-------------------------------------------------------------------------------
-#variable declarations default to the zero-value of the type if no explicit
-#initializer is given. The optional mut terminal allows the variable to
-#be modified after its declaration. Variables in Lemon are default immutable
-#to take advantage of optimisations.
+# variable declarations default to the zero-value of the type if no explicit
+# initializer is given. The optional mut terminal allows the variable to
+# be modified after its declaration. Variables in Lemon are default immutable
+# to take advantage of optimisations.
+#
+# Lemon does not allow multiple declarations such as "let x, y: int = 0, 1;".
 #-------------------------------------------------------------------------------
 
 <variable declaration> ::= "let" "mut"? IDENTIFIER ":" IDENTIFIER 
-			   ("=" LITERAL)? ;
+			   ("=" LITERAL)? ";"
+
+#TODO
+<statement> ::= <expression statement>
+	      | <block statement>
+
+<block statement> ::= "{" <declaration>* "}"
+
+<expression statement> ::= <expression> ";"
+
+#-------------------------------------------------------------------------------
+# The expression grammar is stratified according to the operator precedence
+# rules.
+#-------------------------------------------------------------------------------
+
+<expression> ::= <assignment>
+
+<assignment> ::= IDENTIFIER "=" <assignment> | <logical or>
+
+<logical or> ::= <logical and> ("||" <logical and>)*
+
+<logical and> ::= <bitwise or> ("&&" <bitwise or>)*
+
+<bitwise or> ::= <bitwise xor> ("|" <bitwise xor>)*
+
+<bitwise xor> ::= <bitwise and> ("^" <bitwise and>)*
+
+<bitwise and> ::= <equality> ("&" <equality)*
+
+<equality> ::= <comparison> (("==" | "!=") <comparison)*
+
+<comparison> ::= <left shift> ((">" | "<" | ">=" | "<=") <left shift>)*
+
+<left shift> ::= <right shift> ("<<" <right shift>)*
+
+<right shift> ::= <term> (">>" <term>)*
+
+<term> ::= <factor> (("+" | "-") <factor>)*
+
+<factor> ::= <unary> (("*" | "/" | "%") <unary>)*
+
+<unary> ::= ("-" | "+" | "'" | "!" | "*" | "&" | <type cast>) <unary> | <access>
+
+<type cast> ::= "(" IDENTIFIER ")"
+
+<access> ::= <atom> (<call> | <attribute> | <index>)*
+
+<call> ::= "(" <arguments> ")"
+
+<arguments> ::= <expression> ("," <expression) *
+
+<attribute> ::= "." IDENTIFIER
+
+<index> ::= "[" <expression> "]"
+
+<atom> ::= IDENTIFIER | LITERAL | "(" <expression> ")"
