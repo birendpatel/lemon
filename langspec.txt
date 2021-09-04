@@ -10,12 +10,12 @@ The metasyntax for the Lemon grammar is specified via extended Backus-Naur form.
 Some standard EBNF notation has been replaced with regex-like equivalents for
 readability, familiarity, and simplicity.
 
-nonterminal		foo
+nonterminal		<foo>
 terminal		"foo"
-rule termination	\n\n
-definition		:=
+lexical element		FOO
+rule termination	;
+definition		::=
 empty string		ε
-goal			@
 
 Metasyntax operators in order of decreasing precedence:
 
@@ -61,7 +61,42 @@ Priority	Operators	Grouping	Comment
 14		=		RL		Assignment
 
 #-------------------------------------------------------------------------------
-# Grammar
+# Lexical Grammar
 #-------------------------------------------------------------------------------
 
-@ program := statement+ | ε
+IDENTIFIER ::= [a-zA-Z_][a-zA-Z_0-9]* ;
+
+LITERAL ::= INT_LITERAL
+	  | FLOAT_LITERAL
+	  | STRING_LITERAL
+	  | BOOL_LITERAL
+	  | RVAR_LITERAL
+	  | ARRAY_LITERAL
+	  ;
+
+#-------------------------------------------------------------------------------
+# Syntactical Grammar
+#-------------------------------------------------------------------------------
+
+<file> ::= <declaration>* "EOF" ;
+
+#-------------------------------------------------------------------------------
+# Lemon does not require a main() function as its entry point. Therefore,
+# statements may exist at the top level alongside declarations.
+#-------------------------------------------------------------------------------
+
+<declaration> ::= <type declaration>
+		| <function declaration>
+		| <variable declaration>
+		| <statement>
+		;
+
+#-------------------------------------------------------------------------------
+#variable declarations default to the zero-value of the type if no explicit
+#initializer is given. The optional mut terminal allows the variable to
+#be modified after its declaration. Variables in Lemon are default immutable
+#to take advantage of optimisations.
+#-------------------------------------------------------------------------------
+
+<variable declaration> ::= "let" "mut"? IDENTIFIER ":" IDENTIFIER 
+			   ("=" LITERAL)? ;
