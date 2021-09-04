@@ -22,6 +22,7 @@ typedef struct options {
 #define DIAGNOSTIC_OPT		1 << 1
 #define DIAGNOSTIC_PASS		1 << 2
 #define DIAGNOSTIC_TOKENS	1 << 3
+#define DIAGNOSTIC_THREAD	1 << 4
 #define IR_DISASSEMBLE		1 << 1
 #define MACHINE_NORUN		1 << 1
 #define USER_INTERACTIVE	1 << 0

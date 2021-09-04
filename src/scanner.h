@@ -36,6 +36,7 @@ typedef enum token_type {
 	_DOT,		// .
 	_TILDE,		// ~
 	_COMMA,		// ,
+	_COLON,		// :
 
 	//operators
 	_EQUAL,		// =

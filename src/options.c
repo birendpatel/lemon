@@ -17,6 +17,7 @@
 #define DIAGNOSTIC_OPT_KEY	257
 #define DIAGNOSTIC_PASS_KEY	258
 #define DIAGNOSTIC_TOKENS_KEY	259
+#define DIAGNOSTIC_THREAD_KEY	260
 #define IR_DISASSEMBLE_KEY	'S'
 #define MACHINE_NORUN_KEY	'k'
 #define USER_INTERACTIVE_KEY	'i'
@@ -37,17 +38,22 @@ static struct argp_option options_info[] = {
 	{
 		.name = "Dopt",
 		.key  = DIAGNOSTIC_OPT_KEY,
-		.doc  = "Display the options state on stderr."
+		.doc  = "Display the options state before compilation begins."
 	},
 	{
 		.name = "Dpass",
 		.key  = DIAGNOSTIC_PASS_KEY,
-		.doc  = "Notify on stderr all entry and exit points for all compiler passes."
+		.doc  = "Notify on all entry and exit points for all compiler passes."
 	},
 	{
 		.name = "Dtokens",
 		.key  = DIAGNOSTIC_TOKENS_KEY,
 		.doc  = "Display tokens on stderr once lexical analysis is complete."
+	},
+	{
+		.name = "Dthread",
+		.key  = DIAGNOSTIC_THREAD_KEY,
+		.doc  = "Notify on all thread creation, detachment, exits, and joins."
 	},
 	{
 		.name = "Iasm",
@@ -86,6 +92,10 @@ error_t parser(int key, __attribute__((unused)) char *arg, struct argp_state *st
 
 	case DIAGNOSTIC_TOKENS_KEY:
 		opt->diagnostic |= DIAGNOSTIC_TOKENS;
+		break;
+
+	case DIAGNOSTIC_THREAD_KEY:
+		opt->diagnostic |= DIAGNOSTIC_THREAD;
 		break;
 
 	case IR_DISASSEMBLE_KEY:
@@ -159,6 +169,7 @@ void options_display(options *self)
 	fprintf(stderr, "\topt: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_OPT));
 	fprintf(stderr, "\tpass: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_PASS));
 	fprintf(stderr, "\ttokens: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_TOKENS));
+	fprintf(stderr, "\tthread: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_THREAD));
 
 	fprintf(stderr, "\nintermediate representation\n");
 	fprintf(stderr, "\tdisassemble: %d\n", TO_BOOL(self->ir & IR_DISASSEMBLE));
