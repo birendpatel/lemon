@@ -20,14 +20,14 @@ To build Lemon, you need a POSIX compliant system or comptability layer with the
 
 # Installation Guide
 
-To install Lemon in a default directory:
+To install Lemon in the default directory /usr/local/bin:
 
 1. Clone this repository
 2. Change into the new directory
 3. Issue `sudo make install`.
 4. Uninstall with `sudo make uninstall`.
 
-TO install Lemon in a custom directory:
+To install Lemon in a custom directory:
 
 1. Clone this repository
 2. Change into the new directory
