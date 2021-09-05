@@ -12,7 +12,7 @@ CFLAGS += -march=native
 # setup
 #-------------------------------------------------------------------------------
 
-.PHONY: all debug release docs clean
+.PHONY: all debug release docs install uninstall clean
 
 vpath %.h ./src
 vpath %.h ./src/lib
@@ -58,6 +58,18 @@ compile.o : xerror.h compile.h parser.h
 parser.o : xerror.h parser.h channel.h scanner.h
 scanner.o : xerror.h scanner.h channel.h kmap.h
 kmap.o : kmap.h scanner.h
+
+#-------------------------------------------------------------------------------
+# install
+#-------------------------------------------------------------------------------
+
+INSTALL_PATH = /usr/local/bin
+
+install: release
+	cp ./release/lemon $(INSTALL_PATH)
+
+uninstall:
+	rm -f $(INSTALL_PATH)/lemon
 
 #-------------------------------------------------------------------------------
 # docs

@@ -18,9 +18,11 @@ To build Lemon, you need a POSIX compliant system or comptability layer with the
 - GNU Make 4.2.1+
 - Doxygen 1.8.13+ (optional)
 
-# Install
+# Installation Guide
 
-Clone this repository and issue `make release`. The executable `lemon` will be placed in the newly created `release` directory.
+Clone this repository and issue the command `sudo make install` from within the new directory. By default, the Lemon executable will be placed in `/usr/local/bin`.
+
+If you want to install Lemon in a different directory, just use `sudo make install INSTALL_PATH=...` instead. You may need to export the path. If so, add `export PATH=$PATH:...` to your `~/.profile` and then reload with `. ~/.profile`.
 
 # License
 
@@ -38,6 +40,7 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 
 - [X] Add null, void, self, addressof, rvar literal, bool literal, to scanner (MEDIUM)
 - [X] Add null, void, self to grammar (EASY)
+- [ ] Refactor shell handler to include waitpid and robust error handling
 - [ ] Add locale support to main.c (MEDIUM)
 - [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Make the project compatible with Clang (MEDIUM)
@@ -45,7 +48,7 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Write vector unit tests (MEDIUM)
 - [ ] Write channel unit tests (HARD)
 - [ ] Create a thread pool for multi-file compilation (HARD)
-- [ ] Add full installation support in the makefile (EASY)
+- [X] Add full installation support in the makefile (EASY)
 - [ ] Add a lookup table for pthreads errors (EASY)
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add arrow key support for REPL (MEDIUM)
