@@ -1,15 +1,14 @@
-/* ANSI-C code produced by gperf version 3.1 */
-/* Command-line: gperf -t --hash-function-name=kmap_hash --lookup-function-name=kmap_lookup -C --null-strings --output-file=kmap.c keywords.txt  */
-/* Computed positions: -k'1-2' */
-
-//TODO
-//three gperf modifications which need to be automated:
-//include string.h
-//include gcc pragmas to override gperf size_t conversions
-//swap strcmp for strncmp
-//remove struct def and place in kmap.h
 #pragma GCC diagnostic push
+
 #pragma GCC diagnostic ignored "-Wconversion"
+
+#include <string.h>
+
+#include "kmap.h"
+
+/* ANSI-C code produced by gperf version 3.1 */
+/* Command-line: gperf -t -C --null-strings --lookup-function-name=kmap_lookup keywords.txt  */
+/* Computed positions: -k'1-2' */
 
 #if !((' ' == 32) && ('!' == 33) && ('"' == 34) && ('#' == 35) \
       && ('%' == 37) && ('&' == 38) && ('\'' == 39) && ('(' == 40) \
@@ -40,8 +39,9 @@
 
 #line 1 "keywords.txt"
 
-#include <string.h>
 #include "kmap.h"
+#line 4 "keywords.txt"
+//kv_pair defined in kmap.h
 
 #define TOTAL_KEYWORDS 17
 #define MIN_WORD_LENGTH 2
@@ -58,7 +58,7 @@ inline
 #endif
 #endif
 static unsigned int
-kmap_hash (register const char *str, register size_t len)
+hash (register const char *str, register size_t len)
 {
   static const unsigned char asso_values[] =
     {
@@ -141,30 +141,18 @@ kmap_lookup (register const char *str, register size_t len)
 
   if (len <= MAX_WORD_LENGTH && len >= MIN_WORD_LENGTH)
     {
-      register unsigned int key = kmap_hash (str, len);
+      register unsigned int key = hash (str, len);
 
       if (key <= MAX_HASH_VALUE)
         {
           register const char *s = wordlist[key].name;
 
-	  //GPERF MODIFICATION:
-	  //old code: if (s && *str == *s && !strcmp (str + 1, s + 1))
-	  //
-	  //since the lemon scanner points to in-memory source code, it
-	  //does not guarantee that the current lexeme is null-terminated.
-	  //indeed, the null terminator only appears at the end of the
-	  //in-memory block.
-	  //
-	  //therefore, the code that gperf automatically generates will never
-	  //trigger because strcmp requires two null-terminated strings.
-	  
-	  if (s && !strncmp(str, s, len))
-	  {
+          if (s && !strncmp(str, s, len))
             return &wordlist[key];
-	  }
         }
     }
   return 0;
 }
+
 
 #pragma GCC diagnostic pop
