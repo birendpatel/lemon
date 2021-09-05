@@ -64,7 +64,7 @@ static const char *lookup[] = {
 	[_AND] = "AND",
 	[_OR] = "OR",
 	[_BITNOT] = "BITWISE NOT",
-	[_BITAND] = "BITWISE AND",
+	[_AMPERSAND] = "AMPERSAND",
 	[_BITOR] = "BITWISE OR",
 	[_BITXOR] = "BITWISE XOR",
 	[_LSHIFT] = "LEFT SHIFT",
@@ -91,10 +91,15 @@ static const char *lookup[] = {
 	[_LET] = "LET",
 	[_MUT] = "MUT",
 	[_STRUCT] = "STRUCT",
+	[_SELF] = "SELF",
 	[_FUNC] = "FUNC",
 	[_PRIV] = "PRIVATE",
 	[_PUB] = "PUBLIC",
-	[_RETURN] = "RETURN"
+	[_RETURN] = "RETURN",
+	[_VOID] = "VOID",
+	[_NULL] = "NULL",
+	[_TRUE] = "BOOL TRUE",
+	[_FALSE] = "BOOL FALSE"
 };
 
 static const char *get_token_name(token_type typ)
@@ -468,7 +473,7 @@ static void scan(scanner *self)
 		case ',':
 			consume(self, _COMMA, 1);
 			break;
-		
+
 		case ':':
 			consume(self, _COLON, 1);
 			break;
@@ -511,7 +516,7 @@ static void scan(scanner *self)
 			break;
 
 		case '&':
-			consume_ifpeek(self, '&', _AND, _BITAND);
+			consume_ifpeek(self, '&', _AND, _AMPERSAND);
 			break;
 
 		case '|':
@@ -592,7 +597,7 @@ static void consume_ident_kw(scanner *self)
 			break;
 		}
 	}
-	
+
 	ptrdiff_t delta = self->curr - self->pos;
 	assert(delta >= 0);
 
@@ -625,7 +630,7 @@ static void make_id_or_kw_token(scanner *self, uint32_t len)
 }
 
 //latin alphabet, underscores, zero thru nine
-static bool is_letter_digit(char ch) 
+static bool is_letter_digit(char ch)
 {
 	return is_letter(ch) || is_digit(ch);
 }
@@ -685,7 +690,7 @@ static bool is_whitespace_eof(char ch)
 static inline void consume_invalid(scanner *self)
 {
 	assert(self);
-	
+
 	char *start = self->pos;
 	uint32_t n = synchronize(self);
 
@@ -797,7 +802,7 @@ static void consume_number(scanner *self)
 			break;
 		}
 	}
-	
+
 	delta = self->curr - self->pos;
 
 	self->tok = (token) {
@@ -855,7 +860,7 @@ static void consume_string(scanner *self)
 			};
 
 			(void) token_channel_send(self->chan, self->tok);
-			
+
 			self->pos = self->curr;
 
 			return;

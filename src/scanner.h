@@ -46,7 +46,7 @@ typedef enum token_type {
 	_AND,		// &&
 	_OR,		// ||
 	_BITNOT,	// '
-	_BITAND,	// &
+	_AMPERSAND,	// &
 	_BITOR,		// |
 	_BITXOR,	// ^
 	_LSHIFT,	// <<
@@ -76,6 +76,9 @@ typedef enum token_type {
 	//keywords, assignment
 	_LET,
 	_MUT,
+	_NULL,
+	_TRUE,
+	_FALSE,
 	
 	//keywords, composition
 	_STRUCT,
@@ -85,6 +88,8 @@ typedef enum token_type {
 	_PRIV,
 	_PUB,
 	_RETURN,
+	_SELF,
+	_VOID,
 
 	//token count
 	_TOKEN_TYPE_COUNT,

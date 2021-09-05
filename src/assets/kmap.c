@@ -43,12 +43,12 @@
 #line 4 "keywords.txt"
 //kv_pair defined in kmap.h
 
-#define TOTAL_KEYWORDS 17
+#define TOTAL_KEYWORDS 22
 #define MIN_WORD_LENGTH 2
 #define MAX_WORD_LENGTH 11
 #define MIN_HASH_VALUE 3
-#define MAX_HASH_VALUE 26
-/* maximum key range = 24, duplicates = 0 */
+#define MAX_HASH_VALUE 34
+/* maximum key range = 32, duplicates = 0 */
 
 #ifdef __GNUC__
 __inline
@@ -62,32 +62,32 @@ hash (register const char *str, register size_t len)
 {
   static const unsigned char asso_values[] =
     {
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27,  5,  5, 10,
-      27,  5, 10, 20,  0,  0, 27, 27,  0, 20,
-      27,  0,  0, 27,  0,  0, 10,  0, 27,  0,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27, 27, 27, 27, 27,
-      27, 27, 27, 27, 27, 27
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35,  0,  0, 25,
+      35,  5, 20,  8,  0,  0, 35, 35,  5,  0,
+       3,  0, 15, 35,  0,  0,  0,  0, 30, 10,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
+      35, 35, 35, 35, 35, 35
     };
   return len + asso_values[(unsigned char)str[1]] + asso_values[(unsigned char)str[0]];
 }
@@ -98,45 +98,57 @@ kmap_lookup (register const char *str, register size_t len)
   static const struct kv_pair wordlist[] =
     {
       {(char*)0}, {(char*)0}, {(char*)0},
-#line 19 "keywords.txt"
-      {"pub", _PUB},
-#line 20 "keywords.txt"
-      {"priv", _PRIV},
+#line 17 "keywords.txt"
+      {"mut", _MUT},
+#line 26 "keywords.txt"
+      {"true", _TRUE},
+#line 8 "keywords.txt"
+      {"break", _BREAK,},
+#line 18 "keywords.txt"
+      {"struct", _STRUCT},
+#line 23 "keywords.txt"
+      {"null", _NULL},
+      {(char*)0},
+#line 25 "keywords.txt"
+      {"self", _SELF},
+      {(char*)0},
+#line 22 "keywords.txt"
+      {"return", _RETURN},
+#line 15 "keywords.txt"
+      {"goto", _GOTO},
+#line 16 "keywords.txt"
+      {"let", _LET},
+#line 11 "keywords.txt"
+      {"else", _ELSE,},
 #line 7 "keywords.txt"
       {"while", _WHILE,},
 #line 12 "keywords.txt"
       {"switch", _SWITCH},
       {(char*)0},
-#line 16 "keywords.txt"
-      {"let", _LET},
-#line 11 "keywords.txt"
-      {"else", _ELSE,},
-#line 8 "keywords.txt"
-      {"break", _BREAK,},
-#line 22 "keywords.txt"
-      {"return", _RETURN},
+#line 19 "keywords.txt"
+      {"pub", _PUB},
+#line 20 "keywords.txt"
+      {"priv", _PRIV},
+      {(char*)0}, {(char*)0},
 #line 10 "keywords.txt"
       {"if", _IF},
 #line 6 "keywords.txt"
       {"for", _FOR},
 #line 21 "keywords.txt"
       {"func", _FUNC},
+#line 27 "keywords.txt"
+      {"false", _FALSE},
+      {(char*)0}, {(char*)0}, {(char*)0},
+#line 13 "keywords.txt"
+      {"case", _CASE},
       {(char*)0},
-#line 18 "keywords.txt"
-      {"struct", _STRUCT},
+#line 14 "keywords.txt"
+      {"fallthrough", _FALLTHROUGH},
       {(char*)0},
 #line 9 "keywords.txt"
       {"continue", _CONTINUE,},
-#line 13 "keywords.txt"
-      {"case", _CASE},
-      {(char*)0}, {(char*)0}, {(char*)0},
-#line 17 "keywords.txt"
-      {"mut", _MUT},
-#line 15 "keywords.txt"
-      {"goto", _GOTO},
-      {(char*)0},
-#line 14 "keywords.txt"
-      {"fallthrough", _FALLTHROUGH}
+#line 24 "keywords.txt"
+      {"void", _VOID}
     };
 
   if (len <= MAX_WORD_LENGTH && len >= MIN_WORD_LENGTH)

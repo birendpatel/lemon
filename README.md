@@ -36,7 +36,7 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 
 # Todo
 
-- [ ] Add null, void, self, addressof, rvar literal, bool literal, to scanner (MEDIUM)
+- [X] Add null, void, self, addressof, rvar literal, bool literal, to scanner (MEDIUM)
 - [ ] Add null, void, self to grammar (EASY)
 - [ ] Add locale support to main.c (MEDIUM)
 - [ ] Add a 60 second language tutorial on this readme (EASY)

@@ -20,3 +20,8 @@ pub, _PUB
 priv, _PRIV
 func, _FUNC
 return, _RETURN
+null, _NULL
+void, _VOID
+self, _SELF
+true, _TRUE
+false, _FALSE
