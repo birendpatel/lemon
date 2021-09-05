@@ -406,7 +406,7 @@ xerror run(options *opt, char *src)
 		fprintf(stderr, "compiler pass: echo\n");
 	}
 
-	err = compile(opt, src);
+	err = compile(src, opt);
 
 	return err;
 }

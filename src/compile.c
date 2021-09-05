@@ -9,12 +9,12 @@
 #include "compile.h"
 #include "parser.h"
 
-xerror compile(options *opt, char *src)
+xerror compile(char *src, options *opt)
 {
 	assert(opt);
 	assert(src);
 
-	parse(src);
+	parse(src, opt);
 
 	return XESUCCESS;
 }

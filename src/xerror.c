@@ -74,8 +74,6 @@ const char *xerror_str(const xerror err)
 //In particular, __xerror_log will deadlock if we use the public variant.
 static void __xerror_flush(void)
 {
-	fprintf(stderr, "%s\n", "error log (most recent error last):");
-
 	for (uint8_t i = 0; i < xq.len; i++) {
 		fprintf(stderr, "%s\n", xq.buf[i]);
 	}

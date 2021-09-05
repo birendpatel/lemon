@@ -41,7 +41,7 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Add locale support to main.c (MEDIUM)
 - [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Make the project compatible with Clang (MEDIUM)
-- [ ] Implement diagnostic flag for multithreading on scanner (EASY)
+- [X] Implement diagnostic flag for multithreading on scanner (EASY)
 - [ ] Write vector unit tests (MEDIUM)
 - [ ] Write channel unit tests (HARD)
 - [ ] Create a thread pool for multi-file compilation (HARD)

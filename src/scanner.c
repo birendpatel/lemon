@@ -189,7 +189,7 @@ scanner_free() function and acquire the mutex first. To prevent this we busy
 wait until the scanner thread signals an 'okay' on the file scope signal.
 */
 
-xerror scanner_init(scanner **self, char *src)
+xerror scanner_init(scanner **self, char *src, options *opt)
 {
 	assert(self);
 	assert(src);
@@ -244,6 +244,11 @@ xerror scanner_init(scanner **self, char *src)
 		goto cleanup_attribute;
 	}
 
+	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
+		xerror_trace("scanner running in detached thread");
+		xerror_flush();
+	}
+
 	tmp->src = src;
 	tmp->pos = src;
 	tmp->curr = NULL;
@@ -287,7 +292,18 @@ fail:
 	return err;
 
 success:
+	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
+		xerror_trace("enter busy-wait");
+		xerror_flush();
+	}
+
 	while (!signal) { /* busy wait */ }
+
+	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
+		xerror_trace("exit busy-wait");
+		xerror_flush();
+	}
+
 	return XESUCCESS;
 }
 

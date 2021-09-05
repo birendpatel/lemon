@@ -8,6 +8,7 @@
 
 #include <stdint.h>
 
+#include "options.h"
 #include "xerror.h"
 
 /*******************************************************************************
@@ -139,7 +140,7 @@ typedef struct scanner scanner;
  * @fn scanner_init
  * @brief Initialize a scanner in a new thread
  ******************************************************************************/
-xerror scanner_init(scanner **self, char *src);
+xerror scanner_init(scanner **self, char *src, options *opt);
 
 /*******************************************************************************
  * @fn scanner_recv
