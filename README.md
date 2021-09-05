@@ -20,9 +20,9 @@ To build Lemon, you need a POSIX compliant system or comptability layer with the
 
 # Installation Guide
 
-Clone this repository and issue the command `sudo make install` from within the new directory. By default, the Lemon executable will be placed in `/usr/local/bin`.
+Clone this repository and issue the command `sudo make install` from within the new directory. By default, the Lemon executable will be placed in `/usr/local/bin`. To uninstall Lemon, issue `sudo make uninstall`.
 
-If you want to install Lemon in a different directory, just use `sudo make install INSTALL_PATH=...` instead. You may need to export the path. If so, add `export PATH=$PATH:...` to your `~/.profile` and then reload with `. ~/.profile`.
+You can modify the default installation directory by issuing `sudo make install INSTALL_PATH=...` and `sudo make uninstall INSTALL_PATH...`. You may need to export the path. If so, add `export PATH=$PATH:...` to your `~/.profile` and then reload with `. ~/.profile`. Uninstallation will not remove the path.
 
 # License
 
