@@ -64,5 +64,6 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Add a lookup table for pthreads errors (EASY)
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add arrow key support for REPL (MEDIUM)
-- [ ] Clean up, refactor, and finish documentation for scanner.c (EASY)
+- [X] Clean up, refactor, and finish documentation for scanner.c (EASY)
 - [ ] Write unit tests for scanner (MEDIUM)
+- [ ] Valgrind
