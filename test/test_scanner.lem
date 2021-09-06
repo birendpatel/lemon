@@ -1,0 +1,59 @@
+# Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+# Input for test_scanner.py
+
+#identifiers
+a ab abc abcd;
+
+#int literal
+0 1 10 100000000000000000000000000000000000000000000000000000000000;
+
+#float literal
+0. 0.0 1. 1.0 00.00 000000000000000000.0001111111111111111111100000;
+
+#string literal
+"" "a" "abc";
+
+#punctuation
+:[](){}.~,;
+
+#operators
+= == != ! && || ' & | ^ << >> > >= < <= + - * / %
+
+#words
+for
+while
+break
+continue
+if
+else
+switch
+case
+fallthrough
+goto
+let
+mut
+null
+true
+false
+struct
+func
+priv
+pub
+return
+self
+void
+
+#tricky combinations of operators
+===
+!==
+!====
+&&&
+|||
+<<<
+>>>
+<<<=
+>>>=
+>===
+>====
+<===
+<====
