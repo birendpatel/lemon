@@ -51,19 +51,14 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 
 # Todo
 
-- [X] Add null, void, self, addressof, rvar literal, bool literal, to scanner (MEDIUM)
-- [X] Add null, void, self to grammar (EASY)
 - [ ] Refactor shell handler to include waitpid and robust error handling
 - [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Make the project compatible with Clang (MEDIUM)
-- [X] Implement diagnostic flag for multithreading on scanner (EASY)
 - [ ] Write vector unit tests (MEDIUM)
 - [ ] Write channel unit tests (HARD)
 - [ ] Create a thread pool for multi-file compilation (HARD)
-- [X] Add full installation support in the makefile (EASY)
 - [ ] Add a lookup table for pthreads errors (EASY)
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add arrow key support for REPL (MEDIUM)
-- [X] Clean up, refactor, and finish documentation for scanner.c (EASY)
 - [ ] Write unit tests for scanner (MEDIUM)
 - [ ] Valgrind
