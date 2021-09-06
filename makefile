@@ -12,7 +12,8 @@ CFLAGS += -march=native
 # setup
 #-------------------------------------------------------------------------------
 
-.PHONY: all debug release docs install uninstall clean debug_deps release_deps
+.PHONY: all debug release docs install uninstall clean debug_deps release_deps \
+	memcheck
 
 vpath %.h ./src
 vpath %.h ./src/lib
@@ -133,6 +134,13 @@ docs:
 	mv ./html/* ./docs
 	rm -rf ./html ./latex
 	@echo "\ndocumentation generated, see ./docs/index.html."
+
+#-------------------------------------------------------------------------------
+# memory checks
+#-------------------------------------------------------------------------------
+
+memcheck: debug
+	valgrind --leak-check=yes ./debug/lemon ./examples/expressions.lem
 
 #-------------------------------------------------------------------------------
 # tests
