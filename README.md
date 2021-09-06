@@ -54,7 +54,6 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [X] Add null, void, self, addressof, rvar literal, bool literal, to scanner (MEDIUM)
 - [X] Add null, void, self to grammar (EASY)
 - [ ] Refactor shell handler to include waitpid and robust error handling
-- [ ] Add locale support to main.c (MEDIUM)
 - [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Make the project compatible with Clang (MEDIUM)
 - [X] Implement diagnostic flag for multithreading on scanner (EASY)
@@ -66,3 +65,4 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add arrow key support for REPL (MEDIUM)
 - [ ] Clean up, refactor, and finish documentation for scanner.c (EASY)
+- [ ] Write unit tests for scanner (MEDIUM)

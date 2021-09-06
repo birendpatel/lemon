@@ -6,6 +6,7 @@
 
 #include <assert.h>
 #include <pthread.h> //mutex, attr, create, detach
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h> //ptrdiff_t
 #include <stdio.h> //fprintf
@@ -35,9 +36,13 @@ static bool is_digit(char ch);
 static bool is_whitespace_eof(char ch);
 static void make_id_or_kw_token(scanner *self, uint32_t len);
 
+//a token_channel is used by struct scanner
 make_channel(token, token, static inline)
 
-static volatile bool signal = false;
+//busy-wait comm between parent thread and scanner thread.
+//A pthread cond would have worked just as well, but just requires a bit more
+//setup, error checking, and maintenance than an atomic signal.
+static _Atomic volatile bool signal = false;
 
 static const char *lookup[] = {
 	[_INVALID] = "INVALID",
