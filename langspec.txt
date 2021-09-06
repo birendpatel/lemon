@@ -27,6 +27,8 @@ alternation		|
 
 #-------------------------------------------------------------------------------
 # Lemon operator precedence
+# Precedence rules for priorities 1 and 2 are identical to C, and the rules for
+# priorities 3 - 9 are identical to Go.
 #-------------------------------------------------------------------------------
 
 Priority	Operators	Grouping	Comment
@@ -44,22 +46,22 @@ Priority	Operators	Grouping	Comment
 3		*		LR		Multiplication
 -		/		LR		Division
 -		%		LR		Mod
+-		>>		LR		Right shift
+-		<<		LR		Left shift
+-		&		LR		Bitwise AND
 4		+		LR		Binary addition
 -		-		LR		Binary subtraction
-5		>>		LR		Right shift
--		<<		LR		Left Shift
+-		|		LR		Bitwise OR
+-		^		LR		Bitwise XOR
 6		>		LR		Greater than
 -		<		LR		Less than
 -		>=		LR		Greater than or equal to
 -		<=		LR		Less than or equal to
-7		==		LR		Logical equals
+-		==		LR		Logical equals
 -		!=		LR		Logical not equals
-8		&		LR		Bitwise AND
-9		^		LR		Bitwise XOR
-10		|		LR		Bitwise OR
-11		&&		LR		Logical AND
-12		||		LR		Logical OR
-13		=		RL		Assignment
+7		&&		LR		Logical AND
+8		||		LR		Logical OR
+9		=		RL		Assignment
 
 #-------------------------------------------------------------------------------
 # Lexical Grammar
@@ -94,7 +96,7 @@ LITERAL ::= INT_LITERAL
 <type declaration> ::= "struct" IDENTIFIER "{" "}" ";"
 
 #TODO
-<function declaration> ::= "func" IDENTIFIER
+<function declaration> ::= "func" IDENTIFIER "(" ("void" | <parameters>) ") ...
 
 #-------------------------------------------------------------------------------
 # variable declarations default to the zero-value of the type if no explicit
@@ -118,47 +120,46 @@ LITERAL ::= INT_LITERAL
 
 #-------------------------------------------------------------------------------
 # The expression grammar is stratified according to the operator precedence
-# rules.
+# rules. Access rules are placed above the atom rule to avoid left recursion,
+# i.e., <atom> ::= <atom> <call> | <atom> <index> ...
+#
+# Note: assignment LHS is checked during context sentitive analysis.
 #-------------------------------------------------------------------------------
 
 <expression> ::= <assignment>
 
-<assignment> ::= IDENTIFIER "=" <assignment> | <logical or>
+<assignment> ::= <logical or> ("=" <assignment>)?
 
 <logical or> ::= <logical and> ("||" <logical and>)*
 
-<logical and> ::= <bitwise or> ("&&" <bitwise or>)*
+<logical and> ::= <equality> ("&&" <equality>)*
 
-<bitwise or> ::= <bitwise xor> ("|" <bitwise xor>)*
+<equality> ::= <term> ((">" | "<" | ">=" | "<=" | "==" | "!=") <term>)*
 
-<bitwise xor> ::= <bitwise and> ("^" <bitwise and>)*
+<term> ::= <factor> (("+" | "-" | "|" | "^") <factor>)*
 
-<bitwise and> ::= <equality> ("&" <equality)*
+<factor> ::= <unary> (("*" | "/" | "%" | ">>" | "<<" | "&") <unary>)*
 
-<equality> ::= <comparison> (("==" | "!=") <comparison)*
+<unary> ::= ("-" | "+" | "'" | "!" | "*" | "&" | <cast>) <unary> | <primary>
 
-<comparison> ::= <left shift> ((">" | "<" | ">=" | "<=") <left shift>)*
+<cast> ::= "(" IDENTIFIER ")"
 
-<left shift> ::= <right shift> ("<<" <right shift>)*
+<primary> ::= <atom> (<call> | <attribute> | <index>)*
 
-<right shift> ::= <term> (">>" <term>)*
-
-<term> ::= <factor> (("+" | "-") <factor>)*
-
-<factor> ::= <unary> (("*" | "/" | "%") <unary>)*
-
-<unary> ::= ("-" | "+" | "'" | "!" | "*" | "&" | <type cast>) <unary> | <access>
-
-<type cast> ::= "(" IDENTIFIER ")"
-
-<access> ::= <atom> (<call> | <attribute> | <index>)*
-
-<call> ::= "(" <arguments> ")"
-
-<arguments> ::= <expression> ("," <expression) *
+<call> ::= "(" <arguments>? ")"
 
 <attribute> ::= "." IDENTIFIER
 
 <index> ::= "[" <expression> "]"
 
-<atom> ::= IDENTIFIER | LITERAL | "(" <expression> ")"
+<arguments> ::= <expression> ("," <expression>)*
+
+<atom> ::= "true"
+	 | "false
+	 | "nil"
+	 | "self"
+	 | LITERAL
+	 | IDENTIFIER
+	 | <group>
+
+<group> ::= "(" <expression> ")"

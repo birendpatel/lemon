@@ -6,6 +6,7 @@
 
 #include <assert.h>
 #include <pthread.h> //mutex, attr, create, detach
+#include <stdatomic.h> //_Atomic
 #include <stdbool.h>
 #include <stddef.h> //ptrdiff_t
 #include <stdio.h> //fprintf
@@ -35,9 +36,11 @@ static bool is_digit(char ch);
 static bool is_whitespace_eof(char ch);
 static void make_id_or_kw_token(scanner *self, uint32_t len);
 
+//token_channel is used by struct scanner
 make_channel(token, token, static inline)
 
-static volatile bool signal = false;
+//busy-wait comm between parent and scanner thread
+static _Atomic volatile bool signal = false;
 
 static const char *lookup[] = {
 	[_INVALID] = "INVALID",
@@ -64,7 +67,7 @@ static const char *lookup[] = {
 	[_AND] = "AND",
 	[_OR] = "OR",
 	[_BITNOT] = "BITWISE NOT",
-	[_BITAND] = "BITWISE AND",
+	[_AMPERSAND] = "AMPERSAND",
 	[_BITOR] = "BITWISE OR",
 	[_BITXOR] = "BITWISE XOR",
 	[_LSHIFT] = "LEFT SHIFT",
@@ -91,10 +94,15 @@ static const char *lookup[] = {
 	[_LET] = "LET",
 	[_MUT] = "MUT",
 	[_STRUCT] = "STRUCT",
+	[_SELF] = "SELF",
 	[_FUNC] = "FUNC",
 	[_PRIV] = "PRIVATE",
 	[_PUB] = "PUBLIC",
-	[_RETURN] = "RETURN"
+	[_RETURN] = "RETURN",
+	[_VOID] = "VOID",
+	[_NULL] = "NULL",
+	[_TRUE] = "BOOL TRUE",
+	[_FALSE] = "BOOL FALSE"
 };
 
 static const char *get_token_name(token_type typ)
@@ -115,6 +123,7 @@ void token_print(token tok)
 {
 	static const char *lexfmt = "TOKEN { line %-10d: %-20s: %.*s }\n";
 	static const char *nolexfmt = "TOKEN { line %-10d: %-20s }\n";
+
 	const char *tokname = get_token_name(tok.type);
 
 	if (tok.lexeme) {
@@ -144,10 +153,7 @@ void token_print(token tok)
  * @var scanner::pos
  * 	@brief The position of the current byte being analysed by the scanner.
  * @var scanner::curr
- * 	@brief For multi-character lexemes, curr saves the position of the
- * 	first byte in the lexeme while pos advances forwards. Curr is another
- * 	temporary workspace like tok, and its value can be overridden or reset
- * 	by any function call at any time.
+ * 	@brief Used to help process multi-character lexemes in tandem with pos.
  ******************************************************************************/
 struct scanner {
 	pthread_t tid;
@@ -161,9 +167,6 @@ struct scanner {
 };
 
 /*******************************************************************************
-This is a simple function, despite its length, but it has many potential points
-of failure due to the large amount of syscalls.
-
 The initializer performs heap allocations across three levels of indirection:
 - the pointer to the scanner
 - the pointer to the channel within the scanner
@@ -184,7 +187,7 @@ scanner_free() function and acquire the mutex first. To prevent this we busy
 wait until the scanner thread signals an 'okay' on the file scope signal.
 */
 
-xerror scanner_init(scanner **self, char *src)
+xerror scanner_init(scanner **self, char *src, options *opt)
 {
 	assert(self);
 	assert(src);
@@ -239,6 +242,11 @@ xerror scanner_init(scanner **self, char *src)
 		goto cleanup_attribute;
 	}
 
+	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
+		xerror_trace("scanner running in detached thread");
+		xerror_flush();
+	}
+
 	tmp->src = src;
 	tmp->pos = src;
 	tmp->curr = NULL;
@@ -282,7 +290,18 @@ fail:
 	return err;
 
 success:
-	while (!signal) { /* busy wait */ }
+	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
+		xerror_trace("enter busy-wait");
+		xerror_flush();
+	}
+
+	while (!signal) { }
+
+	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
+		xerror_trace("exit busy-wait");
+		xerror_flush();
+	}
+
 	return XESUCCESS;
 }
 
@@ -293,6 +312,7 @@ success:
 static void* start_routine(void *data)
 {
 	scanner *self = (scanner *) data;
+
 	pthread_mutex_lock(&self->mutex);
 
 	signal = true;
@@ -302,7 +322,9 @@ static void* start_routine(void *data)
 	end_routine(self);
 
 	pthread_mutex_unlock(&self->mutex);
+
 	pthread_exit(NULL);
+
 	return NULL;
 }
 
@@ -361,26 +383,14 @@ overhead 2) the channel pointer is read-only so we know the scanner thread has
 not retargeted it 3) the channel has its own thread safety. All operations on
 on the channel never directly access a channel member for reads or writes
 unless it is through a thread-safe channel function.
-
-Granted, this function relies on the implementation details of channels and
-causes a degree of function coupling. In return, the scan() function does not
-constantly have to constantly deal with threading overhead every single time
-it needs to modify its temporary workspace. The overhead is murder on the
-runtime speed.
-
-All of this relies on an implicit contract; the main thread promises to never
-modify or read anything in the scanner except the channel. Since this is
-the only unsafe function provided by the scanner in its API, the contract is
-easy to verify.
 */
+
 xerror scanner_recv(scanner *self, token *tok)
 {
 	assert(self);
 	assert(self->chan);
 	assert(tok);
 
-	//the one and only mutex bypass in the entirety of the scanner
-	//occurs in this function call.
 	xerror err = token_channel_recv(self->chan, tok);
 
 	if (err) {
@@ -468,7 +478,7 @@ static void scan(scanner *self)
 		case ',':
 			consume(self, _COMMA, 1);
 			break;
-		
+
 		case ':':
 			consume(self, _COLON, 1);
 			break;
@@ -511,7 +521,7 @@ static void scan(scanner *self)
 			break;
 
 		case '&':
-			consume_ifpeek(self, '&', _AND, _BITAND);
+			consume_ifpeek(self, '&', _AND, _AMPERSAND);
 			break;
 
 		case '|':
@@ -592,7 +602,7 @@ static void consume_ident_kw(scanner *self)
 			break;
 		}
 	}
-	
+
 	ptrdiff_t delta = self->curr - self->pos;
 	assert(delta >= 0);
 
@@ -625,7 +635,7 @@ static void make_id_or_kw_token(scanner *self, uint32_t len)
 }
 
 //latin alphabet, underscores, zero thru nine
-static bool is_letter_digit(char ch) 
+static bool is_letter_digit(char ch)
 {
 	return is_letter(ch) || is_digit(ch);
 }
@@ -685,7 +695,7 @@ static bool is_whitespace_eof(char ch)
 static inline void consume_invalid(scanner *self)
 {
 	assert(self);
-	
+
 	char *start = self->pos;
 	uint32_t n = synchronize(self);
 
@@ -797,7 +807,7 @@ static void consume_number(scanner *self)
 			break;
 		}
 	}
-	
+
 	delta = self->curr - self->pos;
 
 	self->tok = (token) {
@@ -855,7 +865,7 @@ static void consume_string(scanner *self)
 			};
 
 			(void) token_channel_send(self->chan, self->tok);
-			
+
 			self->pos = self->curr;
 
 			return;

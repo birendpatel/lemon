@@ -18,9 +18,24 @@ To build Lemon, you need a POSIX compliant system or comptability layer with the
 - GNU Make 4.2.1+
 - Doxygen 1.8.13+ (optional)
 
-# Install
+# Installation Guide
 
-Clone this repository and issue `make release`. The executable `lemon` will be placed in the newly created `release` directory.
+To install Lemon in the default directory /usr/local/bin:
+
+1. Clone this repository
+2. Change into the new directory
+3. Issue `sudo make install`.
+4. Uninstall with `sudo make uninstall`.
+
+To install Lemon in a custom directory:
+
+1. Clone this repository
+2. Change into the new directory
+3. Create a custom installation directory with `mkdir /my/new/path`
+4. Issue `sudo make install INSTALL_PATH=/my/new/path`
+5. Export the path by adding `export PATH=$PATH:/my/new/path` to `~/.profile`
+6. Reload with `source ~/.profile`
+4. Uninstall with `sudo make uninstall INSTALL_PATH=/my/new/path`
 
 # License
 
@@ -36,17 +51,14 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 
 # Todo
 
-- [ ] Add null, void, self, addressof, rvar literal, bool literal, to scanner (MEDIUM)
-- [ ] Add null, void, self to grammar (EASY)
-- [ ] Add locale support to main.c (MEDIUM)
+- [ ] Refactor shell handler to include waitpid and robust error handling
 - [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Make the project compatible with Clang (MEDIUM)
-- [ ] Implement diagnostic flag for multithreading on scanner (EASY)
 - [ ] Write vector unit tests (MEDIUM)
 - [ ] Write channel unit tests (HARD)
 - [ ] Create a thread pool for multi-file compilation (HARD)
-- [ ] Add full installation support in the makefile (EASY)
 - [ ] Add a lookup table for pthreads errors (EASY)
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add arrow key support for REPL (MEDIUM)
-- [ ] Clean up, refactor, and finish documentation for scanner.c (EASY)
+- [ ] Write unit tests for scanner (MEDIUM)
+- [ ] Valgrind

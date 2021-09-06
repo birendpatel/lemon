@@ -10,7 +10,7 @@
 
 //this function is not yet implemented,
 //just a quick test loop  for now.
-xerror parse(char *src)
+xerror parse(char *src, options *opt)
 {
 	assert(src);
 
@@ -18,7 +18,7 @@ xerror parse(char *src)
 
 	scanner *scn;
 
-	scanner_init(&scn, src);
+	scanner_init(&scn, src, opt);
 
 	token t;
 	scanner_recv(scn, &t);

@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "options.h"
 #include "xerror.h"
 
 /*******************************************************************************
@@ -13,4 +14,4 @@
  * @brief Transform raw source code to an abstract syntax tree.
  * @param src Null terminated char array
  ******************************************************************************/
-xerror parse(char *src);
+xerror parse(char *src, options *opt);
