@@ -12,9 +12,6 @@ CFLAGS += -march=native
 # setup
 #-------------------------------------------------------------------------------
 
-.PHONY: all debug release docs install uninstall clean debug_deps release_deps \
-	memcheck
-
 vpath %.h ./src
 vpath %.h ./src/lib
 vpath %.h ./src/assets
@@ -36,6 +33,8 @@ objects_release := $(addprefix $(RELEASE_DIR), $(objects_raw))
 #-------------------------------------------------------------------------------
 # debug build
 #-------------------------------------------------------------------------------
+
+.PHONY: all debug debug_deps
 
 all: debug
 
@@ -76,6 +75,8 @@ $(DEBUG_DIR)kmap.o : kmap.c kmap.h scanner.h
 # release build
 #-------------------------------------------------------------------------------
 
+.PHONY: release release_deps
+
 release: CFLAGS += -O2
 release: release_deps $(RELEASE_DIR)lemon
 	@echo "\nBuild finished successfully."
@@ -113,6 +114,8 @@ $(RELEASE_DIR)kmap.o : kmap.c kmap.h scanner.h
 # install
 #-------------------------------------------------------------------------------
 
+.PHONY: install uninstall
+
 INSTALL_PATH = /usr/local/bin
 
 install: release
@@ -127,6 +130,8 @@ uninstall:
 # docs
 #-------------------------------------------------------------------------------
 
+.PHONY: docs
+
 docs:
 	rm -rf ./docs
 	doxygen
@@ -139,6 +144,8 @@ docs:
 # memory checks
 #-------------------------------------------------------------------------------
 
+.PHONY: memcheck
+
 memcheck: debug
 	valgrind --leak-check=yes ./debug/lemon ./examples/expressions.lem
 
@@ -147,12 +154,23 @@ memcheck: debug
 # Unity framework is external, compiled w/out flags
 #-------------------------------------------------------------------------------
 
+.PHONY: tests test_scanner
+
+TESTNAMES = test_scanner
+
+tests: $(TESTNAMES)
+
 unity.o: unity.c unity.h unity_internals.h
 	$(CC) -c $< -o $@
+
+test_scanner: debug
+	cd ./test; python3 ./test_scanner.py
 
 #-------------------------------------------------------------------------------
 # clean
 #-------------------------------------------------------------------------------
+
+.PHONY: clean
 
 clean:
 	@rm -rf ./lemon ./release ./debug ./docs
