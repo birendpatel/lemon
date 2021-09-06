@@ -21,7 +21,7 @@ typedef enum token_type {
 	_EOF,
 	_IDENTIFIER,
 
-	//literals
+	//atomic literals
 	_LITERALINT,
 	_LITERALFLOAT,
 	_LITERALSTR,

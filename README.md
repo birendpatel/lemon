@@ -61,3 +61,4 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add arrow key support for REPL (MEDIUM)
 - [ ] Write unit tests for scanner (MEDIUM)
+- [ ] Add support for escape characters in string literals
