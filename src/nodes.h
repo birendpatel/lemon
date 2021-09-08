@@ -20,25 +20,18 @@ typedef struct decl decl;
 typedef struct stmt stmt;
 typedef struct expr expr;
 
-//char names need to be extracted for later symbol tables. wrap them in a string
-//to help keep track of which len variables match to which char pointers.
-//note that this sacrificies 4 bytes of padding.
-typedef struct string {
-	char *ptr;
-	uint32_t len;
-} string;
+//declaration node flags
+#define MUTABLE	(1 << 0) /**< @brief The param/var/member is mutable */
+#define PUBLIC	(1 << 1) /**< @brief The func/member is public */
+#define POINTER	(1 << 2) /**< @brief The type is a pointer to a base type */
+#define RECVPTR (1 << 3) /**< @brief The receiver is a pointer to a UDT */
 
-//method member for function declarations
-typedef struct receiver {
-	string name;
-	bool is_pointer;
-} receiver;
-
-//parameter object for each struct member or for each function parameter
+//function parameters and struct members
+//i.e., x: *i32 generates (param) {"x", "i32", POINTER}
 typedef struct param {
-	string name;
-	string type;
-	bool private; //for structs
+	char *name;
+	char *type;
+	uint32_t flags;
 } param;
 
 //vectors contained in various nodes. Since nodes are simple bags of data, the
@@ -63,22 +56,26 @@ struct decl {
 	} type;
 	union {
 		struct {
-			string name;
+			char *name
 			param_vector params;
+			uint32_t flags;
+			uint32_t line;
 		} typ;
 		struct {
-			string name;
-			param_vector params;
-			string rettype;
-			receiver recv;
+			char *name;
+			char *ret;
+			char *recv;
 			stmt *block;
-			bool private;
+			param_vector params;
+			uint32_t flags;
+			uint32_t line;
 		} func;
 		struct {
-			string name;
-			string datatype;
+			char *name;
+			char *type;
 			expr *value;
-			bool mutable;
+			uint32_t flags;
+			uint32_t line;
 		} var;
 	};
 };
