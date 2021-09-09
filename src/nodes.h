@@ -13,101 +13,174 @@
 #include "lib/vector.h"
 
 //node typedefs need to be specified up front due to the large amount of
-//circular references. exprs can contain stmts, stmts can contain exprs, etc..
+//circular references. Declarations can contain statements, statements can
+//contain declarations, and so on. All AST nodes fit into one of these 5 
+//categories.
 typedef struct file file;
-typedef struct action action;
+typedef struct type type;
 typedef struct decl decl;
 typedef struct stmt stmt;
 typedef struct expr expr;
 
-//declaration node flags
-#define MUTABLE	(1 << 0) /**< @brief The param/var/member is mutable */
-#define PUBLIC	(1 << 1) /**< @brief The func/member is public */
-#define POINTER	(1 << 2) /**< @brief The type is a pointer to a base type */
-#define RECVPTR (1 << 3) /**< @brief The receiver is a pointer to a UDT */
+//struct members, i.e., pub x: i32 generates (member) {"x", "i32", true}
+//
 
-//function parameters and struct members
-//i.e., x: *i32 generates (param) {"x", "i32", POINTER}
+/*******************************************************************************
+ * @struct member
+ * @brief Each member of a Lemon struct is a name associated with a type. Public
+ * members can be read or written to when outside of the method set.
+ ******************************************************************************/
+typedef struct member {
+	char *name;
+	type *typ;
+	bool public;
+} member;
+
+/*******************************************************************************
+ * @struct param
+ * @brief Each parameter of a Lemon function is a name associated with a type
+ * and a mutability constraint.
+ ******************************************************************************/
 typedef struct param {
 	char *name;
-	char *type;
-	uint32_t flags;
+	type *typ;
+	bool mutable;
 } param;
 
 //vectors contained in various nodes. Since nodes are simple bags of data, the
 //user (aka the parser) must implement the actual vector operations.
-alias_vector(action)
-declare_vector(action, action)
+alias_vector(decl)
+declare_vector(decl, decl)
+
+alias_vector(member)
+declare_vector(member, member)
 
 alias_vector(param)
 declare_vector(param, param)
 
 /*******************************************************************************
+ * @struct type
+ * @brief Tagged union of type nodes
+ * @details Base identifiers are represented as a single type node. Composite
+ * types are composed as a linked list and match 1:1 to the recursive grammar 
+ * rule for composition.
+ ******************************************************************************/
+struct type {
+	enum {
+		NODE_BASE,
+		NODE_POINTER,
+		NODE_ARRAY,
+	} tag;
+
+	union {
+		char *base;
+		type *pointer;
+
+		struct {
+			size_t length;
+			type *base;
+		} array;
+	};
+};
+
+/*******************************************************************************
  * @struct decl
  * @brief Tagged union of declaration nodes.
- * @remark The Lemon grammar expands declarations to include statements. But,
- * statement nodes are handled in a separate struct due to their complexity.
+ * @remark Type declarations are named as user-defined types (UDTs) to avoid
+ * namespace issues with type nodes.
  ******************************************************************************/
 struct decl {
 	enum {
-		TYP,
-		FUNC,
-		VAR,
-	} type;
+		NODE_UDT,
+		NODE_FUNCTION,
+		NODE_VARIABLE,
+		NODE_STATEMENT,
+	} tag;
+
 	union {
 		struct {
 			char *name;
-			param_vector params;
-			uint32_t flags;
+			member_vector members;
 			uint32_t line;
-		} typ;
+			bool public;
+		} udt;
+
 		struct {
 			char *name;
-			char *ret;
-			char *recv;
+			type *ret;
+			type *recv;
 			stmt *block;
 			param_vector params;
-			uint32_t flags;
 			uint32_t line;
-		} func;
+			bool public;
+		} function;
+
 		struct {
 			char *name;
 			char *type;
 			expr *value;
-			uint32_t flags;
 			uint32_t line;
-		} var;
+			bool mutable;
+		} variable;
+
+		stmt *statement;
 	};
 };
 
 /*******************************************************************************
  * @struct stmt
  * @brief Tagged union of statement nodes
+ * @remark Simple jumps (break, continue, fallthrough) do not have a payload.
  ******************************************************************************/
 struct stmt {
 	enum {
-		GENERIC,
-	} type;
-	union {
-		struct {
-			expr *expression;
-		} generic;
-	};
-};
+		NODE_EXPRSTMT,
+		NODE_BLOCK,
+		NODE_FORLOOP,
+		NODE_WHILELOOP,
+		NODE_SWITCHSTMT,
+		NODE_BRANCH,
+		NODE_RETURNSTMT,
+		NODE_BREAKSTMT,
+		NODE_CONTINUESTMT,
+		NODE_GOTOLABEL,
+		NODE_FALLTHROUGHSTMT,
+	} tag;
 
-/*******************************************************************************
- * @struct action
- * @brief Thin wrapper over decls and stmts to allow polymorphism in the
- * vector elements for file nodes.
- ******************************************************************************/
-struct action {
-	enum {
-		DECL,
-		STMT,
-	} type;
 	union {
-		decl declaration;
-		stmt statement;
+		expr *exprstmt;
+		expr *returnstmt;
+		char *gotolabel;
+
+		struct {
+			decl_vector declarations;
+		} block;
+
+		struct {
+			enum {
+				FOR_DECL,
+				FOR_INIT,
+			} tag;
+			union {
+				decl *declaration;
+				expr *init;
+			};
+			expr *cond;
+			expr *post;
+			stmt *block;
+		} forloop;
+
+		struct {
+			expr *cond;
+			stmt *block;
+		} whileloop;
+
+		struct {
+			decl *declaration; //may be null if no short decl
+			expr *cond;
+			stmt *pass;
+			stmt *fail;
+		} branch;
 	};
 };
 
@@ -120,5 +193,5 @@ struct action {
  ******************************************************************************/
 struct file {
 	uint64_t id;
-	action_vector actions;
+	decl_vector declarations;
 };
