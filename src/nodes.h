@@ -56,7 +56,7 @@ struct decl {
 	} type;
 	union {
 		struct {
-			char *name
+			char *name;
 			param_vector params;
 			uint32_t flags;
 			uint32_t line;

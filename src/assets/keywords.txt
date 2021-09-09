@@ -11,6 +11,7 @@ if, _IF
 else, _ELSE,
 switch, _SWITCH
 case, _CASE
+default, _DEFAULT
 fallthrough, _FALLTHROUGH
 goto, _GOTO
 let, _LET

@@ -71,6 +71,7 @@ typedef enum token_type {
 	_ELSE,
 	_SWITCH,
 	_CASE,
+	_DEFAULT,
 	_FALLTHROUGH,
 	_GOTO,
 

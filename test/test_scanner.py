@@ -77,6 +77,7 @@ class TestTokenizer(unittest.TestCase):
             "ELSE BRANCH",
             "SWITCH",
             "CASE",
+            "DEFAULT",
             "FALLTHROUGH",
             "GOTO",
             "LET",

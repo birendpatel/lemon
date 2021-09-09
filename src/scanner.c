@@ -89,6 +89,7 @@ static const char *lookup[] = {
 	[_ELSE] = "ELSE BRANCH",
 	[_SWITCH] = "SWITCH",
 	[_CASE] = "CASE",
+	[_DEFAULT] = "DEFAULT",
 	[_FALLTHROUGH] = "FALLTHROUGH",
 	[_GOTO] = "GOTO",
 	[_LET] = "LET",

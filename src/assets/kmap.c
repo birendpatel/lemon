@@ -43,7 +43,7 @@
 #line 4 "keywords.txt"
 //kv_pair defined in kmap.h
 
-#define TOTAL_KEYWORDS 22
+#define TOTAL_KEYWORDS 23
 #define MIN_WORD_LENGTH 2
 #define MAX_WORD_LENGTH 11
 #define MIN_HASH_VALUE 3
@@ -72,7 +72,7 @@ hash (register const char *str, register size_t len)
       35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
       35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
       35, 35, 35, 35, 35, 35, 35,  0,  0, 25,
-      35,  5, 20,  8,  0,  0, 35, 35,  5,  0,
+       5,  5, 20,  8,  0,  0, 35, 35,  5,  0,
        3,  0, 15, 35,  0,  0,  0,  0, 30, 10,
       35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
       35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
@@ -98,25 +98,25 @@ kmap_lookup (register const char *str, register size_t len)
   static const struct kv_pair wordlist[] =
     {
       {(char*)0}, {(char*)0}, {(char*)0},
-#line 17 "keywords.txt"
+#line 18 "keywords.txt"
       {"mut", _MUT},
-#line 26 "keywords.txt"
+#line 27 "keywords.txt"
       {"true", _TRUE},
 #line 8 "keywords.txt"
       {"break", _BREAK,},
-#line 18 "keywords.txt"
+#line 19 "keywords.txt"
       {"struct", _STRUCT},
-#line 23 "keywords.txt"
+#line 24 "keywords.txt"
       {"null", _NULL},
       {(char*)0},
-#line 25 "keywords.txt"
+#line 26 "keywords.txt"
       {"self", _SELF},
       {(char*)0},
-#line 22 "keywords.txt"
+#line 23 "keywords.txt"
       {"return", _RETURN},
-#line 15 "keywords.txt"
-      {"goto", _GOTO},
 #line 16 "keywords.txt"
+      {"goto", _GOTO},
+#line 17 "keywords.txt"
       {"let", _LET},
 #line 11 "keywords.txt"
       {"else", _ELSE,},
@@ -124,30 +124,31 @@ kmap_lookup (register const char *str, register size_t len)
       {"while", _WHILE,},
 #line 12 "keywords.txt"
       {"switch", _SWITCH},
-      {(char*)0},
-#line 19 "keywords.txt"
-      {"pub", _PUB},
+#line 14 "keywords.txt"
+      {"default", _DEFAULT},
 #line 20 "keywords.txt"
+      {"pub", _PUB},
+#line 21 "keywords.txt"
       {"priv", _PRIV},
       {(char*)0}, {(char*)0},
 #line 10 "keywords.txt"
       {"if", _IF},
 #line 6 "keywords.txt"
       {"for", _FOR},
-#line 21 "keywords.txt"
+#line 22 "keywords.txt"
       {"func", _FUNC},
-#line 27 "keywords.txt"
+#line 28 "keywords.txt"
       {"false", _FALSE},
       {(char*)0}, {(char*)0}, {(char*)0},
 #line 13 "keywords.txt"
       {"case", _CASE},
       {(char*)0},
-#line 14 "keywords.txt"
+#line 15 "keywords.txt"
       {"fallthrough", _FALLTHROUGH},
       {(char*)0},
 #line 9 "keywords.txt"
       {"continue", _CONTINUE,},
-#line 24 "keywords.txt"
+#line 25 "keywords.txt"
       {"void", _VOID}
     };
 

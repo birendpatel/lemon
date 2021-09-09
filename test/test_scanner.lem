@@ -28,6 +28,7 @@ if
 else
 switch
 case
+default
 fallthrough
 goto
 let

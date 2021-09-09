@@ -154,14 +154,27 @@ LITERAL ::= INT_LITERAL
 	      | <switch statement>
 	      | <branch statement>
 	      | <return statement>
+	      | <break statement>
+	      | <continue statement>
+	      | <goto statement>
+	      | <fallthrough statement>
 
 <expression statement> ::= <expression> ";"
 
-<return statement> ::= "return" <expression> ";"
+<return statement> ::= "return" <expression>? ";"
+
+<break statement> ::= "break" ";"
+
+<continue statement> ::= "continue" ";"
+
+<fallthrough statement> ::= "fallthrough" ";"
+
+<goto statement> ::= "goto" IDENTIFIER ";"
 
 #-------------------------------------------------------------------------------
 # Block statements may include any declarations. Function declarations in a
-# block may be used to create closures.
+# block may be used to create closures. Most recursion performed on statements
+# is directed to the block statement.
 #-------------------------------------------------------------------------------
 
 <block statement> ::= "{" <declaration>* "}"
@@ -176,14 +189,20 @@ LITERAL ::= INT_LITERAL
 #-------------------------------------------------------------------------------
 
 <for statement> ::= 
-	"for" "(" (<short declaration> | <expr>) ";" <expr> ";" <expr> ";" ")"
+	"for" "(" (<short declaration> | <expression>) ";"
+	<expression> ";"
+	<expression> ";" ")"
 	<block statement>
 
-<while statement> ::= "while" "(" <expr> ")" <block statement>
+<while statement> ::= "while" "(" <expression> ")" <block statement>
 
 <branch statement> ::= 
-	"if" "(" <short declaration>? <expr> ")" <block statement>
+	"if" "(" <short declaration>? <expression> ")" <block statement>
 	("else" (<branch statement> | <block statement>))?
+
+<switch statement> ::= "switch" "(" <expression> ")" "{" <case statement>+ "}"
+
+<case statement> ::= "case" <literal> ":" <block statement> | "default"
 
 #-------------------------------------------------------------------------------
 # The expression grammar is stratified according to the operator precedence
