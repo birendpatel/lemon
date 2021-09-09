@@ -124,7 +124,9 @@ LITERAL ::= INT_LITERAL
 #-------------------------------------------------------------------------------
 
 <variable declaration> ::= 
-	"let" "mut"? <type> ":" IDENTIFIER "=" <expression> ";"
+	"let" "mut"? IDENTIFIER ":" <type> "=" <expression> ";"
+
+<short declaration> ::= IDENTIFIER : <type> "=" <expression>
 
 #-------------------------------------------------------------------------------
 # types are identifiers perhaps prefixed with leading symbols which construct
@@ -143,9 +145,6 @@ LITERAL ::= INT_LITERAL
 # Statements can be direct children of file nodes. Lemon acts like a dynamic
 # language in the sense that it does not need a main function as an entry point.
 # Statments are executed procedurally.
-#
-# Block statements include any declarations. Function declarations in a block
-# may create closures.
 #-------------------------------------------------------------------------------
 
 <statement> ::= <expression statement>
@@ -156,9 +155,35 @@ LITERAL ::= INT_LITERAL
 	      | <branch statement>
 	      | <return statement>
 
+<expression statement> ::= <expression> ";"
+
+<return statement> ::= "return" <expression> ";"
+
+#-------------------------------------------------------------------------------
+# Block statements may include any declarations. Function declarations in a
+# block may be used to create closures.
+#-------------------------------------------------------------------------------
+
 <block statement> ::= "{" <declaration>* "}"
 
-<expression statement> ::= <expression> ";"
+#-------------------------------------------------------------------------------
+# Unlike C, loop control flow does not have optional controlling expressions.
+# Loops also require block statement.
+#
+# Both for loops and branch statements can possess a short declaration. These
+# are mutable variables. In branch statements the short declaration is entirely
+# optional. Where present, it can be referenced in both the if and else clauses.
+#-------------------------------------------------------------------------------
+
+<for statement> ::= 
+	"for" "(" (<short declaration> | <expr>) ";" <expr> ";" <expr> ";" ")"
+	<block statement>
+
+<while statement> ::= "while" "(" <expr> ")" <block statement>
+
+<branch statement> ::= 
+	"if" "(" <short declaration>? <expr> ")" <block statement>
+	("else" (<branch statement> | <block statement>))?
 
 #-------------------------------------------------------------------------------
 # The expression grammar is stratified according to the operator precedence
