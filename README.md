@@ -62,3 +62,4 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Add arrow key support for REPL (MEDIUM)
 - [ ] Add support for escape characters in string literals (HARD)
 - [ ] Remove the private keyword from the scanner, grammar, and kmap (MEDIUM)
+- [ ] Rename 'for loop' token name to 'for' due to func declarations (EASY)
