@@ -84,6 +84,7 @@ typedef enum token_type {
 
 	//keywords, composition
 	_STRUCT,
+	_IMPORT,
 
 	//keywords, procedures
 	_FUNC,

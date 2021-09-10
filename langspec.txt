@@ -75,40 +75,48 @@ LITERAL ::= INT_LITERAL
 
 #-------------------------------------------------------------------------------
 # Syntactical Grammar
-#-------------------------------------------------------------------------------
-
-<file> ::= <declaration>* "EOF" ;
-
-#-------------------------------------------------------------------------------
+#
 # Lemon does not require a main() function as its entry point. Therefore,
-# statements may exist at the top level alongside declarations.
+# statements may exist at the top level alongside declarations. Some statements
+# are semantically meaningless at the top level, such as break or continue, but
+# are nonetheless syntactically valid.
+#-------------------------------------------------------------------------------
+
+<file> ::= <fiat>* "EOF"
+
+<fiat> ::= <declaration> | <statement>
+
+#-------------------------------------------------------------------------------
+# Struct and variable declarations outside of a function block have file scope
+# by default. This is an implicit "priv" keyword. "priv" is a reserved keyword
+# but it is not actually used by Lemon. The "pub" scope qualifier gives global
+# scope. This makes the declaration visible when the file is imported.
 #-------------------------------------------------------------------------------
 
 <declaration> ::= <struct declaration>
 		| <function declaration>
 		| <variable declaration>
-		| <statement>
 
 #-------------------------------------------------------------------------------
-# A struct declaration just introduces a struct as a new type, and it can be
-# used in other declarations via its tag identifier. Unlike other C-esque
-# languages, the predeclared types like i32, f32, etc. cannot be type alised.
+# A struct declaration introduces a scoped user defined type. Together with its
+# method set, a struct enables object orientation via composition. Members are
+# defaulted to immutable attributes.
 #-------------------------------------------------------------------------------
 
-<struct declaration> ::= "struct" IDENTIFIER "{" <member list> "}" ";"
+<struct declaration> ::= "struct" "pub"? IDENTIFIER "{" <member list> "}" ";"
 
-<member list> ::= (("pub" | "priv") "mut"? IDENTIFIER ":" <type>";")+
+<member list> ::= ("mut"? IDENTIFIER ":" <type>";")+
 
 #-------------------------------------------------------------------------------
 # Functions may be methods taking a pointer to the receiver or the receiver
-# itself.
+# itself. Functions are default private, meaning file scoped.
 #
-# example: func priv foo(x: i32, y: f32) return void for *bar {...} is a private
+# example: func pub foo(x: i32, y: f32) return void for *bar {...} is a public
 # method named foo with two parameters and returning nothing.
 #-------------------------------------------------------------------------------
 
 <function declaration> ::= 
-	"func" ("priv" | "pub") IDENTIFIER "(" ("void" | <parameter list>) ")"
+	"func" "pub"? IDENTIFIER "(" ("void" | <parameter list>) ")"
 	"return" ("void" | <type>) ("for" <type>)? <block statement>
 
 <parameter list> ::= 
@@ -124,7 +132,7 @@ LITERAL ::= INT_LITERAL
 #-------------------------------------------------------------------------------
 
 <variable declaration> ::= 
-	"let" "mut"? IDENTIFIER ":" <type> "=" <expression> ";"
+	"let" "pub"? "mut"? IDENTIFIER ":" <type> "=" <expression> ";"
 
 <short declaration> ::= IDENTIFIER : <type> "=" <expression>
 
@@ -158,6 +166,7 @@ LITERAL ::= INT_LITERAL
 	      | <continue statement>
 	      | <goto statement>
 	      | <fallthrough statement>
+	      | <import statement>
 
 <expression statement> ::= <expression> ";"
 
@@ -171,13 +180,15 @@ LITERAL ::= INT_LITERAL
 
 <goto statement> ::= "goto" IDENTIFIER ";"
 
+<import statement> ::= "import" IDENTIFIER ";"
+
 #-------------------------------------------------------------------------------
-# Block statements may include any declarations. Function declarations in a
+# Block statements may include any anything at all. Function declarations in a
 # block may be used to create closures. Most recursion performed on statements
 # is directed to the block statement.
 #-------------------------------------------------------------------------------
 
-<block statement> ::= "{" <declaration>* "}"
+<block statement> ::= "{" <fiat>* "}"
 
 #-------------------------------------------------------------------------------
 # Unlike C, loop control flow does not have optional controlling expressions.
@@ -230,21 +241,17 @@ LITERAL ::= INT_LITERAL
 
 <cast> ::= "(" IDENTIFIER ")"
 
-<primary> ::= <atom> (<call> | <attribute> | <index>)*
+<primary> ::= <atom> (<call> | <selector> | <index>)*
 
 <call> ::= "(" <arguments>? ")"
 
-<attribute> ::= "." IDENTIFIER
+<selector> ::= "." IDENTIFIER
 
 <index> ::= "[" <expression> "]"
 
 <arguments> ::= <expression> ("," <expression>)*
 
-<atom> ::= "self"
-	 | "true"
-	 | "false
-	 | "null"
-	 | <literal>
+<atom> ::= <literal>
 	 | IDENTIFIER
 	 | <group>
 
@@ -255,19 +262,18 @@ LITERAL ::= INT_LITERAL
 # literals due to indirect recursion.
 #-------------------------------------------------------------------------------
 
-<literal> ::= LITERAL | <atomic literal> | <compound literal>
-
-<atomic literal> ::= "true" | "false" | "null"
+<literal> ::= "self"
+	    | "true"
+	    | "false"
+	    | "null"
+	    | LITERAL 
+	    | <compound literal>
 
 <compound literal> ::= <array literal> | <rvar literal>
 
-<array literal> ::= "[" <tagged index> ("," <tagged index>)* "]"
+<array literal> ::= "[" <tagged index>+ "]"
 
-<tagged index> ::= ("[" INT_LITERAL "]" "=")? <literal>
+<tagged index> ::= ("[" INT_LITERAL "]" "=")? <expression>
 
-<rvar literal> ::= IDENTIFIER "~" "(" <rvar parameter list> ")"
-
-<rvar parameter list> ::= INT_LITERAL | FLOAT_LITERAL
-			  ("," (INT_LITERAL | FLOAT_LITERAL))*
-
+<rvar literal> ::= IDENTIFIER "~" <arguments>
 

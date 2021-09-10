@@ -17,6 +17,7 @@ goto, _GOTO
 let, _LET
 mut, _MUT
 struct, _STRUCT
+import, _IMPORT
 pub, _PUB
 priv, _PRIV
 func, _FUNC

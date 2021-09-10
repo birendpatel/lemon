@@ -86,6 +86,7 @@ class TestTokenizer(unittest.TestCase):
             "BOOL TRUE",
             "BOOL FALSE",
             "STRUCT",
+            "IMPORT",
             "FUNC",
             "PRIVATE",
             "PUBLIC",

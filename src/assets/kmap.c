@@ -43,7 +43,7 @@
 #line 4 "keywords.txt"
 //kv_pair defined in kmap.h
 
-#define TOTAL_KEYWORDS 23
+#define TOTAL_KEYWORDS 24
 #define MIN_WORD_LENGTH 2
 #define MAX_WORD_LENGTH 11
 #define MIN_HASH_VALUE 3
@@ -72,8 +72,8 @@ hash (register const char *str, register size_t len)
       35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
       35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
       35, 35, 35, 35, 35, 35, 35,  0,  0, 25,
-       5,  5, 20,  8,  0,  0, 35, 35,  5,  0,
-       3,  0, 15, 35,  0,  0,  0,  0, 30, 10,
+       5,  5, 20,  8,  0, 10, 35, 35,  5,  0,
+       3,  0, 15, 35,  0,  0,  0,  0, 30, 15,
       35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
       35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
       35, 35, 35, 35, 35, 35, 35, 35, 35, 35,
@@ -100,19 +100,19 @@ kmap_lookup (register const char *str, register size_t len)
       {(char*)0}, {(char*)0}, {(char*)0},
 #line 18 "keywords.txt"
       {"mut", _MUT},
-#line 27 "keywords.txt"
+#line 28 "keywords.txt"
       {"true", _TRUE},
 #line 8 "keywords.txt"
       {"break", _BREAK,},
 #line 19 "keywords.txt"
       {"struct", _STRUCT},
-#line 24 "keywords.txt"
+#line 25 "keywords.txt"
       {"null", _NULL},
       {(char*)0},
-#line 26 "keywords.txt"
+#line 27 "keywords.txt"
       {"self", _SELF},
       {(char*)0},
-#line 23 "keywords.txt"
+#line 24 "keywords.txt"
       {"return", _RETURN},
 #line 16 "keywords.txt"
       {"goto", _GOTO},
@@ -120,24 +120,25 @@ kmap_lookup (register const char *str, register size_t len)
       {"let", _LET},
 #line 11 "keywords.txt"
       {"else", _ELSE,},
+      {(char*)0},
+#line 20 "keywords.txt"
+      {"import", _IMPORT},
+#line 14 "keywords.txt"
+      {"default", _DEFAULT},
+#line 21 "keywords.txt"
+      {"pub", _PUB},
+#line 22 "keywords.txt"
+      {"priv", _PRIV},
 #line 7 "keywords.txt"
       {"while", _WHILE,},
 #line 12 "keywords.txt"
       {"switch", _SWITCH},
-#line 14 "keywords.txt"
-      {"default", _DEFAULT},
-#line 20 "keywords.txt"
-      {"pub", _PUB},
-#line 21 "keywords.txt"
-      {"priv", _PRIV},
-      {(char*)0}, {(char*)0},
-#line 10 "keywords.txt"
-      {"if", _IF},
+      {(char*)0},
 #line 6 "keywords.txt"
       {"for", _FOR},
-#line 22 "keywords.txt"
+#line 23 "keywords.txt"
       {"func", _FUNC},
-#line 28 "keywords.txt"
+#line 29 "keywords.txt"
       {"false", _FALSE},
       {(char*)0}, {(char*)0}, {(char*)0},
 #line 13 "keywords.txt"
@@ -145,10 +146,11 @@ kmap_lookup (register const char *str, register size_t len)
       {(char*)0},
 #line 15 "keywords.txt"
       {"fallthrough", _FALLTHROUGH},
-      {(char*)0},
+#line 10 "keywords.txt"
+      {"if", _IF},
 #line 9 "keywords.txt"
       {"continue", _CONTINUE,},
-#line 25 "keywords.txt"
+#line 26 "keywords.txt"
       {"void", _VOID}
     };
 

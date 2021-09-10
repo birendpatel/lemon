@@ -37,6 +37,7 @@ null
 true
 false
 struct
+import
 func
 priv
 pub
