@@ -8,6 +8,10 @@ CFLAGS = -Wall -Wextra -Werror -Wpedantic -Wnull-dereference
 CFLAGS += -Wdouble-promotion -Wconversion -Wcast-qual
 CFLAGS += -march=native
 
+# disable unused function warnings so that they don't interfere with C-style
+# templating for vectors, channels, and maps.
+CFLAGS += -Wno-unused-function
+
 #-------------------------------------------------------------------------------
 # setup
 #-------------------------------------------------------------------------------
@@ -154,11 +158,11 @@ memcheck: debug
 # Unity framework is external, compiled w/out flags
 #-------------------------------------------------------------------------------
 
-.PHONY: tests test_scanner
+.PHONY: test test_scanner
 
 TESTNAMES = test_scanner
 
-tests: $(TESTNAMES)
+test: $(TESTNAMES)
 
 unity.o: unity.c unity.h unity_internals.h
 	$(CC) -c $< -o $@

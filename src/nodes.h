@@ -46,24 +46,28 @@ typedef struct param {
 	bool mutable;
 } param;
 
-//vectors contained in various nodes.
+//vectors contained in various nodes. Unlike the nodes, these circular and self
+//references are more difficult to deal with. The various vector definitions
+//are spread throughout this header since the impl macros for vectors  need to 
+//know sizeof(T) at compile time. If only we wrote the compiler in C++ or Rust!
+make_vector(member, member, static)
+make_vector(param, param, static)
+make_vector(size_t, idx, static)
+
 alias_vector(fiat)
 declare_vector(fiat, fiat)
 
 alias_vector(decl)
 declare_vector(decl, decl)
 
-alias_vector(member)
-declare_vector(member, member)
-
-alias_vector(param)
-declare_vector(param, param)
-
 alias_vector(expr)
 declare_vector(expr, expr)
 
-alias_vector(idx)
-declare_vector(size_t, idx)
+enum type_tag {
+	NODE_BASE,
+	NODE_POINTER,
+	NODE_ARRAY,
+};
 
 /*******************************************************************************
  * @struct type
@@ -73,12 +77,7 @@ declare_vector(size_t, idx)
  * rule for composition.
  ******************************************************************************/
 struct type {
-	enum {
-		NODE_BASE,
-		NODE_POINTER,
-		NODE_ARRAY,
-	} tag;
-
+	enum type_tag tag;
 	union {
 		char *base;
 		type *pointer;
@@ -90,6 +89,13 @@ struct type {
 	};
 };
 
+enum decl_tag {
+	NODE_UDT,
+	NODE_FUNCTION,
+	NODE_VARIABLE,
+	NODE_STATEMENT,
+};
+
 /*******************************************************************************
  * @struct decl
  * @brief Tagged union of declaration nodes.
@@ -97,13 +103,7 @@ struct type {
  * namespace issues with type nodes.
  ******************************************************************************/
 struct decl {
-	enum {
-		NODE_UDT,
-		NODE_FUNCTION,
-		NODE_VARIABLE,
-		NODE_STATEMENT,
-	} tag;
-
+	enum decl_tag tag;
 	union {
 		struct {
 			char *name;
@@ -129,12 +129,31 @@ struct decl {
 			bool mutable;
 			bool public;
 		} variable;
-
-		//file vectors need to be able to contain both declarations and 
-		//statements. The statement pointer is a costly but necessary
-		//layer of indirection.
-		stmt *statement;
 	};
+};
+
+//finish decl vector
+api_vector(decl, decl, static)
+impl_vector_init(decl, decl, static)
+impl_vector_free(decl, decl, static)
+impl_vector_push(decl, decl, static)
+impl_vector_get(decl, decl, static)
+impl_vector_set(decl, decl, static)
+impl_vector_reset(decl, decl, static)
+
+enum stmt_tag{
+	NODE_EXPRSTMT,
+	NODE_BLOCK,
+	NODE_FORLOOP,
+	NODE_WHILELOOP,
+	NODE_SWITCHSTMT,
+	NODE_BRANCH,
+	NODE_RETURNSTMT,
+	NODE_BREAKSTMT,
+	NODE_CONTINUESTMT,
+	NODE_GOTOLABEL,
+	NODE_FALLTHROUGHSTMT,
+	NODE_IMPORT,
 };
 
 /*******************************************************************************
@@ -143,21 +162,7 @@ struct decl {
  * @remark Simple jumps (break, continue, fallthrough) do not have a payload.
  ******************************************************************************/
 struct stmt {
-	enum {
-		NODE_EXPRSTMT,
-		NODE_BLOCK,
-		NODE_FORLOOP,
-		NODE_WHILELOOP,
-		NODE_SWITCHSTMT,
-		NODE_BRANCH,
-		NODE_RETURNSTMT,
-		NODE_BREAKSTMT,
-		NODE_CONTINUESTMT,
-		NODE_GOTOLABEL,
-		NODE_FALLTHROUGHSTMT,
-		NODE_IMPORT,
-	} tag;
-
+	enum stmt_tag tag;
 	union {
 		expr *exprstmt;
 		expr *returnstmt;
@@ -198,6 +203,19 @@ struct stmt {
 	uint32_t line;
 };
 
+enum expr_tag {
+	NODE_ASSIGNMENT,
+	NODE_BINARY,
+	NODE_UNARY,
+	NODE_CALL,
+	NODE_SELECTOR,
+	NODE_INDEX,
+	NODE_ARRAYLIT,
+	NODE_RVARLIT,
+	NODE_LIT,
+	NODE_IDENT,
+};
+
 /*******************************************************************************
  * @struct expr
  * @brief Tagged union of expression nodes.
@@ -208,19 +226,7 @@ struct stmt {
  * semantic analyser. 
  ******************************************************************************/
 struct expr {
-	enum {
-		NODE_ASSIGNMENT,
-		NODE_BINARY,
-		NODE_UNARY,
-		NODE_CALL,
-		NODE_SELECTOR,
-		NODE_INDEX,
-		NODE_ARRAYLIT,
-		NODE_RVARLIT,
-		NODE_LIT,
-		NODE_IDENT,
-	} tag;
-	
+	enum expr_tag tag;
 	union {
 		struct {
 			expr *lvalue;
@@ -283,6 +289,20 @@ struct expr {
 	uint32_t line;
 };
 
+//finish expr vector
+api_vector(expr, expr, static)
+impl_vector_init(expr, expr, static)
+impl_vector_free(expr, expr, static)
+impl_vector_push(expr, expr, static)
+impl_vector_get(expr, expr, static)
+impl_vector_set(expr, expr, static)
+impl_vector_reset(expr, expr, static)
+
+enum fiat_tag {
+	NODE_DECL,
+	NODE_STMT,
+};
+
 /*******************************************************************************
  * @struct fiat
  * @brief File nodes need to be able to contain an ordered list of statements
@@ -291,16 +311,21 @@ struct expr {
  * @remark fiat; a formal proposition, an authorization, or a decree.
  ******************************************************************************/
 struct fiat {
-	enum {
-		NODE_DECL,
-		NODE_STMT,
-	} tag;
-
+	enum fiat_tag tag;
 	union {
 		decl declaration;
 		stmt statement;
 	};
 };
+
+//finish fiat vector
+api_vector(fiat, fiat, static)
+impl_vector_init(fiat, fiat, static)
+impl_vector_free(fiat, fiat, static)
+impl_vector_push(fiat, fiat, static)
+impl_vector_get(fiat, fiat, static)
+impl_vector_set(fiat, fiat, static)
+impl_vector_reset(fiat, fiat, static)
 
 /*******************************************************************************
  * @struct file
@@ -309,6 +334,6 @@ struct fiat {
  * is unique file identifier which may be referenced in import statements.
  ******************************************************************************/
 struct file {
-	uint64_t id;
+	char *name;
 	fiat_vector fiats;
 };
