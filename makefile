@@ -26,7 +26,8 @@ vpath %.c ./src/lib
 vpath %.c ./src/assets
 vpath %.c ./extern/unity
 
-objects_raw := main.o xerror.o options.o compile.o parser.o scanner.o kmap.o
+objects_raw := main.o xerror.o options.o compile.o parser.o scanner.o kmap.o \
+	       nodes.o
 
 DEBUG_DIR = ./debug/
 objects_debug := $(addprefix $(DEBUG_DIR), $(objects_raw))
@@ -75,6 +76,9 @@ $(DEBUG_DIR)scanner.o : scanner.c xerror.h scanner.h channel.h kmap.h
 $(DEBUG_DIR)kmap.o : kmap.c kmap.h scanner.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$(DEBUG_DIR)nodes.o : nodes.c nodes.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 #-------------------------------------------------------------------------------
 # release build
 #-------------------------------------------------------------------------------
@@ -112,6 +116,9 @@ $(RELEASE_DIR)scanner.o : scanner.c xerror.h scanner.h channel.h kmap.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(RELEASE_DIR)kmap.o : kmap.c kmap.h scanner.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(RELEASE_DIR)nodes.o : nodes.c nodes.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 #-------------------------------------------------------------------------------

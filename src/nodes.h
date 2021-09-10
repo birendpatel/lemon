@@ -9,9 +9,9 @@
 #include <stdbool.h>
 #include <stdint.h> //uint64_t, uint32_t
 
-#include "xerror.h"
+#include "xerror.h" //vector error codes
 #include "lib/vector.h"
-#include "scanner.h"
+#include "scanner.h" //token_type, token
 
 //node typedefs need to be specified up front due to the large amount of
 //circular references. Declarations can contain statements, statements can
@@ -28,6 +28,7 @@ typedef struct expr expr;
  * @struct member
  * @brief Each member of a Lemon struct is a name associated with a type. Public
  * members can be read or written to when outside of the method set.
+ * @remark no init/free pair since members are designed to be copied to vectors.
  ******************************************************************************/
 typedef struct member {
 	char *name;
@@ -39,6 +40,7 @@ typedef struct member {
  * @struct param
  * @brief Each parameter of a Lemon function is a name associated with a type
  * and a mutability constraint.
+ * @remark no init/free pair since params are designed to be copied to vectors.
  ******************************************************************************/
 typedef struct param {
 	char *name;
@@ -60,14 +62,19 @@ declare_vector(fiat, fiat)
 alias_vector(decl)
 declare_vector(decl, decl)
 
-alias_vector(expr)
-declare_vector(expr, expr)
+//stmt and expr vectors need to contain pointers to nodes to avoid memory leak
+//issues when freeing nodes. Also to avoid unecessary vector memcopying.
+alias_vector(stmt)
+declare_vector(stmt*, stmt)
 
-enum type_tag {
+alias_vector(expr)
+declare_vector(expr*, expr)
+
+typedef enum typetag {
 	NODE_BASE,
 	NODE_POINTER,
 	NODE_ARRAY,
-};
+} typetag;
 
 /*******************************************************************************
  * @struct type
@@ -77,24 +84,27 @@ enum type_tag {
  * rule for composition.
  ******************************************************************************/
 struct type {
-	enum type_tag tag;
+	typetag tag;
 	union {
 		char *base;
 		type *pointer;
 
 		struct {
-			size_t length;
+			size_t len;
 			type *base;
 		} array;
 	};
 };
 
-enum decl_tag {
+//returns null on alloc fail
+type *type_init(typetag tag);
+void type_free(type *node);
+
+typedef enum decltag {
 	NODE_UDT,
 	NODE_FUNCTION,
 	NODE_VARIABLE,
-	NODE_STATEMENT,
-};
+} decltag;
 
 /*******************************************************************************
  * @struct decl
@@ -103,7 +113,7 @@ enum decl_tag {
  * namespace issues with type nodes.
  ******************************************************************************/
 struct decl {
-	enum decl_tag tag;
+	decltag tag;
 	union {
 		struct {
 			char *name;
@@ -141,7 +151,11 @@ impl_vector_get(decl, decl, static)
 impl_vector_set(decl, decl, static)
 impl_vector_reset(decl, decl, static)
 
-enum stmt_tag{
+//returns null on alloc fail
+decl *decl_init(decltag tag);
+void decl_free(decl *node);
+
+typedef enum stmttag{
 	NODE_EXPRSTMT,
 	NODE_BLOCK,
 	NODE_FORLOOP,
@@ -154,7 +168,7 @@ enum stmt_tag{
 	NODE_GOTOLABEL,
 	NODE_FALLTHROUGHSTMT,
 	NODE_IMPORT,
-};
+} stmttag;
 
 /*******************************************************************************
  * @struct stmt
@@ -162,10 +176,10 @@ enum stmt_tag{
  * @remark Simple jumps (break, continue, fallthrough) do not have a payload.
  ******************************************************************************/
 struct stmt {
-	enum stmt_tag tag;
+	stmttag tag;
 	union {
 		expr *exprstmt;
-		expr *returnstmt;
+		expr *returnstmt; //null when returning on void function
 		char *gotolabel;
 		char *import;
 
@@ -196,14 +210,33 @@ struct stmt {
 			decl *declaration; //may be null if no short decl
 			expr *cond;
 			stmt *pass;
-			stmt *fail;
+			stmt *fail; //may be null if no else clause
 		} branch;
+
+		struct {
+			expr *controller;
+			idx_vector cases;
+			stmt_vector actions;
+		} switchstmt;
 	};
 
 	uint32_t line;
 };
 
-enum expr_tag {
+//finish stmt vector
+api_vector(stmt*, stmt, static)
+impl_vector_init(stmt*, stmt, static)
+impl_vector_free(stmt*, stmt, static)
+impl_vector_push(stmt*, stmt, static)
+impl_vector_get(stmt*, stmt, static)
+impl_vector_set(stmt*, stmt, static)
+impl_vector_reset(stmt*, stmt, static)
+
+//returns null on alloc fail
+stmt *stmt_init(stmttag tag);
+void stmt_free(stmt *node);
+
+typedef enum exprtag {
 	NODE_ASSIGNMENT,
 	NODE_BINARY,
 	NODE_UNARY,
@@ -214,7 +247,7 @@ enum expr_tag {
 	NODE_RVARLIT,
 	NODE_LIT,
 	NODE_IDENT,
-};
+} exprtag;
 
 /*******************************************************************************
  * @struct expr
@@ -226,7 +259,7 @@ enum expr_tag {
  * semantic analyser. 
  ******************************************************************************/
 struct expr {
-	enum expr_tag tag;
+	exprtag tag;
 	union {
 		struct {
 			expr *lvalue;
@@ -290,18 +323,22 @@ struct expr {
 };
 
 //finish expr vector
-api_vector(expr, expr, static)
-impl_vector_init(expr, expr, static)
-impl_vector_free(expr, expr, static)
-impl_vector_push(expr, expr, static)
-impl_vector_get(expr, expr, static)
-impl_vector_set(expr, expr, static)
-impl_vector_reset(expr, expr, static)
+api_vector(expr*, expr, static)
+impl_vector_init(expr*, expr, static)
+impl_vector_free(expr*, expr, static)
+impl_vector_push(expr*, expr, static)
+impl_vector_get(expr*, expr, static)
+impl_vector_set(expr*, expr, static)
+impl_vector_reset(expr*, expr, static)
 
-enum fiat_tag {
+//returns null on alloc fail
+expr *expr_init(exprtag tag);
+void expr_free(expr *node);
+
+typedef enum fiattag {
 	NODE_DECL,
 	NODE_STMT,
-};
+} fiattag;
 
 /*******************************************************************************
  * @struct fiat
@@ -311,7 +348,7 @@ enum fiat_tag {
  * @remark fiat; a formal proposition, an authorization, or a decree.
  ******************************************************************************/
 struct fiat {
-	enum fiat_tag tag;
+	fiattag tag;
 	union {
 		decl declaration;
 		stmt statement;
@@ -327,6 +364,10 @@ impl_vector_get(fiat, fiat, static)
 impl_vector_set(fiat, fiat, static)
 impl_vector_reset(fiat, fiat, static)
 
+//returns null on alloc fail
+fiat *fiat_init(fiattag *tag);
+void fiat_free(fiat *node);
+
 /*******************************************************************************
  * @struct file
  * @brief The root node of every AST generated by the parser is a file node
@@ -337,3 +378,7 @@ struct file {
 	char *name;
 	fiat_vector fiats;
 };
+
+//returns null on alloc fail
+file *file_init(void);
+void file_free(file *node);
