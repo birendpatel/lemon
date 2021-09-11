@@ -1,12 +1,17 @@
-# src 
-`main`: This is the lemon entry point. It parses command line arguments and then either compiles from a file or loads the REPL.
+# File Descriptions
 
-`options`: This contains the command line options parser, which is implemented with GNU argp.
+`main`: Contains the REPL and all disk IO management. 
 
-`xerror`: Xerror is a lightweight error handler. It include a thread-safe logging facility.
+`def`: Contains helper macros and GCC extension wrappers.
 
-`parser`: This constructs an AST via a Pratt parser. A parse tree is not constructed as an intermediate step.
+`options`: Command line options parser implemented via GNU argp.
 
-`scanner`: This is the source code tokenizer. It runs in a separate thread and communicates tokens to the parser via a thread-safe FIFO queue.
+`xerror`: Lightweight error handler with a thread-safe logging facility.
 
-`compile`: Controller for the front and backend portions of the compiler. Raw source code goes in and a VM-executable program comes out. Start here if you're reading the source code for the first time.
+`nodes`: Contains definitions for all abstract syntax tree nodes.
+
+`parser`: Constructs an abstract syntax tree via recursive descent.
+
+`scanner`: Multithreaded Source code tokenizer.
+
+`compile`: Orchestrates parsing, semantic analysis, and IR optimisation.
