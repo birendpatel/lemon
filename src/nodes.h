@@ -1,22 +1,23 @@
 /**
  * @file nodes.h
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Abstract syntax tree nodes and their heap init-free functions.
+ * @brief This header contains definitions for all abstract syntax tree nodes.
+ * AST nodes are simple bags of data. The user must implement any operations
+ * required on these bags of data, such as initialization and traversal.
  */
 
 #pragma once
 
 #include <stdbool.h>
-#include <stdint.h> //uint64_t, uint32_t
+#include <stdint.h>
 
-#include "xerror.h" //vector error codes
+#include "xerror.h"
 #include "lib/vector.h"
-#include "scanner.h" //token_type, token
+#include "scanner.h"
 
-//node typedefs need to be specified up front due to the large amount of
-//circular references. Declarations can contain statements, statements can
-//contain declarations, and so on. All AST nodes fit into one of these 5 
-//categories.
+//AST nodes contain circular and self references. For example, declarations can
+//contain statements, and statements can contain declarations. Therefore, the
+//typedefs are specified in advance.
 typedef struct file file;
 typedef struct fiat fiat;
 typedef struct type type;
@@ -26,9 +27,10 @@ typedef struct expr expr;
 
 /*******************************************************************************
  * @struct member
- * @brief Each member of a Lemon struct is a name associated with a type. Public
- * members can be read or written to when outside of the method set.
- * @remark no init/free pair since members are designed to be copied to vectors.
+ * @brief Each member of a Lemon struct is a name-type pair. Public members can
+ * be read or written to by functions not in the associated method set.
+ * @remark Typically, a member should be created on stack and then copied into
+ * an associated vector<member> container.
  ******************************************************************************/
 typedef struct member {
 	char *name;
@@ -36,11 +38,14 @@ typedef struct member {
 	bool public;
 } member;
 
+make_vector(member, member, static)
+
 /*******************************************************************************
  * @struct param
- * @brief Each parameter of a Lemon function is a name associated with a type
- * and a mutability constraint.
- * @remark no init/free pair since params are designed to be copied to vectors.
+ * @brief Each parameter of a Lemon function is a name-type pair. Mutable
+ * parameters can be written to from within the function body. 
+ * @remark Typically, a parameter should be created on stack and then copied
+ * into an associated vector<param> container.
  ******************************************************************************/
 typedef struct param {
 	char *name;
@@ -48,28 +53,50 @@ typedef struct param {
 	bool mutable;
 } param;
 
-//vectors contained in various nodes. Unlike the nodes, these circular and self
-//references are more difficult to deal with. The various vector definitions
-//are spread throughout this header since the impl macros for vectors  need to 
-//know sizeof(T) at compile time. If only we wrote the compiler in C++ or Rust!
-make_vector(member, member, static)
 make_vector(param, param, static)
+
+/*******************************************************************************
+ * @struct test
+ * @brief Every case in a switch statement, including the default case, is
+ * wrapped in a struct test.
+ * @var test::cond
+ * 	@brief Null for default case
+ * @var test::pass
+ * 	@brief Block statement
+ * @remark Typically, a test should be created on stack and then copied into an
+ * associated vector<test> container.
+ ******************************************************************************/
+typedef struct test {
+	expr *cond;
+	stmt *pass;
+} test;
+
+make_vector(test, test, static)
+
+//the vector<size_t> container is used by array literal expressions to track
+//designated initializers.
 make_vector(size_t, idx, static)
 
+//The implementation of fiat, decl, stmt, and expr vectors  must be postponed.
+//Their corresponding vector_init functions need to have access to sizeof(T) at
+//compile time, but this knowledge is not available until the corresponding
+//structs are defined.
 alias_vector(fiat)
 declare_vector(fiat, fiat)
 
 alias_vector(decl)
 declare_vector(decl, decl)
 
-//stmt and expr vectors need to contain pointers to nodes to avoid memory leak
-//issues when freeing nodes. Also to avoid unecessary vector memcopying.
 alias_vector(stmt)
-declare_vector(stmt*, stmt)
+declare_vector(stmt, stmt)
 
 alias_vector(expr)
-declare_vector(expr*, expr)
+declare_vector(expr, expr)
 
+/*******************************************************************************
+ * @enum typetag
+ * @brief Union tags for struct type
+ ******************************************************************************/
 typedef enum typetag {
 	NODE_BASE,
 	NODE_POINTER,
@@ -78,7 +105,6 @@ typedef enum typetag {
 
 /*******************************************************************************
  * @struct type
- * @brief Tagged union of type nodes
  * @details Base identifiers are represented as a single type node. Composite
  * types are composed as a linked list and match 1:1 to the recursive grammar 
  * rule for composition.
@@ -96,10 +122,10 @@ struct type {
 	};
 };
 
-//returns null on alloc fail
-type *type_init(typetag tag);
-void type_free(type *node);
-
+/*******************************************************************************
+ * @enum decltag
+ * @brief Union tags for struct decl
+ ******************************************************************************/
 typedef enum decltag {
 	NODE_UDT,
 	NODE_FUNCTION,
@@ -108,9 +134,8 @@ typedef enum decltag {
 
 /*******************************************************************************
  * @struct decl
- * @brief Tagged union of declaration nodes.
- * @remark Type declarations are named as user-defined types (UDTs) to avoid
- * namespace issues with type nodes.
+ * @remark Type declarations from the Lemon grammar are renamed as user-defined
+ * types or UDTs avoid namespace issues with type nodes.
  ******************************************************************************/
 struct decl {
 	decltag tag;
@@ -142,7 +167,7 @@ struct decl {
 	};
 };
 
-//finish decl vector
+//finish vector<decl> implementation now that sizeof(decl) is available
 api_vector(decl, decl, static)
 impl_vector_init(decl, decl, static)
 impl_vector_free(decl, decl, static)
@@ -151,10 +176,10 @@ impl_vector_get(decl, decl, static)
 impl_vector_set(decl, decl, static)
 impl_vector_reset(decl, decl, static)
 
-//returns null on alloc fail
-decl *decl_init(decltag tag);
-void decl_free(decl *node);
-
+/*******************************************************************************
+ * @enum stmttag
+ * @brief Union tag for struct stmt
+ ******************************************************************************/
 typedef enum stmttag{
 	NODE_EXPRSTMT,
 	NODE_BLOCK,
@@ -166,14 +191,15 @@ typedef enum stmttag{
 	NODE_BREAKSTMT,
 	NODE_CONTINUESTMT,
 	NODE_GOTOLABEL,
+	NODE_LABEL,
 	NODE_FALLTHROUGHSTMT,
 	NODE_IMPORT,
 } stmttag;
 
 /*******************************************************************************
  * @struct stmt
- * @brief Tagged union of statement nodes
- * @remark Simple jumps (break, continue, fallthrough) do not have a payload.
+ * @remark The break, continue, and fallthrough statements do not have an
+ * associated payload in the anonymous union.
  ******************************************************************************/
 struct stmt {
 	stmttag tag;
@@ -193,7 +219,7 @@ struct stmt {
 				FOR_INIT,
 			} tag;
 			union {
-				decl *declaration;
+				decl *shortvar;
 				expr *init;
 			};
 			expr *cond;
@@ -207,7 +233,7 @@ struct stmt {
 		} whileloop;
 
 		struct {
-			decl *declaration; //may be null if no short decl
+			decl *shortvar; //may be null if no short decl
 			expr *cond;
 			stmt *pass;
 			stmt *fail; //may be null if no else clause
@@ -215,27 +241,31 @@ struct stmt {
 
 		struct {
 			expr *controller;
-			idx_vector cases;
-			stmt_vector actions;
+			test_vector tests;
 		} switchstmt;
+
+		struct {
+			char *name;
+			stmt *target;
+		} label;
 	};
 
 	uint32_t line;
 };
 
-//finish stmt vector
-api_vector(stmt*, stmt, static)
-impl_vector_init(stmt*, stmt, static)
-impl_vector_free(stmt*, stmt, static)
-impl_vector_push(stmt*, stmt, static)
-impl_vector_get(stmt*, stmt, static)
-impl_vector_set(stmt*, stmt, static)
-impl_vector_reset(stmt*, stmt, static)
+//finish vector<stmt> now that sizeof(stmt) is available 
+api_vector(stmt, stmt, static)
+impl_vector_init(stmt, stmt, static)
+impl_vector_free(stmt, stmt, static)
+impl_vector_push(stmt, stmt, static)
+impl_vector_get(stmt, stmt, static)
+impl_vector_set(stmt, stmt, static)
+impl_vector_reset(stmt, stmt, static)
 
-//returns null on alloc fail
-stmt *stmt_init(stmttag tag);
-void stmt_free(stmt *node);
-
+/*******************************************************************************
+ * @enum exprtag
+ * @brief Union tag for struct expr.
+ ******************************************************************************/
 typedef enum exprtag {
 	NODE_ASSIGNMENT,
 	NODE_BINARY,
@@ -322,19 +352,19 @@ struct expr {
 	uint32_t line;
 };
 
-//finish expr vector
-api_vector(expr*, expr, static)
-impl_vector_init(expr*, expr, static)
-impl_vector_free(expr*, expr, static)
-impl_vector_push(expr*, expr, static)
-impl_vector_get(expr*, expr, static)
-impl_vector_set(expr*, expr, static)
-impl_vector_reset(expr*, expr, static)
+//finish vector<expr> now that sizeof(expr) is available 
+api_vector(expr, expr, static)
+impl_vector_init(expr, expr, static)
+impl_vector_free(expr, expr, static)
+impl_vector_push(expr, expr, static)
+impl_vector_get(expr, expr, static)
+impl_vector_set(expr, expr, static)
+impl_vector_reset(expr, expr, static)
 
-//returns null on alloc fail
-expr *expr_init(exprtag tag);
-void expr_free(expr *node);
-
+/*******************************************************************************
+ * @enum fiattag
+ * @brief Union tag for struct fiat
+ ******************************************************************************/
 typedef enum fiattag {
 	NODE_DECL,
 	NODE_STMT,
@@ -342,10 +372,15 @@ typedef enum fiattag {
 
 /*******************************************************************************
  * @struct fiat
- * @brief File nodes need to be able to contain an ordered list of statements
- * and declarations. Fiat nodes allow for a single vector to contain both stmt
- * and decl nodes.
- * @remark fiat; a formal proposition, an authorization, or a decree.
+ * @brief Fiat nodes allow for file and blockstmt nodes to contain their child
+ * declarations and child statements in a single vector.
+ * *
+ * @details Other options are possible. Declaration nodes could have contained
+ * pointers to statement nodes, but indirection is relatively expensive. File
+ * and blockstmt nodes could have tracked children in separate vector<decl> and
+ * vector<stmt> struct members, but this makes symbol resolution more difficult.
+ * An abstract layer of fiat nodes seems to be a decent compromise which avoids
+ * pointer indirection while makeing symbol resolution easy.
  ******************************************************************************/
 struct fiat {
 	fiattag tag;
@@ -355,7 +390,7 @@ struct fiat {
 	};
 };
 
-//finish fiat vector
+//finish vector<fiat> now that sizeof(fiat) is available.
 api_vector(fiat, fiat, static)
 impl_vector_init(fiat, fiat, static)
 impl_vector_free(fiat, fiat, static)
@@ -364,21 +399,13 @@ impl_vector_get(fiat, fiat, static)
 impl_vector_set(fiat, fiat, static)
 impl_vector_reset(fiat, fiat, static)
 
-//returns null on alloc fail
-fiat *fiat_init(fiattag *tag);
-void fiat_free(fiat *node);
-
 /*******************************************************************************
  * @struct file
  * @brief The root node of every AST generated by the parser is a file node
- * while children are either declarations or statements wrapped in fiats. The id
- * is unique file identifier which may be referenced in import statements.
+ * whose children are either declarations or statements wrapped in fiats. The id
+ * is unique file identifier which serves as a reference for import statements.
  ******************************************************************************/
 struct file {
 	char *name;
 	fiat_vector fiats;
 };
-
-//returns null on alloc fail
-file *file_init(void);
-void file_free(file *node);
