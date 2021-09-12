@@ -42,7 +42,6 @@ The Lemon bytecode compiler and virtual machine are written in C with the GNU di
 
 - [ ] Refactor shell handler to include waitpid and robust error handling (EASY)
 - [ ] Add a 60 second language tutorial on this readme (EASY)
-- [ ] Make the project compatible with Clang (HARD)
 - [ ] Write vector unit tests (MEDIUM)
 - [ ] Write channel unit tests (HARD)
 - [ ] Create a thread pool for multi-file compilation (HARD)
@@ -52,4 +51,5 @@ The Lemon bytecode compiler and virtual machine are written in C with the GNU di
 - [ ] Add support for escape characters in string literals (HARD)
 - [ ] Remove the private keyword from the scanner, grammar, and kmap (MEDIUM)
 - [ ] Rename 'for loop' token name to 'for' due to func declarations (EASY)
+- [ ] Refactor the makefile (MEDIUM)
 - [ ] Convert all diagnostic output to JSON (HARD)
