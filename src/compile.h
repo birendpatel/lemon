@@ -14,4 +14,4 @@
  * @brief Transform source code into a program that can be loaded onto the C
  * Lemon virtual machine.
  ******************************************************************************/
-xerror compile(char *src, options *opt);
+xerror compile(char *src, options *opt, char *fname);

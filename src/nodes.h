@@ -409,3 +409,5 @@ struct file {
 	char *name;
 	fiat_vector fiats;
 };
+
+typedef file ast;

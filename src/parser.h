@@ -13,5 +13,6 @@
  * @fn parse
  * @brief Transform raw source code to an abstract syntax tree.
  * @param src Null terminated char array
+ * @param file Points to a valid AST root node if function returns succesfully.
  ******************************************************************************/
-xerror parse(char *src, options *opt);
+xerror parse(char *src, options *opt, char *fname, file *ast);

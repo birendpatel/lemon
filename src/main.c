@@ -53,7 +53,7 @@ void char_vector_cleanup(char_vector *v) {
 
 //prototypes
 xerror run_repl(options *opt);
-xerror run(options *opt, char *source);
+xerror run(options *opt, char *source, char *fname);
 void display_header(void);
 xerror run_file(options *opt, int argc, char **argv, int argi);
 void char_vector_cleanup(char_vector *v);
@@ -252,7 +252,7 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		}
 
 		fclose(fp);
-		err = run(opt, buf);
+		err = run(opt, buf, argv[i]);
 		free(buf);
 		
 		if (err) {
@@ -387,7 +387,7 @@ xerror run_unknown(options *opt, char *source, size_t n)
 		return XESUCCESS;
 	}
 
-	return run(opt, source);	
+	return run(opt, source, NULL);	
 }
 
 /*******************************************************************************
@@ -395,7 +395,7 @@ xerror run_unknown(options *opt, char *source, size_t n)
  * @brief Compile source text to bytecode and execute it on the virtual machine.
  * @param src Null terminated char array.
  ******************************************************************************/
-xerror run(options *opt, char *src)
+xerror run(options *opt, char *src, char *fname)
 {
 	assert(opt);
 	assert(src);
@@ -406,7 +406,7 @@ xerror run(options *opt, char *src)
 		fprintf(stderr, "compiler pass: echo\n");
 	}
 
-	err = compile(src, opt);
+	err = compile(src, opt, fname);
 
 	return err;
 }

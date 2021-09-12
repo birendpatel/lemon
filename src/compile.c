@@ -7,14 +7,28 @@
 #include <assert.h>
 
 #include "compile.h"
+#include "nodes.h"
 #include "parser.h"
 
-xerror compile(char *src, options *opt)
+//temporary
+#include <stdio.h>
+
+xerror compile(char *src, options *opt, char *fname)
 {
 	assert(opt);
 	assert(src);
 
-	parse(src, opt);
+	file ast = {0};
+
+	parse(src, opt, fname, &ast);
+
+	//temporary
+	printf("file name: %s\n", ast.name);
+
+	for (size_t i = 0; i < ast.fiats.len; i++) {
+		printf("tag: %d\n", ast.fiats.data[i].tag);
+	}
+	//end temporary
 
 	return XESUCCESS;
 }
