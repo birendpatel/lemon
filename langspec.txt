@@ -72,31 +72,55 @@ IDENTIFIER ::= [a-zA-Z_][a-zA-Z_0-9]*
 LITERAL ::= INT_LITERAL
 	  | FLOAT_LITERAL
 	  | STRING_LITERAL
-	  | BOOL_LITERAL
-	  | RVAR_LITERAL
-	  | ARRAY_LITERAL
 
 #-------------------------------------------------------------------------------
 # Syntactical Grammar
-#-------------------------------------------------------------------------------
-
-<file> ::= <declaration>* "EOF" ;
-
-#-------------------------------------------------------------------------------
+#
 # Lemon does not require a main() function as its entry point. Therefore,
-# statements may exist at the top level alongside declarations.
+# statements may exist at the top level alongside declarations. Some statements
+# are semantically meaningless at the top level, such as break or continue, but
+# are nonetheless syntactically valid.
 #-------------------------------------------------------------------------------
 
-<declaration> ::= <type declaration>
+<file> ::= <fiat>* "EOF"
+
+<fiat> ::= <declaration> | <statement>
+
+#-------------------------------------------------------------------------------
+# Struct and variable declarations outside of a function block have file scope
+# by default. This is an implicit "priv" keyword. "priv" is a reserved keyword
+# but it is not actually used by Lemon. The "pub" scope qualifier gives global
+# scope. This makes the declaration visible when the file is imported.
+#-------------------------------------------------------------------------------
+
+<declaration> ::= <struct declaration>
 		| <function declaration>
 		| <variable declaration>
-		| <statement>
 
-#TODO
-<type declaration> ::= "struct" IDENTIFIER "{" "}" ";"
+#-------------------------------------------------------------------------------
+# A struct declaration introduces a scoped user defined type. Together with its
+# method set, a struct enables object orientation via composition. Members are
+# defaulted to immutable attributes.
+#-------------------------------------------------------------------------------
 
-#TODO
-<function declaration> ::= "func" IDENTIFIER "(" ("void" | <parameters>) ") ...
+<struct declaration> ::= "struct" "pub"? IDENTIFIER "{" <member list> "}" ";"
+
+<member list> ::= ("mut"? IDENTIFIER ":" <type>";")+
+
+#-------------------------------------------------------------------------------
+# Functions may be methods taking a pointer to the receiver or the receiver
+# itself. Functions are default private, meaning file scoped.
+#
+# example: func pub foo(x: i32, y: f32) return void for *bar {...} is a public
+# method named foo with two parameters and returning nothing.
+#-------------------------------------------------------------------------------
+
+<function declaration> ::= 
+	"func" "pub"? IDENTIFIER "(" ("void" | <parameter list>) ")"
+	"return" ("void" | <type>) ("for" <type>)? <block statement>
+
+<parameter list> ::= 
+	"mut"? IDENTIFIER ":" <type> ("," "mut"? IDENTIFIER ":" <type>)*
 
 #-------------------------------------------------------------------------------
 # variable declarations default to the zero-value of the type if no explicit
@@ -107,16 +131,102 @@ LITERAL ::= INT_LITERAL
 # Lemon does not allow multiple declarations such as "let x, y: int = 0, 1;".
 #-------------------------------------------------------------------------------
 
-<variable declaration> ::= "let" "mut"? IDENTIFIER ":" IDENTIFIER 
-			   ("=" LITERAL)? ";"
+<variable declaration> ::= 
+	"let" "pub"? "mut"? IDENTIFIER ":" <type> "=" <expression> ";"
 
-#TODO
+<short declaration> ::= IDENTIFIER : <type> "=" <expression>
+
+#-------------------------------------------------------------------------------
+# types are identifiers perhaps prefixed with leading symbols which construct
+# a series of arrays and pointers, or perhaps a combination of the two.
+#-------------------------------------------------------------------------------
+
+<type> ::= IDENTIFIER | <composite type>
+
+<composite type> ::= <pointer type> | <array type>
+
+<pointer type> ::= "*" <type>
+
+<array type> ::= "[" INT_LITERAL "]" <type>
+
+#-------------------------------------------------------------------------------
+# Statements can be direct children of file nodes. Lemon acts like a dynamic
+# language in the sense that it does not need a main function as an entry point.
+# Statments are executed procedurally.
+#-------------------------------------------------------------------------------
+
 <statement> ::= <expression statement>
 	      | <block statement>
-
-<block statement> ::= "{" <declaration>* "}"
+	      | <for statement>
+	      | <while statement>
+	      | <switch statement>
+	      | <branch statement>
+	      | <return statement>
+	      | <break statement>
+	      | <continue statement>
+	      | <goto statement>
+	      | <label statement>
+	      | <fallthrough statement>
+	      | <import statement>
 
 <expression statement> ::= <expression> ";"
+
+<return statement> ::= "return" <expression>? ";"
+
+<break statement> ::= "break" ";"
+
+<continue statement> ::= "continue" ";"
+
+<fallthrough statement> ::= "fallthrough" ";"
+
+<goto statement> ::= "goto" IDENTIFIER ";"
+
+#-------------------------------------------------------------------------------
+# An identifier in a label statement is the target of some goto statement within
+# the same function scope. Longjmp and setjmp are not allowed in Lemon. A label
+# statement that is not referenced by any goto statement is a semantic error.
+#-------------------------------------------------------------------------------
+
+<label statement> ::= IDENTIFIER ":" <statement>
+
+#-------------------------------------------------------------------------------
+# Import statements reference file names.
+#-------------------------------------------------------------------------------
+
+<import statement> ::= "import" IDENTIFIER ";"
+
+#-------------------------------------------------------------------------------
+# Block statements may include any anything at all. Function declarations in a
+# block may be used to create closures. Most recursion performed on statements
+# is directed to the block statement.
+#-------------------------------------------------------------------------------
+
+<block statement> ::= "{" <fiat>* "}"
+
+#-------------------------------------------------------------------------------
+# Unlike C, loop control flow does not have optional controlling expressions.
+# Loops also require block statement.
+#
+# Both for loops and branch statements can possess a short declaration. These
+# are mutable variables. In branch statements the short declaration is entirely
+# optional. Where present, it can be referenced in both the if and else clauses.
+#-------------------------------------------------------------------------------
+
+<for statement> ::= 
+	"for" "(" (<short declaration> | <expression>) ";"
+	<expression> ";"
+	<expression> ";" ")"
+	<block statement>
+
+<while statement> ::= "while" "(" <expression> ")" <block statement>
+
+<branch statement> ::= 
+	"if" "(" <short declaration>? <expression> ")" <block statement>
+	("else" (<branch statement> | <block statement>))?
+
+<switch statement> ::= "switch" "(" <expression> ")" "{" <case statement>* "}"
+
+<case statement> ::= ("case" <expression> | "default") <block statement>
 
 #-------------------------------------------------------------------------------
 # The expression grammar is stratified according to the operator precedence
@@ -144,22 +254,39 @@ LITERAL ::= INT_LITERAL
 
 <cast> ::= "(" IDENTIFIER ")"
 
-<primary> ::= <atom> (<call> | <attribute> | <index>)*
+<primary> ::= <atom> (<call> | <selector> | <index>)*
 
 <call> ::= "(" <arguments>? ")"
 
-<attribute> ::= "." IDENTIFIER
+<selector> ::= "." IDENTIFIER
 
 <index> ::= "[" <expression> "]"
 
 <arguments> ::= <expression> ("," <expression>)*
 
-<atom> ::= "true"
-	 | "false
-	 | "nil"
-	 | "self"
-	 | LITERAL
+<atom> ::= <literal>
 	 | IDENTIFIER
 	 | <group>
 
 <group> ::= "(" <expression> ")"
+
+#-------------------------------------------------------------------------------
+# Literal rules. The Lemon scanner is unable to handle detection of compound
+# literals due to indirect recursion.
+#-------------------------------------------------------------------------------
+
+<literal> ::= "self"
+	    | "true"
+	    | "false"
+	    | "null"
+	    | LITERAL 
+	    | <compound literal>
+
+<compound literal> ::= <array literal> | <rvar literal>
+
+<array literal> ::= "[" <tagged index>+ "]"
+
+<tagged index> ::= ("[" INT_LITERAL "]" "=")? <expression>
+
+<rvar literal> ::= IDENTIFIER "~" <arguments>
+

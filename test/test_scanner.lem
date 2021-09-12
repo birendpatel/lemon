@@ -28,6 +28,7 @@ if
 else
 switch
 case
+default
 fallthrough
 goto
 let
@@ -36,6 +37,7 @@ null
 true
 false
 struct
+import
 func
 priv
 pub

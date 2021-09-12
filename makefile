@@ -8,6 +8,10 @@ CFLAGS = -Wall -Wextra -Werror -Wpedantic -Wnull-dereference
 CFLAGS += -Wdouble-promotion -Wconversion -Wcast-qual
 CFLAGS += -march=native
 
+# disable unused function warnings so that they don't interfere with C-style
+# templating for vectors, channels, and maps.
+CFLAGS += -Wno-unused-function
+
 #-------------------------------------------------------------------------------
 # setup
 #-------------------------------------------------------------------------------
@@ -22,7 +26,8 @@ vpath %.c ./src/lib
 vpath %.c ./src/assets
 vpath %.c ./extern/unity
 
-objects_raw := main.o xerror.o options.o compile.o parser.o scanner.o kmap.o
+objects_raw := main.o xerror.o options.o compile.o parser.o scanner.o kmap.o \
+	       nodes.o
 
 DEBUG_DIR = ./debug/
 objects_debug := $(addprefix $(DEBUG_DIR), $(objects_raw))
@@ -62,13 +67,16 @@ $(DEBUG_DIR)options.o : options.c xerror.h options.h
 $(DEBUG_DIR)compile.o : compile.c xerror.h compile.h parser.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(DEBUG_DIR)parser.o : parser.c xerror.h parser.h channel.h scanner.h
+$(DEBUG_DIR)parser.o : parser.c xerror.h parser.h channel.h scanner.h nodes.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(DEBUG_DIR)scanner.o : scanner.c xerror.h scanner.h channel.h kmap.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(DEBUG_DIR)kmap.o : kmap.c kmap.h scanner.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(DEBUG_DIR)nodes.o : nodes.c nodes.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 #-------------------------------------------------------------------------------
@@ -101,13 +109,16 @@ $(RELEASE_DIR)options.o : options.c xerror.h options.h
 $(RELEASE_DIR)compile.o : compile.c xerror.h compile.h parser.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(RELEASE_DIR)parser.o : parser.c xerror.h parser.h channel.h scanner.h
+$(RELEASE_DIR)parser.o : parser.c xerror.h parser.h channel.h scanner.h nodes.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(RELEASE_DIR)scanner.o : scanner.c xerror.h scanner.h channel.h kmap.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(RELEASE_DIR)kmap.o : kmap.c kmap.h scanner.h
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(RELEASE_DIR)nodes.o : nodes.c nodes.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 #-------------------------------------------------------------------------------
@@ -154,11 +165,11 @@ memcheck: debug
 # Unity framework is external, compiled w/out flags
 #-------------------------------------------------------------------------------
 
-.PHONY: tests test_scanner
+.PHONY: test test_scanner
 
 TESTNAMES = test_scanner
 
-tests: $(TESTNAMES)
+test: $(TESTNAMES)
 
 unity.o: unity.c unity.h unity_internals.h
 	$(CC) -c $< -o $@

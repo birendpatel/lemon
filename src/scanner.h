@@ -71,6 +71,7 @@ typedef enum token_type {
 	_ELSE,
 	_SWITCH,
 	_CASE,
+	_DEFAULT,
 	_FALLTHROUGH,
 	_GOTO,
 
@@ -83,6 +84,7 @@ typedef enum token_type {
 
 	//keywords, composition
 	_STRUCT,
+	_IMPORT,
 
 	//keywords, procedures
 	_FUNC,

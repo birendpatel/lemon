@@ -51,7 +51,7 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 
 # Todo
 
-- [ ] Refactor shell handler to include waitpid and robust error handling
+- [ ] Refactor shell handler to include waitpid and robust error handling (EASY)
 - [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Make the project compatible with Clang (MEDIUM)
 - [ ] Write vector unit tests (MEDIUM)
@@ -60,4 +60,7 @@ C code style rules for the project are pretty relaxed. All I really ask is that 
 - [ ] Add a lookup table for pthreads errors (EASY)
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add arrow key support for REPL (MEDIUM)
-- [ ] Add support for escape characters in string literals
+- [ ] Add support for escape characters in string literals (HARD)
+- [ ] Remove the private keyword from the scanner, grammar, and kmap (MEDIUM)
+- [ ] Rename 'for loop' token name to 'for' due to func declarations (EASY)
+- [ ] Convert token debugger to JSON (MEDIUM)

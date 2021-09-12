@@ -65,9 +65,9 @@ struct pfix##_vector {					                       \
 #define api_vector(T, pfix, cls)					       \
 cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap);       \
 cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T));	       \
-cls int pfix##_vector_push(pfix##_vector *self, const T datum);	               \
+cls int pfix##_vector_push(pfix##_vector *self, T datum);	               \
 cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum);     \
-cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum);   \
+cls T pfix##_vector_set(pfix##_vector *self, const size_t i, T datum);         \
 cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T));
 
 //implementation helpers
@@ -141,7 +141,7 @@ cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T))	       \
  * if dynamic memory allocation fails.
  ******************************************************************************/
 #define impl_vector_push(T, pfix, cls)					       \
-cls int pfix##_vector_push(pfix##_vector *self, const T datum)                 \
+cls int pfix##_vector_push(pfix##_vector *self, T datum)	               \
 {									       \
 	assert(self);							       \
                                                                                \
@@ -209,7 +209,7 @@ cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
  * @return The old element is returned.
  ******************************************************************************/
 #define impl_vector_set(T, pfix, cls)					       \
-cls T pfix##_vector_set(pfix##_vector *self, const size_t i, const T datum)    \
+cls T pfix##_vector_set(pfix##_vector *self, const size_t i, T datum)          \
 {									       \
 	assert(self);							       \
 	assert(i < self->len);						       \

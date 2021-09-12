@@ -6,6 +6,7 @@
 
 #include <assert.h>
 
+#include "nodes.h"
 #include "scanner.h"
 
 typedef struct parser {
