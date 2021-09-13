@@ -103,7 +103,8 @@ const char *xerror_str(const xerror err);
 #define XEBUSY        5 /**< @brief A thread is waiting on a condition. */
 #define XECLOSED      6 /**< @brief Attempted to use a closed channel. */
 #define XETHREAD      7 /**< @brief A Multithreading issue has occured. */
-#define XEUNDEFINED   8 /**< @brief A generic unspecified error has occured. */
+#define XEPARSE	      8 /**< @brief AST parse error */
+#define XEUNDEFINED   9 /**< @brief A generic unspecified error has occured. */
 
 //mapping between vector codes and xerror codes
 #define VECTOR_ESUCCESS XESUCCESS

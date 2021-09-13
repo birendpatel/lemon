@@ -53,3 +53,4 @@ The Lemon bytecode compiler and virtual machine are written in C with the GNU di
 - [ ] Rename 'for loop' token name to 'for' due to func declarations (EASY)
 - [ ] Refactor the makefile (MEDIUM)
 - [ ] Convert all diagnostic output to JSON (HARD)
+- [ ] Colour user error codes to differentiate them from compiler errors (MEDIUM)
