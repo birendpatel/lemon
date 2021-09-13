@@ -30,10 +30,10 @@ typedef struct parser {
 } parser;
 
 //parser prototypes
-static void parser_advance(parser *self);
+static xerror parser_advance(parser *self);
 static xerror __parse(parser *self, char *fname, file *ast);
-static void synchronize(parser *self);
-fiat __fiat(parser *self, xerror *err);
+static xerror synchronize(parser *self);
+static fiat __fiat(parser *self, xerror *err);
 
 //node prototypes
 static xerror file_init(file *ast, char *fname);
@@ -78,13 +78,18 @@ xerror parse(char *src, options *opt, char *fname, file *ast)
  * @details If the token is invalid, this function will synchronize to a new
  * sequence point.
  ******************************************************************************/
-static void parser_advance(parser *self)
+static xerror parser_advance(parser *self)
 {
 	assert(self);
 
 	static const char *fmt = "invalid syntax: line %d: %.*s\n"; 
+	
+	xerror err = scanner_recv(self->scn, &self->tok);
 
-	(void) scanner_recv(self->scn, &self->tok);
+	if (err) {
+		xerror_issue("cannot recv token from scanner channel");
+		return err;
+	}
 	
 	if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
 		token_print(self->tok);
@@ -96,8 +101,15 @@ static void parser_advance(parser *self)
 		token tok = self->tok;
 		fprintf(stderr, fmt, tok.line, tok.len, tok.lexeme);
 
-		synchronize(self);
+		err = synchronize(self);
+
+		if (err) {
+			xerror_issue("cannot synchronize to sequence point");
+			return err;
+		}
 	}
+
+	return XESUCCESS;
 }
 
 /*******************************************************************************
@@ -106,10 +118,15 @@ static void parser_advance(parser *self)
  * found. Currently, a sequence point is defined as a declaration, a statement,
  * or the EOF token.
  ******************************************************************************/
-static void synchronize(parser *self)
+static xerror synchronize(parser *self)
 {
 	while (true) {
-		(void) scanner_recv(self->scn, &self->tok);
+		xerror err = scanner_recv(self->scn, &self->tok);
+
+		if (err) {
+			xerror_issue("cannot recv token from scanner channel");
+			return err;
+		}
 
 		if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
 			token_print(self->tok);
@@ -154,6 +171,8 @@ static void synchronize(parser *self)
 			continue;
 		}
 	}
+
+	return XESUCCESS;
 }
 
 /*******************************************************************************
@@ -173,7 +192,12 @@ static xerror __parse(parser *self, char *fname, file *ast)
 	}
 
 	//prime the parser with an initial state
-	parser_advance(self);
+	err = parser_advance(self);
+
+	if (err) {
+		xerror_issue("cannot load next token");
+		return err;
+	}
 
 	while (self->tok.type != _EOF) {
 		fiat node = __fiat(self, &err);
@@ -187,40 +211,6 @@ static xerror __parse(parser *self, char *fname, file *ast)
 	}
 
 	return XESUCCESS;
-}
-
-/*******************************************************************************
- * @fn __fiat
- * @brief Dispatch to decl or stmt handler and then wrap the return node.
- ******************************************************************************/
-fiat __fiat(parser *self, xerror *err)
-{
-	fiat node = {0};
-
-	switch (self->tok.type) {
-	case _STRUCT:
-		node.tag = NODE_DECL;
-		parser_advance(self);
-		break;
-	
-	case _FUNC:
-		node.tag = NODE_DECL;
-		parser_advance(self);
-		break;
-	
-	case _LET:
-		node.tag = NODE_DECL;
-		parser_advance(self);
-		break;
-
-	default:
-		node.tag = NODE_STMT;
-		parser_advance(self);
-		break;
-	}
-
-	*err = XESUCCESS;
-	return node;
 }
 
 /*******************************************************************************
@@ -242,4 +232,67 @@ static xerror file_init(file *ast, char *fname)
 	};
 
 	return err;
+}
+
+/*******************************************************************************
+ * @fn __fiat
+ * @brief Dispatch to decl or stmt handler and then wrap the return node.
+ ******************************************************************************/
+static fiat __fiat(parser *self, xerror *err)
+{
+	fiat node = {0};
+
+	switch (self->tok.type) {
+	case _STRUCT:
+		node.tag = NODE_DECL;
+
+		*err = parser_advance(self);
+
+		if (*err) {
+			xerror_issue("cannot load token after 'struct'");
+			return (fiat) {0};
+		}
+
+		break;
+	
+	case _FUNC:
+		node.tag = NODE_DECL;
+		
+		*err = parser_advance(self);
+
+		if (*err) {
+			xerror_issue("cannot load token after 'func'");
+			return (fiat) {0};
+		}
+
+		break;
+	
+	case _LET:
+		node.tag = NODE_DECL;
+		
+		*err = parser_advance(self);
+
+		if (*err) {
+			xerror_issue("cannot load token after 'let'");
+			return (fiat) {0};
+		}
+
+		break;
+
+	default:
+		node.tag = NODE_STMT;
+		
+		//TODO temporary
+		*err = parser_advance(self);
+
+		if (*err) {
+			xerror_issue("temporary");
+			return (fiat) {0};
+		}
+
+		break;
+	}
+
+	*err = XESUCCESS;
+	return node;
 }
