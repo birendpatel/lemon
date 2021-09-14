@@ -66,7 +66,7 @@ $(DEBUG_DIR)options.o : options.c xerror.h options.h
 $(DEBUG_DIR)compile.o : compile.c xerror.h compile.h parser.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(DEBUG_DIR)parser.o : parser.c xerror.h parser.h channel.h scanner.h nodes.h
+$(DEBUG_DIR)parser.o : parser.c xerror.h parser.h channel.h scanner.h nodes.h defs.h options.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(DEBUG_DIR)scanner.o : scanner.c xerror.h scanner.h channel.h kmap.h
@@ -105,7 +105,7 @@ $(RELEASE_DIR)options.o : options.c xerror.h options.h
 $(RELEASE_DIR)compile.o : compile.c xerror.h compile.h parser.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(RELEASE_DIR)parser.o : parser.c xerror.h parser.h channel.h scanner.h nodes.h
+$(RELEASE_DIR)parser.o : parser.c xerror.h parser.h channel.h scanner.h nodes.h defs.h options.h
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(RELEASE_DIR)scanner.o : scanner.c xerror.h scanner.h channel.h kmap.h

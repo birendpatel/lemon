@@ -11,6 +11,7 @@
  */
 
 #include <assert.h>
+#include <limits.h>
 #include <stdarg.h> 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -34,8 +35,9 @@ typedef struct parser {
 static void _usererror(const uint32_t line, const char *msg, ...);
 static void parser_advance(parser *self);
 static void synchronize(parser *self);
-static xerror lexcpy(char *dest, char *src, uint32_t n);
+static xerror lexcpy(char **dest, char *src, uint32_t n);
 static xerror _check(parser *self, token_type type, char *msg, bool A, bool Z);
+static xerror extract_arrnum(parser *self, size_t *target);
 
 //node management
 static xerror file_init(file *ast, char *fname);
@@ -45,6 +47,7 @@ static xerror rec_parse(parser *self, char *fname, file *ast);
 static fiat rec_fiat(parser *self, xerror *err);
 static decl rec_struct(parser *self, xerror *err);
 static xerror rec_members(parser *self, decl *node);
+type *rec_type(parser *self, xerror *err);
 
 //parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file *ast)
@@ -143,19 +146,62 @@ static void _usererror(const uint32_t line, const char *msg, ...)
  * a valid C string.
  * @return XENOMEM if dynamic allocation fails.
  ******************************************************************************/
-static xerror lexcpy(char *dest, char *src, uint32_t n)
+static xerror lexcpy(char **dest, char *src, uint32_t n)
 {
 	assert(src);
 	assert(n);
 
-	dest = malloc(sizeof(char) * n);
+	*dest = malloc(sizeof(char) * n);
 
-	if (!dest) {
+	if (!*dest) {
 		return XENOMEM;
 	}
 
-	memcpy(dest, src, sizeof(char) * n);
+	memcpy(*dest, src, sizeof(char) * n);
 
+	return XESUCCESS;
+}
+
+/*******************************************************************************
+ * @fn extract_arrnum
+ * @brief Extract a number from the non-null terminated lexeme held in the
+ * current parser token. If the number is incompletely read or non-positive
+ * then return XEPARSE. return XENOMEM or XESUCCESS otherwise.
+ ******************************************************************************/
+static xerror extract_arrnum(parser *self, size_t *target)
+{
+	assert(self);
+	assert(target);
+
+	long long int candidate = 0;
+	char *end = NULL;
+	char *tmp = NULL;
+	xerror err = lexcpy(&tmp, self->tok.lexeme, self->tok.len);
+
+	if (err) {
+		xerror_issue("cannot copy lexeme to temporary workspace");
+		return err;
+	}
+
+	candidate = strtoll(tmp, &end, 10);
+
+	if (candidate == LLONG_MIN) {
+		usererror("array length cannot be a large negative integer");
+		return XEPARSE;
+	} else if (candidate == LONG_MAX) {
+		usererror("array length is too large");
+		return XEPARSE;
+	} else if (*end != '\0') {
+		usererror("array length is not a simple base-10 integer");
+		return XEPARSE;
+	} else if (candidate < 0) {
+		usererror("array length cannot be negative");
+		return XEPARSE;
+	} else if (candidate == 0) {
+		usererror("array length cannot be zero");
+	} 
+
+	*target = (size_t) candidate;
 	return XESUCCESS;
 }
 
@@ -323,7 +369,12 @@ static xerror rec_parse(parser *self, char *fname, file *ast)
 			return err;
 		}
 
-		fiat_vector_push(&ast->fiats, node);
+		err = fiat_vector_push(&ast->fiats, node);
+
+		if (err) {
+			xerror_issue("cannot add fiat to file vector");
+			return err;
+		}
 	}
 
 	return XESUCCESS;
@@ -387,16 +438,20 @@ static fiat rec_fiat(parser *self, xerror *err)
  * @fn rec_struct
  * @brief Implementation of the <struct declaration> production.
  ******************************************************************************/
-#define MEMBER_CAP 4
-
 static decl rec_struct(parser *self, xerror *err)
 {
 	assert(self);
 	assert(err);
 
-	decl node = {0};
-	node.tag = NODE_UDT;
-	node.udt.line = self->tok.line;
+	decl node = {
+		.tag = NODE_UDT,
+		.udt = {
+			.name = NULL,
+			.members = {0},
+			.line = self->tok.line,
+			.public = false
+		}
+	};
 
 	if (self->tok.type == _PUB) {
 		node.udt.public = true;
@@ -404,12 +459,12 @@ static decl rec_struct(parser *self, xerror *err)
 	}
 
 	if (self->tok.type != _IDENTIFIER) {
-		usererror("missing identifier after struct keyword");
+		usererror("missing struct name");
 		*err = XEPARSE;
 		return node;
 	}
 	
-	*err = lexcpy(node.udt.name, self->tok.lexeme, self->tok.len);
+	*err = lexcpy(&node.udt.name, self->tok.lexeme, self->tok.len);
 
 	if (*err) {
 		xerror_issue("cannot create udt name");
@@ -419,22 +474,14 @@ static decl rec_struct(parser *self, xerror *err)
 	*err = move_check_move(self, _LEFTBRACE, "expected '{' after name");
 	if (*err) { return node; }
 
-	*err = member_vector_init(&node.udt.members, 0, MEMBER_CAP);
-
-	if (*err) {
-		xerror_issue("cannot init member vector");
-		return node;
-	}
-
 	*err = rec_members(self, &node);
-	if (*err) { return node; }
+	if (*err) { return node; } //pass enomem without xerror (no info to add)
 
 	*err = check_move(self, _RIGHTBRACE, "expected '}' after members");
 	if (*err) { return node; }
 
 	*err = check_move(self, _SEMICOLON, "expected ';' after struct");
 	if (*err) { return node; }
-
 
 	*err = XESUCCESS;
 	return node;
@@ -443,6 +490,9 @@ static decl rec_struct(parser *self, xerror *err)
 /*******************************************************************************
  * @fn rec_members
  * @brief Process each scope:name:type triplet within a struct declaration.
+ * @return XENOMEM or XEPARSE
+ * @remark The member capacity uses the magic number 4 as a heuristic. We assume
+ * most structs are generally quite small.
  ******************************************************************************/
 static xerror rec_members(parser *self, decl *node)
 {
@@ -450,7 +500,19 @@ static xerror rec_members(parser *self, decl *node)
 	assert(node);
 
 	xerror err = XESUCCESS;
-	member attr = {0};
+
+	member attr = {
+		.name = NULL,
+		.typ = NULL,
+		.public = false
+	};
+
+	err = member_vector_init(&node->udt.members, 0, 4);
+
+	if (err) {
+		xerror_issue("cannot init member vector");
+		return err;
+	}
 
 	while (self->tok.type != _RIGHTBRACE) {
 		if (self->tok.type == _PUB) {
@@ -463,7 +525,7 @@ static xerror rec_members(parser *self, decl *node)
 			return XEPARSE;
 		}
 
-		err = lexcpy(attr.name, self->tok.lexeme, self->tok.len);
+		err = lexcpy(&attr.name, self->tok.lexeme, self->tok.len);
 
 		if (err) {
 			xerror_issue("cannot create member name");
@@ -473,7 +535,15 @@ static xerror rec_members(parser *self, decl *node)
 		err = move_check_move(self, _COLON, "expected ':' after name");
 		if (err) { return err; }
 
-		//TODO capture type
+		attr.typ = rec_type(self, &err);
+		
+		if (err) {
+			if (err != XEPARSE) {
+				xerror_issue("cannot create member type");
+			}
+
+			return err;
+		}
 
 		err = check_move(self, _SEMICOLON, "expected ';' after type");
 		if (err) { return err; }
@@ -489,4 +559,89 @@ static xerror rec_members(parser *self, decl *node)
 	}
 
 	return err;
+}
+
+/*******************************************************************************
+ * @fn rec_type
+ * @brief Create a linked list of nodes representing a type
+ ******************************************************************************/
+type *rec_type(parser *self, xerror *err)
+{
+	assert(self);
+	assert(err);
+
+	type *node = malloc(sizeof(type) * 1);
+
+	if (!node) {
+		*err = XENOMEM;
+		return NULL;
+	}
+
+	switch (self->tok.type) {
+	case _IDENTIFIER:
+		node->tag = NODE_BASE;
+		*err = lexcpy(&node->base, self->tok.lexeme, self->tok.len);
+
+		if (*err) {
+			xerror_issue("cannot create type base name");
+			return node;
+		}
+
+		parser_advance(self);
+
+		break;
+	
+	case _STAR:
+		node->tag = NODE_POINTER;
+		
+		parser_advance(self);
+
+		node->pointer = rec_type(self, err);
+
+		if (*err) {
+			if (*err != XEPARSE) {
+				xerror_issue("cannot create base from ptr");
+			}
+
+			return node;
+		}
+
+		break;
+
+	case _LEFTBRACKET:
+		*err = move_check(self, _LITERALINT, "expected array size");
+		if (*err) { break; }
+
+		*err = extract_arrnum(self, &node->array.len);
+
+		if (*err) {
+			if (*err != XEPARSE) {
+				xerror_issue("cannot extract array len");
+			}
+
+			return node;
+		}
+
+		*err = move_check_move(self, _RIGHTBRACKET, "expected ']'");
+		if (*err) { break; }
+
+		node->array.base = rec_type(self, err);
+
+		if (*err) {
+			if (*err != XEPARSE) {
+				xerror_issue("cannot create base from array");
+			}
+
+			return node;
+		}
+
+		break;
+
+	default:
+		usererror("expected type after ':'");
+		*err = XEPARSE;
+		break;
+	}
+
+	return node;
 }
