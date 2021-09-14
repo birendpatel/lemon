@@ -3,24 +3,22 @@
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
  * @brief Recursive descent parser.
  *
- * @details There are two classes of errors found in the parser: compiler errors
- * and user errors. User errors are presented on stderr but they do not trigger
- * error handling or recovery paths in the compiler. In other words, user errors
- * are never compiler errors. In all situations, the parser simply attempts to
- * synchronize to a new sequence point when a user error occurs. Only when the
- * parser is finished and returns program control to the compile.c compile()
- * function is an xerror (XEPARSE) potentially generated.
+ * @remark There are two classes of errors found in the parser: compiler errors
+ * and user errors. User errors are signaled by the xerror XEPARSE error code.
+ * User errors are never complier errors, so they are not logged and they do not
+ * cause the parser to terminate. In all XEPARSE situations, the parser sends
+ * the user error on stderr and attempts to synchronize to a new sequence point.
  */
 
 #include <assert.h>
-#include <stdarg.h> //va_args
+#include <stdarg.h> 
 #include <stdbool.h>
-#include <stdlib.h> //malloc
-#include <stdint.h> //uint32_t
-#include <stdio.h> //fprintf
-#include <string.h> //memcpy
+#include <stdlib.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
 
-#include "defs.h" //fallthrough
+#include "defs.h"
 #include "nodes.h"
 #include "options.h"
 #include "scanner.h"
@@ -29,25 +27,26 @@ typedef struct parser {
 	scanner *scn;
 	options *opt;
 	token tok;
-	uint32_t total_invalid;
+	bool ill_formed;
 } parser;
 
-//recursive descent prototypes
-static xerror __parse(parser *self, char *fname, file *ast);
-static fiat __fiat(parser *self, xerror *err);
-static decl __struct(parser *self, xerror *err);
-static xerror __members(parser *self, decl *node);
-
-//parser helpers
-static void __send_usererror(const uint32_t line, const char *msg, ...);
+//parser utils
+static void _usererror(const uint32_t line, const char *msg, ...);
 static void parser_advance(parser *self);
 static void synchronize(parser *self);
-static char *to_string(char *ptr, uint32_t n);
-static xerror consume(parser *self, token_type type, const char *msg);
+static xerror lexcpy(char *dest, char *src, uint32_t n);
+static xerror _check(parser *self, token_type type, char *msg, bool A, bool Z);
 
-//node prototypes
+//node management
 static xerror file_init(file *ast, char *fname);
 
+//recursive descent
+static xerror rec_parse(parser *self, char *fname, file *ast);
+static fiat rec_fiat(parser *self, xerror *err);
+static decl rec_struct(parser *self, xerror *err);
+static xerror rec_members(parser *self, decl *node);
+
+//parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file *ast)
 {
 	assert(src);
@@ -64,9 +63,8 @@ xerror parse(char *src, options *opt, char *fname, file *ast)
 
 	prs.opt = opt;
 	prs.tok = (token) {.type = _INVALID};
-	prs.total_invalid = 0;
 
-	err = __parse(&prs, fname, ast);
+	err = rec_parse(&prs, fname, ast);
 
 	if (err) {
 		xerror_issue("recursive descent failed: %s", xerror_str(err));
@@ -82,16 +80,38 @@ xerror parse(char *src, options *opt, char *fname, file *ast)
 	return XESUCCESS;
 }
 
+//------------------------------------------------------------------------------
+//node management
+
+/*******************************************************************************
+ * @fn file_init
+ * @brief Initialize the fiat vector and add an import tag.
+ * @remark The fiat vector needs an initial capacity, but if it is too small we
+ * will dip into kernel mode too often. The magic number 128 is a heuristic.
+ * For many REPL programs, it is large enough to never trigger a vector resize.
+ ******************************************************************************/
+static xerror file_init(file *ast, char *fname)
+{
+	xerror err = fiat_vector_init(&ast->fiats, 0, 128);
+
+	if (err) {
+		xerror_issue("could not initalize fiat vector");
+	};
+
+	ast->name = fname;
+
+	return err;
+}
+
 //-----------------------------------------------------------------------------
 //helper functions
 
 /*******************************************************************************
- * @fn __send_usererror
- * @brief Display an error message on stderr when the user has commited a
- * grammar error.
- * @remark use send_usererror macro where possible
+ * @fn _usererror
+ * @brief Send a formatted user error to stderr.
+ * @remark Use the usererror macro where possible.
  ******************************************************************************/
-static void __send_usererror(const uint32_t line, const char *msg, ...)
+static void _usererror(const uint32_t line, const char *msg, ...)
 {
 	assert(line > 0);
 	assert(msg);
@@ -108,91 +128,90 @@ static void __send_usererror(const uint32_t line, const char *msg, ...)
 	va_end(args);
 }
 
-//one of the nice benefits of using 'self' everywhere as a sort of hacky OOP
-//receiver is that we can wrap the base function since the source code line is
-//always accessed as self->tok.line
-#define send_usererror(msg, ...) \
-	__send_usererror(self->tok.line, msg, ##__VA_ARGS__)
+/*******************************************************************************
+ * @def usererror
+ * @brief Wrapper over _usererror.
+ * @remark Since the Lemon source code uses 'self' everywhere as a hacky OOP
+ * receiver, we can guarantee that the source code line is always accessed as
+ * self->tok.line.
+ ******************************************************************************/
+#define usererror(msg, ...) _usererror(self->tok.line, msg, ##__VA_ARGS__)
 
 /*******************************************************************************
- * @fn to_string
- * @brief Create a null terminated char array on heap from a non-null terminated
- * char array of length n.
+ * @fn lexcpy
+ * @brief Copy a src lexeme of length n to the dest pointer and reformat it as
+ * a valid C string.
+ * @return XENOMEM if dynamic allocation fails.
  ******************************************************************************/
-static char *to_string(char *ptr, uint32_t n)
+static xerror lexcpy(char *dest, char *src, uint32_t n)
 {
-	assert(ptr);
+	assert(src);
 	assert(n);
 
-	char *new = malloc(sizeof(char) * n);
+	dest = malloc(sizeof(char) * n);
 
-	if (!new) {
-		xerror_issue("cannot allocate memory for variable 'new'");
-		return NULL;
+	if (!dest) {
+		return XENOMEM;
 	}
 
-	memcpy(new, ptr, sizeof(char) * n);
-
-	return new;
-}
-
-/*******************************************************************************
- * @fn consume
- * @brief Consume the current token held by the parser it if it matches the
- * input token type, and advance. If it doesn't match, send an error message to
- * stderr
- * and return XEPARSE.
- ******************************************************************************/
-static xerror consume(parser *self, token_type type, const char *msg)
-{
-	assert(self);
-	assert(msg);
-
-	if (self->tok.type != type) {
-		send_usererror(msg);
-		return XEPARSE;
-	}
-
-	parser_advance(self);
+	memcpy(dest, src, sizeof(char) * n);
 
 	return XESUCCESS;
 }
 
 /*******************************************************************************
- * @fn file_init
- * @brief initialize fiat vector and add import tag
- * @remark fiat vector needs some initial capacity, but we don't want it to be
- * so small that we dip into kernel mode too often to grow the vector. The magic
- * number 128 is really just a rough heuristic.
+ * @fn _check
+ * @brief Advance to the next token if A is true. Check the token against the
+ * input type and return XEPARSE if it doesn't match. Advance again on a
+ * successfuly match if Z is true.
+ * @remark Use the check, move_check, check_move, and move_check_move macros.
  ******************************************************************************/
-#define FILE_CAP 128
-
-static xerror file_init(file *ast, char *fname)
+static xerror _check(parser *self, token_type type, char *msg, bool A, bool Z)
 {
-	ast->name = fname;
-	xerror err = fiat_vector_init(&ast->fiats, 0, FILE_CAP);
+	assert(self);
+	assert(msg);
 
-	if (err) {
-		xerror_issue("could not initalize fiat vector");
-	};
+	if (A) {
+		parser_advance(self);
+	}
 
-	return err;
+	if (self->tok.type != type) {
+		usererror(msg);
+		return XEPARSE;
+	}
+
+	if (Z) {
+		parser_advance(self);
+	}
+
+	return XESUCCESS;
 }
+
+//don't move to a new token, check the current one, and don't move afterwards
+#define check(self, type, msg) _check(self, type, msg, false, false)
+
+//move to a new token, check it, but don't move again
+#define move_check(self, type, msg) _check(self, type, msg, true, false)
+
+//check the current token, move on success
+#define check_move(self, type, msg) _check(self, type, msg, false, true)
+
+//move to a new token, check it, move again on success
+#define move_check_move(self, type, msg) _check(self, type, msg,  true, true)
 
 /*******************************************************************************
  * @fn parser_advance
- * @brief Pull a token from the scanner channel.
+ * @brief Receive a token from the scanner channel.
  * @details If the token is invalid, this function will synchronize to a new
- * sequence point.
+ * sequence point before it returns.
  ******************************************************************************/
 static void parser_advance(parser *self)
 {
 	assert(self);
 
-	xerror err = scanner_recv(self->scn, &self->tok);
-
-	//no release-mode check on this, its a simple bug if it triggers
-	assert(!err && "attempting to read past EOF");
+	if (scanner_recv(self->scn, &self->tok)) {
+		assert(0 != 0 && "attempted to read past EOF");
+	}
 
 	if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
 		token_print(self->tok);
@@ -205,9 +224,12 @@ static void parser_advance(parser *self)
 
 /*******************************************************************************
  * @fn synchronize
- * @brief Throw away tokens in the scanner channel until a sequence point is
- * found. Currently, a sequence point is defined as a declaration, a statement,
- * or the EOF token.
+ * @brief If the current token held by the parser is not a sequence point, then
+ * throw it away. Receive new tokens from the scanner channel until a sequence
+ * point is found.
+ * @return This function guarantees on return that the token held by the parser
+ * is a sequence point. If at least one token was thrown away, the ill_formed
+ * flag on the parser will be set.
  ******************************************************************************/
 static void synchronize(parser *self)
 {
@@ -215,6 +237,8 @@ static void synchronize(parser *self)
 
 	do {
 		switch(self->tok.type) {
+		
+		//sequence points
 		case _STRUCT:
 			fallthrough;
 		case _FUNC:
@@ -244,32 +268,28 @@ static void synchronize(parser *self)
 		case _CASE:
 			fallthrough;
 		case _EOF:
-			//needs to bypass the entire do-while loop.
-			//if the token is precisely _EOF then the parser
-			//will attempt a read on a closed channel.
-			goto full_break;
+			goto success;
 
+		//non-sequence points
 		case _INVALID:
-			self->total_invalid++;
-			send_usererror(fmt, self->tok.len, self->tok.lexeme);
+			usererror(fmt, self->tok.len, self->tok.lexeme);
 			fallthrough;
 		default:
-			//haven't yet reached a sequence point.
-			//draw another token and try again.
+			self->ill_formed = true;
 			break;
 		}
 
-		xerror err = scanner_recv(self->scn, &self->tok);
-
-		//no release-mode check on this, its a simple bug if it triggers
-		assert(!err && "attempting to read past EOF");
+		//draw another token and try again
+		if (scanner_recv(self->scn, &self->tok)) {
+			assert(0 != 0 && "attempted to read past EOF");
+		}
 
 		if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
 			token_print(self->tok);
 		}
 	} while (true);
 
-full_break:
+success:
 	return;
 }
 
@@ -277,10 +297,10 @@ full_break:
 //recursive descent algorithm
 
 /*******************************************************************************
- * @fn __parse
+ * @fn rec_parse
  * @brief Recursive descent entry point
  ******************************************************************************/
-static xerror __parse(parser *self, char *fname, file *ast)
+static xerror rec_parse(parser *self, char *fname, file *ast)
 {
 	assert(self);
 	assert(ast);
@@ -296,7 +316,7 @@ static xerror __parse(parser *self, char *fname, file *ast)
 	parser_advance(self);
 
 	while (self->tok.type != _EOF) {
-		fiat node = __fiat(self, &err);
+		fiat node = rec_fiat(self, &err);
 
 		if (err) {
 			xerror_issue("could not create fiat node");
@@ -310,10 +330,10 @@ static xerror __parse(parser *self, char *fname, file *ast)
 }
 
 /*******************************************************************************
- * @fn __fiat
+ * @fn rec_fiat
  * @brief Dispatch to decl or stmt handler and then wrap the return node.
  ******************************************************************************/
-static fiat __fiat(parser *self, xerror *err)
+static fiat rec_fiat(parser *self, xerror *err)
 {
 	assert(self);
 	assert(err);
@@ -326,7 +346,7 @@ static fiat __fiat(parser *self, xerror *err)
 
 		parser_advance(self);
 
-		node.declaration = __struct(self, err);
+		node.declaration = rec_struct(self, err);
 
 		if (*err == XEPARSE) {
 			synchronize(self);
@@ -364,12 +384,12 @@ static fiat __fiat(parser *self, xerror *err)
 }
 
 /*******************************************************************************
- * @fn __struct
+ * @fn rec_struct
  * @brief Implementation of the <struct declaration> production.
  ******************************************************************************/
 #define MEMBER_CAP 4
 
-static decl __struct(parser *self, xerror *err)
+static decl rec_struct(parser *self, xerror *err)
 {
 	assert(self);
 	assert(err);
@@ -384,22 +404,19 @@ static decl __struct(parser *self, xerror *err)
 	}
 
 	if (self->tok.type != _IDENTIFIER) {
-		send_usererror("missing identifier after struct keyword");
+		usererror("missing identifier after struct keyword");
 		*err = XEPARSE;
 		return node;
 	}
+	
+	*err = lexcpy(node.udt.name, self->tok.lexeme, self->tok.len);
 
-	node.udt.name = to_string(self->tok.lexeme, self->tok.len);
-
-	if (!node.udt.name) {
+	if (*err) {
 		xerror_issue("cannot create udt name");
-		*err = XENOMEM;
 		return node;
 	}
 
-	parser_advance(self);
-
-	*err = consume(self, _LEFTBRACE, "expected '{' after struct name");
+	*err = move_check_move(self, _LEFTBRACE, "expected '{' after name");
 	if (*err) { return node; }
 
 	*err = member_vector_init(&node.udt.members, 0, MEMBER_CAP);
@@ -409,13 +426,13 @@ static decl __struct(parser *self, xerror *err)
 		return node;
 	}
 
-	*err = __members(self, &node);
+	*err = rec_members(self, &node);
 	if (*err) { return node; }
 
-	*err = consume(self, _RIGHTBRACE, "expected '}' after members");
+	*err = check_move(self, _RIGHTBRACE, "expected '}' after members");
 	if (*err) { return node; }
 
-	*err = consume(self, _SEMICOLON, "expected ';' after members");
+	*err = check_move(self, _SEMICOLON, "expected ';' after struct");
 	if (*err) { return node; }
 
 
@@ -423,7 +440,11 @@ static decl __struct(parser *self, xerror *err)
 	return node;
 }
 
-static xerror __members(parser *self, decl *node)
+/*******************************************************************************
+ * @fn rec_members
+ * @brief Process each scope:name:type triplet within a struct declaration.
+ ******************************************************************************/
+static xerror rec_members(parser *self, decl *node)
 {
 	assert(self);
 	assert(node);
@@ -438,25 +459,23 @@ static xerror __members(parser *self, decl *node)
 		}
 
 		if (self->tok.type != _IDENTIFIER) {
-			send_usererror("expected member name");
+			usererror("expected member name");
 			return XEPARSE;
 		}
 
-		attr.name = to_string(self->tok.lexeme, self->tok.len);
+		err = lexcpy(attr.name, self->tok.lexeme, self->tok.len);
 
-		if (!attr.name) {
+		if (err) {
 			xerror_issue("cannot create member name");
 			return XENOMEM;
 		}
 
-		parser_advance(self);
-
-		err = consume(self, _COLON, "expected ':' after member name");
+		err = move_check_move(self, _COLON, "expected ':' after name");
 		if (err) { return err; }
 
 		//TODO capture type
 
-		err = consume(self, _SEMICOLON, "expected ';' after type");
+		err = check_move(self, _SEMICOLON, "expected ';' after type");
 		if (err) { return err; }
 
 		err = member_vector_push(&node->udt.members, attr);
