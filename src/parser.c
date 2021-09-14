@@ -48,6 +48,8 @@ static fiat rec_fiat(parser *self, xerror *err);
 static decl rec_struct(parser *self, xerror *err);
 static xerror rec_members(parser *self, decl *node);
 type *rec_type(parser *self, xerror *err);
+decl rec_func(parser *self, xerror *err);
+static xerror rec_params(parser *self, decl *node);
 
 //parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file *ast)
@@ -394,43 +396,33 @@ static fiat rec_fiat(parser *self, xerror *err)
 	switch (self->tok.type) {
 	case _STRUCT:
 		node.tag = NODE_DECL;
-
 		parser_advance(self);
-
 		node.declaration = rec_struct(self, err);
-
-		if (*err == XEPARSE) {
-			synchronize(self);
-		} else if (*err) {
-			xerror_issue("cannot create udt decl node");
-			return node;
-		}
-
 		break;
 
 	case _FUNC:
 		node.tag = NODE_DECL;
-
 		parser_advance(self);
-
+		node.declaration = rec_func(self, err);
 		break;
 
 	case _LET:
 		node.tag = NODE_DECL;
-
 		parser_advance(self);
-
 		break;
 
 	default:
 		node.tag = NODE_STMT;
-
 		parser_advance(self);
-
 		break;
 	}
 
-	*err = XESUCCESS;
+	if (*err == XEPARSE) {
+		synchronize(self);
+	} else if (*err) {
+		xerror_issue("cannot create declaration node");
+	}
+
 	return node;
 }
 
@@ -562,6 +554,188 @@ static xerror rec_members(parser *self, decl *node)
 }
 
 /*******************************************************************************
+ * @fn rec_func
+ * @brief Create a function declaration node.
+ ******************************************************************************/
+decl rec_func(parser *self, xerror *err)
+{
+	assert(self);
+	assert(err);
+
+	decl node = {
+		.tag = NODE_FUNCTION,
+		.function = {
+			.name = NULL,
+			.ret = NULL,
+			.recv = NULL,
+			.block = NULL,
+			.params = {0},
+			.line = self->tok.line,
+			.public = false
+		}
+	};
+
+	if (self->tok.type == _PUB) {
+		node.function.public = true;
+		parser_advance(self);
+	}
+
+	if (self->tok.type != _IDENTIFIER) {
+		usererror("missing function name");
+		return node;
+	}
+
+	*err = lexcpy(&node.function.name, self->tok.lexeme, self->tok.len);
+
+	if (*err) {
+		xerror_issue("cannot create function name");
+		return node;
+	}
+
+	//parameter list
+	*err = move_check_move(self, _LEFTPAREN, 
+		"missing '(' after function name");
+	if (*err) { return node; }
+
+	if (self->tok.type == _VOID) {
+		parser_advance(self);
+	} else {
+		*err = rec_params(self, &node);
+
+		if (*err) {
+			if (*err != XEPARSE) {
+				xerror_issue("cannot add function params");
+			}
+
+			return node;
+		}
+
+		if (node.function.params.len == 0) {
+			usererror("empty parameter list must state 'void'");
+			*err = XEPARSE;
+			return node;
+		}
+	}
+
+	*err = check_move(self, _RIGHTPAREN, "missing ')' after parameters");
+	if (*err) { return node; }
+
+	//return
+	*err = check_move(self, _RETURN, "missing 'return' after parameters");
+	if (*err) { return node; }
+
+	if (self->tok.type == _VOID) {
+		parser_advance(self);
+	} else {
+		node.function.ret = rec_type(self, err);
+
+		if (*err) {
+			if (*err != XEPARSE) {
+				xerror_issue("cannot create return node");
+			}
+
+			return node;
+		}
+	}
+
+	//receiver
+	if (self->tok.type == _FOR) {
+		parser_advance(self);
+
+		node.function.recv = rec_type(self, err);
+
+		if (*err) {
+			if (*err != XEPARSE) {
+				xerror_issue("cannot create recv node");
+			}
+
+			return node;
+		}
+	}
+
+	//TODO block statement
+	*err = XESUCCESS;
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_params
+ * @brief Process each mutability:name:type triplet within a param declaration.
+ * @return XENOMEM or XEPARSE
+ * @remark The param capacity uses the magic number 4 as a heuristic. We assume
+ * most param lists are generally quite small.
+ ******************************************************************************/
+static xerror rec_params(parser *self, decl *node)
+{
+	assert(self);
+	assert(node);
+
+	xerror err = XESUCCESS;
+
+	param attr  = {
+		.name = NULL,
+		.typ = NULL,
+		.mutable = false
+	};
+
+	err = param_vector_init(&node->function.params, 0, 4);
+
+	if (err) {
+		xerror_issue("cannot init param vector");
+		return err;
+	}
+
+	while (self->tok.type != _RIGHTPAREN) {
+		if (node->function.params.len > 0) {
+			err = check_move(self, _COMMA, 
+				"expected ',' after each function parameter");
+			if (err) { return err; }
+		}
+
+		if (self->tok.type == _MUT) {
+			attr.mutable = true;
+			parser_advance(self);
+		}
+
+		if (self->tok.type != _IDENTIFIER) {
+			usererror("expected parameter name");
+			return XEPARSE;
+		}
+
+		err = lexcpy(&attr.name, self->tok.lexeme, self->tok.len);
+
+		if (err) {
+			xerror_issue("cannot create parameter name");
+			return XENOMEM;
+		}
+
+		err = move_check_move(self, _COLON, "expected ':' after name");
+		if (err) { return err; }
+
+		attr.typ = rec_type(self, &err);
+		
+		if (err) {
+			if (err != XEPARSE) {
+				xerror_issue("cannot create parameter type");
+			}
+
+			return err;
+		}
+
+		err = param_vector_push(&node->function.params, attr);
+
+		if (err) {
+			xerror_issue("cannot add param to vector");
+			return err;
+		}
+
+		memset(&attr, 0, sizeof(param));
+	}
+
+	return err;
+}
+
+/*******************************************************************************
  * @fn rec_type
  * @brief Create a linked list of nodes representing a type
  ******************************************************************************/
@@ -638,7 +812,7 @@ type *rec_type(parser *self, xerror *err)
 		break;
 
 	default:
-		usererror("expected type after ':'");
+		usererror("expected type but none found"); 
 		*err = XEPARSE;
 		break;
 	}
