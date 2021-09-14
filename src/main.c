@@ -129,12 +129,7 @@ xerror run_repl(options *opt)
 	xerror err = XEUNDEFINED;
 	RAII char_vector buf = {0};
 
-	err = char_vector_init(&buf, 0, KiB(1));
-
-	if (err) {
-		xerror_issue("cannot init char vector");
-		return XENOMEM;
-	}
+	char_vector_init(&buf, 0, KiB(1));
 
 	while (true) {
 		int prev = 0;
@@ -161,24 +156,14 @@ xerror run_repl(options *opt)
 				fprintf(stdout, "... ");
 			}
 
-			err = char_vector_push(&buf, (char) curr);
-
-			if (err) {
-				xerror_issue("cannot push to char vector");
-				return err;
-			}
+			char_vector_push(&buf, (char) curr);
 
 			prev = curr;
 		}
 
 		//satisfy string requirement requested by run()
-		err = char_vector_push(&buf, '\0');
+		char_vector_push(&buf, '\0');
 		
-		if (err) {
-			xerror_issue("cannot push to char vector");
-			return err;
-		}
-
 		err = run_unknown(opt, buf.data, buf.len);
 
 		if (err) {

@@ -106,11 +106,6 @@ const char *xerror_str(const xerror err);
 #define XEPARSE	      8 /**< @brief AST parse error */
 #define XEUNDEFINED   9 /**< @brief A generic unspecified error has occured. */
 
-//mapping between vector codes and xerror codes
-#define VECTOR_ESUCCESS XESUCCESS
-#define VECTOR_ENOMEM	XENOMEM
-#define VECTOR_EFULL	XEFULL
-
 //mapping between channel codes and xerror codes
 #define CHANNEL_ESUCCESS XESUCCESS
 #define CHANNEL_ENOMEM	 XENOMEM

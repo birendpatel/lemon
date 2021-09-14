@@ -40,7 +40,7 @@ static xerror _check(parser *self, token_type type, char *msg, bool A, bool Z);
 static xerror extract_arrnum(parser *self, size_t *target);
 
 //node management
-static xerror file_init(file *ast, char *fname);
+static void file_init(file *ast, char *fname);
 
 //recursive descent
 static xerror rec_parse(parser *self, char *fname, file *ast);
@@ -95,17 +95,10 @@ xerror parse(char *src, options *opt, char *fname, file *ast)
  * will dip into kernel mode too often. The magic number 128 is a heuristic.
  * For many REPL programs, it is large enough to never trigger a vector resize.
  ******************************************************************************/
-static xerror file_init(file *ast, char *fname)
+static void file_init(file *ast, char *fname)
 {
-	xerror err = fiat_vector_init(&ast->fiats, 0, 128);
-
-	if (err) {
-		xerror_issue("could not initalize fiat vector");
-	};
-
+	fiat_vector_init(&ast->fiats, 0, 128);
 	ast->name = fname;
-
-	return err;
 }
 
 //-----------------------------------------------------------------------------
@@ -353,12 +346,9 @@ static xerror rec_parse(parser *self, char *fname, file *ast)
 	assert(self);
 	assert(ast);
 
-	xerror err = file_init(ast, fname);
+	xerror err = XESUCCESS;
 
-	if (err) {
-		xerror_issue("could not initialize file node");
-		return err;
-	}
+	file_init(ast, fname);
 
 	//prime the parser with an initial state
 	parser_advance(self);
@@ -371,15 +361,10 @@ static xerror rec_parse(parser *self, char *fname, file *ast)
 			return err;
 		}
 
-		err = fiat_vector_push(&ast->fiats, node);
-
-		if (err) {
-			xerror_issue("cannot add fiat to file vector");
-			return err;
-		}
+		fiat_vector_push(&ast->fiats, node);
 	}
 
-	return XESUCCESS;
+	return err;
 }
 
 /*******************************************************************************
@@ -499,12 +484,7 @@ static xerror rec_members(parser *self, decl *node)
 		.public = false
 	};
 
-	err = member_vector_init(&node->udt.members, 0, 4);
-
-	if (err) {
-		xerror_issue("cannot init member vector");
-		return err;
-	}
+	member_vector_init(&node->udt.members, 0, 4);
 
 	while (self->tok.type != _RIGHTBRACE) {
 		if (self->tok.type == _PUB) {
@@ -540,12 +520,7 @@ static xerror rec_members(parser *self, decl *node)
 		err = check_move(self, _SEMICOLON, "expected ';' after type");
 		if (err) { return err; }
 
-		err = member_vector_push(&node->udt.members, attr);
-
-		if (err) {
-			xerror_issue("cannot add member to vector");
-			return err;
-		}
+		member_vector_push(&node->udt.members, attr);
 
 		memset(&attr, 0, sizeof(member));
 	}
@@ -678,12 +653,7 @@ static xerror rec_params(parser *self, decl *node)
 		.mutable = false
 	};
 
-	err = param_vector_init(&node->function.params, 0, 4);
-
-	if (err) {
-		xerror_issue("cannot init param vector");
-		return err;
-	}
+	param_vector_init(&node->function.params, 0, 4);
 
 	while (self->tok.type != _RIGHTPAREN) {
 		if (node->function.params.len > 0) {
@@ -722,12 +692,7 @@ static xerror rec_params(parser *self, decl *node)
 			return err;
 		}
 
-		err = param_vector_push(&node->function.params, attr);
-
-		if (err) {
-			xerror_issue("cannot add param to vector");
-			return err;
-		}
+		param_vector_push(&node->function.params, attr);
 
 		memset(&attr, 0, sizeof(param));
 	}
