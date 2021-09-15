@@ -5,18 +5,19 @@
  */
 
 #include <assert.h>
-#include <pthread.h> //mutex, attr, create, detach
-#include <stdatomic.h> //_Atomic
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdbool.h>
-#include <stddef.h> //ptrdiff_t
-#include <stdio.h> //fprintf
-#include <stdlib.h> //malloc
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
 
 #include "scanner.h"
-#include "defs.h" //kib, fallthrough
+#include "defs.h"
 #include "assets/kmap.h"
 #include "lib/channel.h"
 
+//prototypes
 static void* start_routine(void *data);
 static void scan(scanner *self);
 static const char *get_token_name(token_type typ);
@@ -42,6 +43,7 @@ make_channel(token, token, static inline)
 //busy-wait comm between parent and scanner thread
 static _Atomic volatile bool signal = false;
 
+//lookup table for pretty printing; protected by get_token_name()
 static const char *lookup[] = {
 	[_INVALID] = "INVALID",
 	[_EOF] = "EOF",
@@ -107,6 +109,7 @@ static const char *lookup[] = {
 	[_FALSE] = "BOOL FALSE"
 };
 
+//safe lookup
 static const char *get_token_name(token_type typ)
 {
 	static const char *err = "LOOKUP ERROR";
@@ -199,33 +202,18 @@ xerror scanner_init(scanner **self, char *src, options *opt)
 	int attr_err = 0;
 	scanner *tmp;
 
-	tmp =  malloc(sizeof(scanner));
-
-	if (!tmp) {
-		err = XENOMEM;
-		xerror_issue("cannot allocate scanner");
-		goto fail;
-	}
+	kmalloc(tmp, sizeof(scanner));
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-qual"
 
-	* (token_channel **) &tmp->chan = malloc(sizeof(token_channel));
+	//kmalloc without the macro looks like this:
+	//* (token_channel **) &tmp->chan = malloc(sizeof(token_channel));
+	kmalloc(* (token_channel **) &tmp->chan, sizeof(token_channel));
 
 #pragma GCC diagnostic pop
 
-	if (!tmp->chan) {
-		err = XENOMEM;
-		xerror_issue("cannot allocate channel member");
-		goto cleanup_scanner;
-	}
-
-	err = token_channel_init(tmp->chan, KiB(1));
-
-	if (err) {
-		xerror_issue("cannot initialize channel");
-		goto cleanup_channel;
-	}
+	token_channel_init(tmp->chan, KiB(1));
 
 	(void) pthread_mutex_init(&tmp->mutex, NULL);
 
@@ -281,14 +269,11 @@ cleanup_channel_init:
 	//don't check return code; func will never fail because no thread has
 	//used the channel yet.
 	(void) token_channel_free(tmp->chan, NULL);
-
-cleanup_channel:
+	
 	free(tmp->chan);
-
-cleanup_scanner:
+	
 	free(tmp);
-
-fail:
+	
 	return err;
 
 success:
