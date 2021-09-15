@@ -178,9 +178,9 @@ The initializer performs heap allocations across three levels of indirection:
 - the pointer to the buffer within the channel
 
 Note that we must cast the channel pointer to remove the const qualifier so that
-we can assign the result of malloc. This does not violate the C standard section
+we can assign the result of kmalloc. This does not violate C standard section
 6.7.3. The original object (the memory region given to the scanner) is not
-a const object. The portion of the memory region reserved for the channel pointer
+a const object. The portion of the memory reserved for the channel pointer
 is merely casted to const. Since we are casting back to its original non-const
 state, there is no standards violation.
 
@@ -207,8 +207,6 @@ xerror scanner_init(scanner **self, char *src, options *opt)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wcast-qual"
 
-	//kmalloc without the macro looks like this:
-	//* (token_channel **) &tmp->chan = malloc(sizeof(token_channel));
 	kmalloc(* (token_channel **) &tmp->chan, sizeof(token_channel));
 
 #pragma GCC diagnostic pop

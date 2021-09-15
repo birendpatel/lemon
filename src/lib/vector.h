@@ -5,7 +5,7 @@
  *
  * @details This file is plug and play, but with a few words of advice. Vectors
  * use a little memset trick to immediately induce a segementation violation
- * whenever stdlib malloc fails. You will first have to remove the kmalloc
+ * whenever stdlib allocs fail. You will first have to remove the kmalloc
  * wrapper and introduce errors codes to impl_vector_init and impl_vector_push
  * if you want to avoid this behavior. Vectors also intentionally crash if you 
  * attempt to push more than SIZE_MAX elements.

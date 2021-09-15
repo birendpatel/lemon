@@ -35,7 +35,7 @@ typedef struct parser {
 static void _usererror(const uint32_t line, const char *msg, ...);
 static void parser_advance(parser *self);
 static void synchronize(parser *self);
-static xerror lexcpy(char **dest, char *src, uint32_t n);
+static void lexcpy(char **dest, char *src, uint32_t n);
 static xerror _check(parser *self, token_type type, char *msg, bool A, bool Z);
 static xerror extract_arrnum(parser *self, size_t *target);
 
@@ -139,22 +139,15 @@ static void _usererror(const uint32_t line, const char *msg, ...)
  * @fn lexcpy
  * @brief Copy a src lexeme of length n to the dest pointer and reformat it as
  * a valid C string.
- * @return XENOMEM if dynamic allocation fails.
  ******************************************************************************/
-static xerror lexcpy(char **dest, char *src, uint32_t n)
+static void lexcpy(char **dest, char *src, uint32_t n)
 {
 	assert(src);
 	assert(n);
 
-	*dest = malloc(sizeof(char) * n);
-
-	if (!*dest) {
-		return XENOMEM;
-	}
-
+	kmalloc(*dest, sizeof(char) * n);
+	
 	memcpy(*dest, src, sizeof(char) * n);
-
-	return XESUCCESS;
 }
 
 /*******************************************************************************
@@ -171,12 +164,8 @@ static xerror extract_arrnum(parser *self, size_t *target)
 	long long int candidate = 0;
 	char *end = NULL;
 	char *tmp = NULL;
-	xerror err = lexcpy(&tmp, self->tok.lexeme, self->tok.len);
 
-	if (err) {
-		xerror_issue("cannot copy lexeme to temporary workspace");
-		return err;
-	}
+	lexcpy(&tmp, self->tok.lexeme, self->tok.len);
 
 	candidate = strtoll(tmp, &end, 10);
 
@@ -441,12 +430,7 @@ static decl rec_struct(parser *self, xerror *err)
 		return node;
 	}
 	
-	*err = lexcpy(&node.udt.name, self->tok.lexeme, self->tok.len);
-
-	if (*err) {
-		xerror_issue("cannot create udt name");
-		return node;
-	}
+	lexcpy(&node.udt.name, self->tok.lexeme, self->tok.len);
 
 	*err = move_check_move(self, _LEFTBRACE, "expected '{' after name");
 	if (*err) { return node; }
@@ -497,12 +481,7 @@ static xerror rec_members(parser *self, decl *node)
 			return XEPARSE;
 		}
 
-		err = lexcpy(&attr.name, self->tok.lexeme, self->tok.len);
-
-		if (err) {
-			xerror_issue("cannot create member name");
-			return XENOMEM;
-		}
+		lexcpy(&attr.name, self->tok.lexeme, self->tok.len);
 
 		err = move_check_move(self, _COLON, "expected ':' after name");
 		if (err) { return err; }
@@ -560,12 +539,7 @@ decl rec_func(parser *self, xerror *err)
 		return node;
 	}
 
-	*err = lexcpy(&node.function.name, self->tok.lexeme, self->tok.len);
-
-	if (*err) {
-		xerror_issue("cannot create function name");
-		return node;
-	}
+	lexcpy(&node.function.name, self->tok.lexeme, self->tok.len);
 
 	//parameter list
 	*err = move_check_move(self, _LEFTPAREN, 
@@ -672,12 +646,7 @@ static xerror rec_params(parser *self, decl *node)
 			return XEPARSE;
 		}
 
-		err = lexcpy(&attr.name, self->tok.lexeme, self->tok.len);
-
-		if (err) {
-			xerror_issue("cannot create parameter name");
-			return XENOMEM;
-		}
+		lexcpy(&attr.name, self->tok.lexeme, self->tok.len);
 
 		err = move_check_move(self, _COLON, "expected ':' after name");
 		if (err) { return err; }
@@ -709,22 +678,14 @@ type *rec_type(parser *self, xerror *err)
 	assert(self);
 	assert(err);
 
-	type *node = malloc(sizeof(type) * 1);
-
-	if (!node) {
-		*err = XENOMEM;
-		return NULL;
-	}
+	type *node = NULL;
+	kmalloc(node, sizeof(type));
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
 		node->tag = NODE_BASE;
-		*err = lexcpy(&node->base, self->tok.lexeme, self->tok.len);
-
-		if (*err) {
-			xerror_issue("cannot create type base name");
-			return node;
-		}
+		
+		lexcpy(&node->base, self->tok.lexeme, self->tok.len);
 
 		parser_advance(self);
 

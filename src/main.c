@@ -301,17 +301,13 @@ xerror get_bytecount(FILE *fp, size_t *n)
  * @param buf Will be a valid pointer to heap if function is successful. User
  * is responsible for managing the memory.
  * @param n Ok if zero
+ * @return XEFILE if read fails.
  ******************************************************************************/
 xerror disk_to_heapstr(FILE *fp, char **buf, size_t n)
 {
 	assert(fp);
 
-	*buf = malloc(sizeof(char) * n + 1);
-
-	if (*buf == NULL) {
-		xerror_issue("cannot allocate enough memory for file size");
-		return XENOMEM;
-	}
+	kmalloc(*buf, sizeof(char) * n + 1);
 
 	size_t match = fread(*buf, sizeof(char), n, fp);
 
