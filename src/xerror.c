@@ -54,7 +54,6 @@ static const char *error_lookup[] = {
 	[XEBUSY]      = "thread waiting on condition",
 	[XECLOSED]    = "attempted to use closed channel",
 	[XETHREAD]    = "multithreading failure",
-	[XEPARSE]     = "parse error",
 	[XEUNDEFINED] = "unspecified error"
 };
 

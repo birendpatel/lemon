@@ -24,6 +24,8 @@
 
 #pragma once
 
+#include "../extern/cexception/CException.h"
+
 /*******************************************************************************
  * @typedef xerror
  * @brief Error codes used in C Lemon for handling errors such as syscalls. Note
@@ -96,20 +98,22 @@ const char *xerror_str(const xerror err);
 
 //error codes
 #define XESUCCESS     0 /**< @brief Function returned successfully. */
-#define XEPARSE	      1 /**< @brief AST parser error (thrown). */
+#define XENOMEM	      1 /**< @brief Allocation in 3rd party library failed. */
 #define XEOPTION      2 /**< @brief Options parsing failed. */
 #define XEFULL        3 /**< @brief A container is at capacity. */
 #define XEFILE        4 /**< @brief IO failure. */
 #define XEBUSY        5 /**< @brief A thread is waiting on a condition. */
 #define XECLOSED      6 /**< @brief Attempted to use a closed channel. */
 #define XETHREAD      7 /**< @brief A Multithreading issue has occured. */
-#define XENOMEM	      8 /**< @brief Allocation in 3rd party library failed. */
-#define XEUNDEFINED   9 /**< @brief A generic unspecified error has occured. */
+#define XEUNDEFINED   8 /**< @brief A generic unspecified error has occured. */
 
 //mapping between channel codes and xerror codes
 #define CHANNEL_ESUCCESS XESUCCESS
 #define CHANNEL_EBUSY	 XEBUSY
 #define CHANNEL_ECLOSED  XECLOSED
+
+//exceptions
+#define XXPARSE ((CEXCEPTION_T) 1) /**< @brief Cannot parse current token */
 
 //colour macros provided by @gon1332 at stackoverflow.com/questions/2616906/
 //note several changes: 1) macro names are expanded 2) no-op wrapper where
