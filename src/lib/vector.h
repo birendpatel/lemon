@@ -7,7 +7,7 @@
  * use a little memset trick to immediately induce a segementation violation
  * whenever stdlib allocs fail. You will first have to remove the kmalloc
  * wrapper and introduce errors codes to impl_vector_init and impl_vector_push
- * if you want to avoid this behavior. Vectors also intentionally crash if you 
+ * if you want to avoid this behavior. Vectors also intentionally crash if you
  * attempt to push more than SIZE_MAX elements.
  *
  * Since vector.h was originally designed for the Lemon compiler, this fail
@@ -126,7 +126,7 @@ cls void pfix##_vector_push(pfix##_vector *self, T datum)	               \
 	assert(self);							       \
                                                                                \
 	if (self->len == SIZE_MAX) {                                           \
-		* (int *) 0 = 0; /* segfault */                                \
+		abort();			                               \
 	}                                                                      \
 									       \
 	if (self->len == self->cap) {					       \

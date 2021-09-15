@@ -23,6 +23,7 @@
 #include "nodes.h"
 #include "options.h"
 #include "scanner.h"
+#include "xerror.h"
 
 typedef struct parser {
 	scanner *scn;
@@ -117,11 +118,16 @@ static void _usererror(const uint32_t line, const char *msg, ...)
 	va_list args;
 	va_start(args, msg);
 
-	fprintf(stderr, "(line %d) ", line);
+	//Note, the ANSI_RED macro does not reset the colour after it is
+	//applied. This allows the input msg to also be coloured red. RED()
+	//cannot be applied directly to the input msg because the macro relies
+	//on string concatenation.
+	fprintf(stderr, ANSI_RED "(line %d) ", line);
 
 	vfprintf(stderr, msg, args);
 
-	fprintf(stderr, "\n");
+	//this final RED() causes the colours to reset after the statement
+	fprintf(stderr, RED("\n"));
 
 	va_end(args);
 }

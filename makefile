@@ -81,7 +81,7 @@ $(DEBUG_DIR)kmap.o : kmap.c kmap.h scanner.h
 
 .PHONY: release release_deps
 
-release: CFLAGS += -O2
+release: CFLAGS += -O3
 release: release_deps $(RELEASE_DIR)lemon
 	@echo "\nBuild finished successfully."
 	@echo "Lemon was compiled in release mode."

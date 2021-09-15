@@ -145,15 +145,15 @@ const char *xerror_str(const xerror err);
 	#define ANSI_CYAN
 	#define ANSI_WHITE
 
-	#define RED(str)
-	#define GREEN(str)
-	#define YELLOW(str)
-	#define BLUE(str)
-	#define MAGENTA(str)
-	#define CYAN(str)
-	#define WHITE(str)
+	#define RED(str) str
+	#define GREEN(str) str
+	#define YELLOW(str) str
+	#define BLUE(str) str
+	#define MAGENTA(str) str
+	#define CYAN(str) str
+	#define WHITE(str) str
 
-	#define BOLD(srt)
-	#define UNDERLINE(x)
+	#define BOLD(str) str
+	#define UNDERLINE(str) str
 
 #endif
