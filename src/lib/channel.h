@@ -7,9 +7,17 @@
  * its buffer size is fixed to enable the producers to place back-pressure
  * on the system whenever the consumers begin to outpace demand.
  *
- * @details Like the vector template, the user must configure macro definitions
- * for the integer error codes. Other than that, the file is plug and play
- * with no dependencies.
+ * @details This file is plug and play, but with a few words of advice. Vectors
+ * use a little memset trick to immediately induce a segementation violation
+ * whenever stdlib malloc fails. You will first have to remove the kmalloc
+ * wrapper and introduce errors codes to the impl_channel_init template macro
+ * if you want to avoid this behavior.
+ *
+ * Since channel.h was originally designed for the Lemon compiler, this fail
+ * fast and die early approach suited the compiler requirements well. YMMV.
+
+ * FInally, the user must configure macro definitions for the integer error 
+ * codes.
  */
 
 #pragma once
@@ -42,11 +50,6 @@
 	#error "channel.h requires user to implement CHANNEL_ESUCCESS int code"
 #endif
 
-//cannot allocate memory
-#ifndef CHANNEL_ENOMEM
-	#error "channel.h requires user to implement CHANNEL_ENOMEM int code"
-#endif
-
 //one or more threads are waiting
 #ifndef CHANNEL_EBUSY
 	#error "channel.h requires user to implement CHANNEL_EBUSY int code"
@@ -60,6 +63,9 @@
 //struct flags
 #define CHANNEL_OPEN	1 << 0
 #define CHANNEL_CLOSED	1 << 1
+
+//kmalloc
+#define kmalloc(target, bytes) memset((target = malloc(bytes)), 0, 1)
 
 //typedef and forward declaration
 #define alias_channel(pfix)						       \
@@ -82,7 +88,7 @@ struct pfix##_channel {							       \
 //prototypes
 //cls is the storage class and an optional inline directive
 #define api_channel(T, pfix, cls)					       \
-cls int pfix##_channel_init(pfix##_channel *self, const size_t n);	       \
+cls void pfix##_channel_init(pfix##_channel *self, const size_t n);	       \
 cls int pfix##_channel_free(pfix##_channel *self, void (*cfree) (T));	       \
 cls void pfix##_channel_close(pfix##_channel *self);			       \
 cls int pfix##_channel_send(pfix##_channel *self, const T datum);	       \
@@ -94,16 +100,13 @@ cls int pfix##_channel_recv(pfix##_channel *self, T *datum);
  * @details This function must be invoked before any other channel functions.
  ******************************************************************************/
 #define impl_channel_init(T, pfix, cls)					       \
-cls int pfix##_channel_init(pfix##_channel *self, const size_t n)	       \
+cls void pfix##_channel_init(pfix##_channel *self, const size_t n)	       \
 {									       \
 	assert(self);							       \
 	assert(n);							       \
 									       \
-	self->data = malloc(sizeof(T) * n);				       \
-									       \
-	if (!self->data) {						       \
-		return CHANNEL_ENOMEM;					       \
-	}								       \
+	size_t bytes = sizeof(T) * n;					       \
+	kmalloc(self->data, bytes);					       \
 									       \
 	self->cap = n;							       \
 	self->len = 0;							       \
@@ -117,7 +120,6 @@ cls int pfix##_channel_init(pfix##_channel *self, const size_t n)	       \
 	self->flags = CHANNEL_OPEN;					       \
 									       \
 	CHANNEL_TRACE("initialized");		                               \
-	return CHANNEL_ESUCCESS;					       \
 }
 
 /*******************************************************************************
