@@ -15,4 +15,4 @@
  * @param src Null terminated char array
  * @param file Points to a valid AST root node if function returns succesfully.
  ******************************************************************************/
-xerror parse(char *src, options *opt, char *fname, file *ast);
+xerror parse(char *src, options *opt, char *fname, file **ast);

@@ -26,8 +26,10 @@ vpath %.c ./src
 vpath %.c ./src/lib
 vpath %.c ./src/assets
 vpath %.c ./extern/unity
+vpath %.c ./extern/cexception
 
-objects_raw := main.o xerror.o options.o compile.o parser.o scanner.o kmap.o 
+objects_raw := main.o xerror.o options.o compile.o parser.o scanner.o kmap.o \
+	cexception.o
 
 DEBUG_DIR = ./debug/
 objects_debug := $(addprefix $(DEBUG_DIR), $(objects_raw))
@@ -52,6 +54,8 @@ parser_deps := xerror.h parser.h channel.h scanner.h nodes.h defs.h options.h
 scanner_deps := xerror.h scanner.h channel.h kmap.h
 
 kmap_deps := kmap.h scanner.h
+
+cexception_deps := CException.c
 
 #-------------------------------------------------------------------------------
 # debug build
@@ -94,6 +98,9 @@ $(DEBUG_DIR)scanner.o : scanner.c $(scanner_deps)
 $(DEBUG_DIR)kmap.o : kmap.c $(kmap_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
+$(DEBUG_DIR)cexception.o : CException.c $(cexception_deps)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
 #-------------------------------------------------------------------------------
 # release build
 #-------------------------------------------------------------------------------
@@ -131,6 +138,9 @@ $(RELEASE_DIR)scanner.o : scanner.c $(scanner_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(RELEASE_DIR)kmap.o : kmap.c $(kmap_deps)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(RELEASE_DIR)cexception.o : CException.c $(cexception_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 #-------------------------------------------------------------------------------

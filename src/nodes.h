@@ -366,6 +366,7 @@ impl_vector_reset(expr, expr, static)
  * @brief Union tag for struct fiat
  ******************************************************************************/
 typedef enum fiattag {
+	NODE_INVALID,
 	NODE_DECL,
 	NODE_STMT,
 } fiattag;

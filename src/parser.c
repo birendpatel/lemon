@@ -4,15 +4,27 @@
  * @brief Recursive descent parser.
  *
  * @remark There are two classes of errors found in the parser: compiler errors
- * and user errors. User errors are signaled by the xerror XEPARSE error code.
- * User errors are never complier errors, so they are not logged and they do not
- * cause the parser to terminate. In all XEPARSE situations, the parser sends
- * the user error on stderr and attempts to synchronize to a new sequence point.
+ * and user errors. User errors are not logged in the xerror buffer and they do
+ * not cause the parser to terminate. User errors are not handled via normal C
+ * error code propogation. Instead, they throw exceptions. Whenever an exception
+ * is caught at the appropriate level, it triggers the parser to synchronize to
+ * a new sequence point and the parser continues as normal.
+ *
+ * The use of C-style exception handling makes the recursive descent algorithm
+ * implemented here readable, terse, and simple. It plays very nicely with
+ * recursion, and without it we would have (and did originally have) an extra
+ * 1000 lines of error checking and recovery paths to deal with. As the ancient
+ * C gods once said, the supply of new lines on your screen is not a renewable
+ * resource.
+ *
+ * The only serious limitation is that all dynamic memory allocations within a
+ * try-block are not automatically released when an exception occurs.
+ * //TODO come up with a solution (gc? linear vector? memory pool?)
  */
 
 #include <assert.h>
 #include <limits.h>
-#include <stdarg.h> 
+#include <stdarg.h>
 #include <stdbool.h>
 #include <stdlib.h>
 #include <stdint.h>
@@ -30,6 +42,7 @@ typedef struct parser {
 	options *opt;
 	token tok;
 	bool ill_formed;
+	size_t errors;
 } parser;
 
 //parser utils
@@ -37,23 +50,23 @@ static void _usererror(const uint32_t line, const char *msg, ...);
 static void parser_advance(parser *self);
 static void synchronize(parser *self);
 static void lexcpy(char **dest, char *src, uint32_t n);
-static xerror _check(parser *self, token_type type, char *msg, bool A, bool Z);
-static xerror extract_arrnum(parser *self, size_t *target);
+static void _check(parser *self, token_type type, char *msg, bool A, bool Z);
+static size_t extract_arrnum(parser *self);
 
 //node management
-static void file_init(file *ast, char *fname);
+static file *file_init(char *fname);
 
 //recursive descent
-static xerror rec_parse(parser *self, char *fname, file *ast);
-static fiat rec_fiat(parser *self, xerror *err);
-static decl rec_struct(parser *self, xerror *err);
-static xerror rec_members(parser *self, decl *node);
-type *rec_type(parser *self, xerror *err);
-decl rec_func(parser *self, xerror *err);
-static xerror rec_params(parser *self, decl *node);
+static file *rec_parse(parser *self, char *fname);
+static fiat rec_fiat(parser *self);
+static decl rec_struct(parser *self);
+static member_vector rec_members(parser *self);
+decl rec_func(parser *self);
+static param_vector rec_params(parser *self);
+type *rec_type(parser *self);
 
 //parser entry point; configure parser members and launch recursive descent
-xerror parse(char *src, options *opt, char *fname, file *ast)
+xerror parse(char *src, options *opt, char *fname, file **ast)
 {
 	assert(src);
 	assert(opt);
@@ -69,11 +82,15 @@ xerror parse(char *src, options *opt, char *fname, file *ast)
 
 	prs.opt = opt;
 	prs.tok = (token) {.type = _INVALID};
+	prs.ill_formed = false;
+	prs.errors = 0;
 
-	err = rec_parse(&prs, fname, ast);
+	*ast = rec_parse(&prs, fname);
 
-	if (err) {
-		xerror_issue("recursive descent failed: %s", xerror_str(err));
+	if (prs.errors > 1) {
+		_usererror(0, "\n%d syntax errors found.", prs.errors);
+	} else if (prs.errors == 1) {
+		_usererror(0, "\n1 syntax error found.");
 	}
 
 	err = scanner_free(prs.scn);
@@ -96,10 +113,17 @@ xerror parse(char *src, options *opt, char *fname, file *ast)
  * will dip into kernel mode too often. The magic number 128 is a heuristic.
  * For many REPL programs, it is large enough to never trigger a vector resize.
  ******************************************************************************/
-static void file_init(file *ast, char *fname)
+static file *file_init(char *fname)
 {
-	fiat_vector_init(&ast->fiats, 0, 128);
+	file *ast = NULL;
+
+	kmalloc(ast, sizeof(file));
+
 	ast->name = fname;
+
+	fiat_vector_init(&ast->fiats, 0, 128);
+
+	return ast;
 }
 
 //-----------------------------------------------------------------------------
@@ -108,11 +132,11 @@ static void file_init(file *ast, char *fname)
 /*******************************************************************************
  * @fn _usererror
  * @brief Send a formatted user error to stderr.
+ * @param line If 0 then do not display line header.
  * @remark Use the usererror macro where possible.
  ******************************************************************************/
 static void _usererror(const uint32_t line, const char *msg, ...)
 {
-	assert(line > 0);
 	assert(msg);
 
 	va_list args;
@@ -122,7 +146,11 @@ static void _usererror(const uint32_t line, const char *msg, ...)
 	//applied. This allows the input msg to also be coloured red. RED()
 	//cannot be applied directly to the input msg because the macro relies
 	//on string concatenation.
-	fprintf(stderr, ANSI_RED "(line %d) ", line);
+	if (line) {
+		fprintf(stderr, ANSI_RED "(line %d) ", line);
+	} else {
+		fprintf(stderr, ANSI_RED " \b");
+	}
 
 	vfprintf(stderr, msg, args);
 
@@ -152,20 +180,20 @@ static void lexcpy(char **dest, char *src, uint32_t n)
 	assert(n);
 
 	kmalloc(*dest, sizeof(char) * n);
-	
+
 	memcpy(*dest, src, sizeof(char) * n);
 }
 
 /*******************************************************************************
  * @fn extract_arrnum
  * @brief Extract a number from the non-null terminated lexeme held in the
- * current parser token. If the number is incompletely read or non-positive
- * then return XEPARSE. return XENOMEM or XESUCCESS otherwise.
+ * current parser token.
+ * @return If the number is incompletely read or non-positive then an XXPARSE
+ * exception is thrown. On success the size_t representation is returned.
  ******************************************************************************/
-static xerror extract_arrnum(parser *self, size_t *target)
+static size_t extract_arrnum(parser *self)
 {
 	assert(self);
-	assert(target);
 
 	long long int candidate = 0;
 	char *end = NULL;
@@ -177,32 +205,32 @@ static xerror extract_arrnum(parser *self, size_t *target)
 
 	if (candidate == LLONG_MIN) {
 		usererror("array length cannot be a large negative integer");
-		return XEPARSE;
+		Throw(XXPARSE);
 	} else if (candidate == LONG_MAX) {
 		usererror("array length is too large");
-		return XEPARSE;
+		Throw(XXPARSE);
 	} else if (*end != '\0') {
 		usererror("array length is not a simple base-10 integer");
-		return XEPARSE;
+		Throw(XXPARSE);
 	} else if (candidate < 0) {
 		usererror("array length cannot be negative");
-		return XEPARSE;
+		Throw(XXPARSE);
 	} else if (candidate == 0) {
 		usererror("array length cannot be zero");
-	} 
+		Throw(XXPARSE);
+	}
 
-	*target = (size_t) candidate;
-	return XESUCCESS;
+	return (size_t) candidate;
 }
 
 /*******************************************************************************
  * @fn _check
  * @brief Advance to the next token if A is true. Check the token against the
- * input type and return XEPARSE if it doesn't match. Advance again on a
+ * input type and throw XEPARSE if it doesn't match. Advance again on a
  * successfuly match if Z is true.
  * @remark Use the check, move_check, check_move, and move_check_move macros.
  ******************************************************************************/
-static xerror _check(parser *self, token_type type, char *msg, bool A, bool Z)
+static void  _check(parser *self, token_type type, char *msg, bool A, bool Z)
 {
 	assert(self);
 	assert(msg);
@@ -213,14 +241,12 @@ static xerror _check(parser *self, token_type type, char *msg, bool A, bool Z)
 
 	if (self->tok.type != type) {
 		usererror(msg);
-		return XEPARSE;
+		Throw(XXPARSE);
 	}
 
 	if (Z) {
 		parser_advance(self);
 	}
-
-	return XESUCCESS;
 }
 
 //don't move to a new token, check the current one, and don't move afterwards
@@ -273,7 +299,7 @@ static void synchronize(parser *self)
 
 	do {
 		switch(self->tok.type) {
-		
+
 		//sequence points
 		case _STRUCT:
 			fallthrough;
@@ -334,73 +360,82 @@ success:
 
 /*******************************************************************************
  * @fn rec_parse
- * @brief Recursive descent entry point
+ * @brief Recursive descent entry point; configure a root file node, load the
+ * first token into the parser, and descend!
+ * @return The returned root file node is erroneous if the ill_formed flag on
+ * the parser is set and the errors attribute is positive.
  ******************************************************************************/
-static xerror rec_parse(parser *self, char *fname, file *ast)
+static file *rec_parse(parser *self, char *fname)
 {
 	assert(self);
-	assert(ast);
 
-	xerror err = XESUCCESS;
+	file *ast = file_init(fname);
 
-	file_init(ast, fname);
-
-	//prime the parser with an initial state
 	parser_advance(self);
 
 	while (self->tok.type != _EOF) {
-		fiat node = rec_fiat(self, &err);
+		fiat node = rec_fiat(self);
 
-		if (err) {
-			xerror_issue("could not create fiat node");
-			return err;
+		if (node.tag == NODE_INVALID) {
+			self->errors++;
+		} else {
+			fiat_vector_push(&ast->fiats, node);
 		}
-
-		fiat_vector_push(&ast->fiats, node);
 	}
 
-	return err;
+	return ast;
 }
 
 /*******************************************************************************
  * @fn rec_fiat
- * @brief Dispatch to decl or stmt handler and then wrap the return node.
+ * @brief Dispatch to decl or stmt handler and then wrap the return node. Catch
+ * any parser errors and synchronize before continuing.
+ *
+ * @remark The fiat node doesnt need be qualified with the volatile keyword. The
+ * CException library dictates if you change a stack variable in the try block
+ * and require its updated values after an exception is thrown, the stack var
+ * must be volatile. In this situation, any updates made to the fiat node in the
+ * try block are unimportant. All we care is that the catch block overwrites the
+ * tag. The union contents are unimportant.
+ *
+ * @return If the returned fiat node has a tag equal to NODE_INVALID, then one
+ * or more syntax errors occured and the syntax tree rooted at the node is ill
+ * formed.
  ******************************************************************************/
-static fiat rec_fiat(parser *self, xerror *err)
+static fiat rec_fiat(parser *self)
 {
 	assert(self);
-	assert(err);
 
-	fiat node = {0};
+	CEXCEPTION_T exception;
+	fiat node = { .tag = NODE_INVALID };
 
-	switch (self->tok.type) {
-	case _STRUCT:
-		node.tag = NODE_DECL;
-		parser_advance(self);
-		node.declaration = rec_struct(self, err);
-		break;
+	Try {
+		switch (self->tok.type) {
+		case _STRUCT:
+			node.tag = NODE_DECL;
+			parser_advance(self);
+			node.declaration = rec_struct(self);
+			break;
 
-	case _FUNC:
-		node.tag = NODE_DECL;
-		parser_advance(self);
-		node.declaration = rec_func(self, err);
-		break;
+		case _FUNC:
+			node.tag = NODE_DECL;
+			parser_advance(self);
+			node.declaration= rec_func(self);
+			break;
 
-	case _LET:
-		node.tag = NODE_DECL;
-		parser_advance(self);
-		break;
+		case _LET:
+			node.tag = NODE_DECL;
+			parser_advance(self);
+			break;
 
-	default:
-		node.tag = NODE_STMT;
-		parser_advance(self);
-		break;
-	}
-
-	if (*err == XEPARSE) {
+		default:
+			node.tag = NODE_STMT;
+			parser_advance(self);
+			break;
+		}
+	} Catch (exception) {
 		synchronize(self);
-	} else if (*err) {
-		xerror_issue("cannot create declaration node");
+		node.tag = NODE_INVALID;
 	}
 
 	return node;
@@ -409,11 +444,11 @@ static fiat rec_fiat(parser *self, xerror *err)
 /*******************************************************************************
  * @fn rec_struct
  * @brief Implementation of the <struct declaration> production.
+ * @decl The returned UDT node is always valid. A parse exception may be thrown.
  ******************************************************************************/
-static decl rec_struct(parser *self, xerror *err)
+static decl rec_struct(parser *self)
 {
 	assert(self);
-	assert(err);
 
 	decl node = {
 		.tag = NODE_UDT,
@@ -432,49 +467,41 @@ static decl rec_struct(parser *self, xerror *err)
 
 	if (self->tok.type != _IDENTIFIER) {
 		usererror("missing struct name");
-		*err = XEPARSE;
-		return node;
+		Throw(XXPARSE);
 	}
-	
+
 	lexcpy(&node.udt.name, self->tok.lexeme, self->tok.len);
 
-	*err = move_check_move(self, _LEFTBRACE, "expected '{' after name");
-	if (*err) { return node; }
+	move_check_move(self, _LEFTBRACE, "expected '{' after name");
 
-	*err = rec_members(self, &node);
-	if (*err) { return node; } //pass enomem without xerror (no info to add)
+	node.udt.members = rec_members(self);
 
-	*err = check_move(self, _RIGHTBRACE, "expected '}' after members");
-	if (*err) { return node; }
+	check_move(self, _RIGHTBRACE, "expected '}' after members");
 
-	*err = check_move(self, _SEMICOLON, "expected ';' after struct");
-	if (*err) { return node; }
+	check_move(self, _SEMICOLON, "expected ';' after struct");
 
-	*err = XESUCCESS;
 	return node;
 }
 
 /*******************************************************************************
  * @fn rec_members
  * @brief Process each scope:name:type triplet within a struct declaration.
- * @return XENOMEM or XEPARSE
+ * @return Vector of valid member nodes. A parse exception may be thrown.
  * @remark The member capacity uses the magic number 4 as a heuristic. We assume
  * most structs are generally quite small.
  ******************************************************************************/
-static xerror rec_members(parser *self, decl *node)
+static member_vector rec_members(parser *self)
 {
 	assert(self);
-	assert(node);
 
-	xerror err = XESUCCESS;
+	member_vector vec = {0};
+	member_vector_init(&vec, 0, 4);
 
 	member attr = {
 		.name = NULL,
 		.typ = NULL,
 		.public = false
 	};
-
-	member_vector_init(&node->udt.members, 0, 4);
 
 	while (self->tok.type != _RIGHTBRACE) {
 		if (self->tok.type == _PUB) {
@@ -484,43 +511,33 @@ static xerror rec_members(parser *self, decl *node)
 
 		if (self->tok.type != _IDENTIFIER) {
 			usererror("expected member name");
-			return XEPARSE;
+			Throw(XXPARSE);
 		}
 
 		lexcpy(&attr.name, self->tok.lexeme, self->tok.len);
 
-		err = move_check_move(self, _COLON, "expected ':' after name");
-		if (err) { return err; }
+		move_check_move(self, _COLON, "expected ':' after name");
 
-		attr.typ = rec_type(self, &err);
-		
-		if (err) {
-			if (err != XEPARSE) {
-				xerror_issue("cannot create member type");
-			}
+		attr.typ = rec_type(self);
 
-			return err;
-		}
+		check_move(self, _SEMICOLON, "expected ';' after type");
 
-		err = check_move(self, _SEMICOLON, "expected ';' after type");
-		if (err) { return err; }
-
-		member_vector_push(&node->udt.members, attr);
+		member_vector_push(&vec, attr);
 
 		memset(&attr, 0, sizeof(member));
 	}
 
-	return err;
+	return vec;
 }
 
 /*******************************************************************************
  * @fn rec_func
  * @brief Create a function declaration node.
+ * @return Function node is always valid. A parse exception may be thrown.
  ******************************************************************************/
-decl rec_func(parser *self, xerror *err)
+decl rec_func(parser *self)
 {
 	assert(self);
-	assert(err);
 
 	decl node = {
 		.tag = NODE_FUNCTION,
@@ -542,90 +559,59 @@ decl rec_func(parser *self, xerror *err)
 
 	if (self->tok.type != _IDENTIFIER) {
 		usererror("missing function name");
-		return node;
+		Throw(XXPARSE);
 	}
 
 	lexcpy(&node.function.name, self->tok.lexeme, self->tok.len);
 
 	//parameter list
-	*err = move_check_move(self, _LEFTPAREN, 
-		"missing '(' after function name");
-	if (*err) { return node; }
+	move_check_move(self, _LEFTPAREN, "missing '(' after function name");
 
 	if (self->tok.type == _VOID) {
 		parser_advance(self);
 	} else {
-		*err = rec_params(self, &node);
-
-		if (*err) {
-			if (*err != XEPARSE) {
-				xerror_issue("cannot add function params");
-			}
-
-			return node;
-		}
+		node.function.params = rec_params(self);
 
 		if (node.function.params.len == 0) {
 			usererror("empty parameter list must state 'void'");
-			*err = XEPARSE;
-			return node;
+			Throw(XXPARSE);
 		}
 	}
 
-	*err = check_move(self, _RIGHTPAREN, "missing ')' after parameters");
-	if (*err) { return node; }
+	check_move(self, _RIGHTPAREN, "missing ')' after parameters");
 
 	//return
-	*err = check_move(self, _RETURN, "missing 'return' after parameters");
-	if (*err) { return node; }
+	check_move(self, _RETURN, "missing 'return' after parameters");
 
 	if (self->tok.type == _VOID) {
 		parser_advance(self);
 	} else {
-		node.function.ret = rec_type(self, err);
-
-		if (*err) {
-			if (*err != XEPARSE) {
-				xerror_issue("cannot create return node");
-			}
-
-			return node;
-		}
+		node.function.ret = rec_type(self);
 	}
 
 	//receiver
 	if (self->tok.type == _FOR) {
 		parser_advance(self);
-
-		node.function.recv = rec_type(self, err);
-
-		if (*err) {
-			if (*err != XEPARSE) {
-				xerror_issue("cannot create recv node");
-			}
-
-			return node;
-		}
+		node.function.recv = rec_type(self);
 	}
 
 	//TODO block statement
-	*err = XESUCCESS;
 	return node;
 }
 
 /*******************************************************************************
  * @fn rec_params
  * @brief Process each mutability:name:type triplet within a param declaration.
- * @return XENOMEM or XEPARSE
+ * @return Vector of valid param nodes. A parse exception may be thrown.
  * @remark The param capacity uses the magic number 4 as a heuristic. We assume
  * most param lists are generally quite small.
  ******************************************************************************/
-static xerror rec_params(parser *self, decl *node)
+static param_vector rec_params(parser *self)
 {
 	assert(self);
-	assert(node);
 
-	xerror err = XESUCCESS;
+	param_vector vec = {0};
+	param_vector_init(&vec, 0, 4);
 
 	param attr  = {
 		.name = NULL,
@@ -633,13 +619,10 @@ static xerror rec_params(parser *self, decl *node)
 		.mutable = false
 	};
 
-	param_vector_init(&node->function.params, 0, 4);
-
 	while (self->tok.type != _RIGHTPAREN) {
-		if (node->function.params.len > 0) {
-			err = check_move(self, _COMMA, 
-				"expected ',' after each function parameter");
-			if (err) { return err; }
+		if (vec.len > 0) {
+			check_move(self, _COMMA,
+					"parameters must be comma separated");
 		}
 
 		if (self->tok.type == _MUT) {
@@ -649,40 +632,33 @@ static xerror rec_params(parser *self, decl *node)
 
 		if (self->tok.type != _IDENTIFIER) {
 			usererror("expected parameter name");
-			return XEPARSE;
+			Throw(XXPARSE);
 		}
 
 		lexcpy(&attr.name, self->tok.lexeme, self->tok.len);
 
-		err = move_check_move(self, _COLON, "expected ':' after name");
-		if (err) { return err; }
+		move_check_move(self, _COLON, "expected ':' after name");
 
-		attr.typ = rec_type(self, &err);
-		
-		if (err) {
-			if (err != XEPARSE) {
-				xerror_issue("cannot create parameter type");
-			}
+		attr.typ = rec_type(self);
 
-			return err;
-		}
-
-		param_vector_push(&node->function.params, attr);
+		param_vector_push(&vec, attr);
 
 		memset(&attr, 0, sizeof(param));
 	}
 
-	return err;
+	return vec;
 }
 
 /*******************************************************************************
  * @fn rec_type
  * @brief Create a linked list of nodes representing a type
+ * @return A singly linked list of nodes where the head represented the outer-
+ * most composite type and the tail is the inner-most base type. A parse
+ * exception may be thrown.
  ******************************************************************************/
-type *rec_type(parser *self, xerror *err)
+type *rec_type(parser *self)
 {
 	assert(self);
-	assert(err);
 
 	type *node = NULL;
 	kmalloc(node, sizeof(type));
@@ -690,62 +666,27 @@ type *rec_type(parser *self, xerror *err)
 	switch (self->tok.type) {
 	case _IDENTIFIER:
 		node->tag = NODE_BASE;
-		
 		lexcpy(&node->base, self->tok.lexeme, self->tok.len);
-
 		parser_advance(self);
-
 		break;
-	
+
 	case _STAR:
 		node->tag = NODE_POINTER;
-		
 		parser_advance(self);
-
-		node->pointer = rec_type(self, err);
-
-		if (*err) {
-			if (*err != XEPARSE) {
-				xerror_issue("cannot create base from ptr");
-			}
-
-			return node;
-		}
-
+		node->pointer = rec_type(self);
 		break;
 
 	case _LEFTBRACKET:
-		*err = move_check(self, _LITERALINT, "expected array size");
-		if (*err) { break; }
-
-		*err = extract_arrnum(self, &node->array.len);
-
-		if (*err) {
-			if (*err != XEPARSE) {
-				xerror_issue("cannot extract array len");
-			}
-
-			return node;
-		}
-
-		*err = move_check_move(self, _RIGHTBRACKET, "expected ']'");
-		if (*err) { break; }
-
-		node->array.base = rec_type(self, err);
-
-		if (*err) {
-			if (*err != XEPARSE) {
-				xerror_issue("cannot create base from array");
-			}
-
-			return node;
-		}
-
+		move_check(self, _LITERALINT, "expected array size");
+		node->array.len = extract_arrnum(self);
+		move_check_move(self, _RIGHTBRACKET, "expected ']'");
+		node->array.base = rec_type(self);
 		break;
 
 	default:
-		usererror("expected type but none found"); 
-		*err = XEPARSE;
+		usererror("expected type but none found");
+
+		Throw(XXPARSE);
 		break;
 	}
 
