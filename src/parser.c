@@ -18,8 +18,11 @@
  * resource.
  *
  * The only serious limitation is that all dynamic memory allocations within a
- * try-block are not automatically released when an exception occurs.
- * //TODO come up with a solution (gc? linear vector? memory pool?)
+ * try-block are not automatically released when an exception occurs. For this
+ * reason the parser contains a mem_vector. All allocations push their heap 
+ * pointer to the mem_vector. On an exception the allocations are free'd. On
+ * success, the vector is reset and the allocations are ignored. This typically
+ * happens in rec_fiat().
  */
 
 #include <assert.h>
@@ -36,20 +39,25 @@
 #include "options.h"
 #include "scanner.h"
 #include "xerror.h"
+#include "lib/vector.h"
+
+make_vector(void *, mem, static inline)
 
 typedef struct parser {
 	scanner *scn;
 	options *opt;
+	mem_vector mempool;
 	token tok;
-	bool ill_formed;
 	size_t errors;
 } parser;
 
 //parser utils
+static xerror parser_init(parser *self, options *opt, char *src);
+static xerror parser_free(parser *self);
 static void _usererror(const uint32_t line, const char *msg, ...);
 static void parser_advance(parser *self);
 static void synchronize(parser *self);
-static void lexcpy(char **dest, char *src, uint32_t n);
+static void lexcpy(parser *self, char **dest, char *src, uint32_t n);
 static void _check(parser *self, token_type type, char *msg, bool A, bool Z);
 static size_t extract_arrnum(parser *self);
 
@@ -72,18 +80,12 @@ xerror parse(char *src, options *opt, char *fname, file **ast)
 	assert(opt);
 
 	parser prs = {0};
-
-	xerror err = scanner_init(&prs.scn, src, opt);
+	xerror err = parser_init(&prs, opt, src);
 
 	if (err) {
-		xerror_issue("cannot initialize scanner");
+		xerror_issue("cannot initialize parser");
 		return err;
 	}
-
-	prs.opt = opt;
-	prs.tok = (token) {.type = _INVALID};
-	prs.ill_formed = false;
-	prs.errors = 0;
 
 	*ast = rec_parse(&prs, fname);
 
@@ -93,12 +95,62 @@ xerror parse(char *src, options *opt, char *fname, file **ast)
 		_usererror(0, "\n1 syntax error found.");
 	}
 
-	err = scanner_free(prs.scn);
+	err = parser_free(&prs); 
+
+	if (err) {
+		xerror_issue("cannot free parser");
+		return err;
+	}
+
+	return XESUCCESS;
+}
+
+//------------------------------------------------------------------------------
+// parser management
+
+/*******************************************************************************
+ * @fn parser_init
+ * @brief Initialize a parser and configure the tokenizer. The magic number 8
+ * is just a heurstic, a typical node often makes less than approx 8 allocations
+ * before encountering a syntax error, if any.
+ ******************************************************************************/
+static xerror parser_init(parser *self, options *opt, char *src)
+{
+	assert(opt);
+	assert(src);
+
+	xerror err = scanner_init(&self->scn, src, opt);
+
+	if (err) {
+		xerror_issue("cannot initialize scanner");
+		return err;
+	}
+
+	mem_vector_init(&self->mempool, 0, 8);
+
+	self->opt = opt;
+	self->tok = (token) { .type = _INVALID };
+	self->errors = 0;
+
+	return XESUCCESS;
+}
+
+/*******************************************************************************
+ * @fn parser_free
+ * @brief Shutdown the tokenizer and release the parser (doesn't contain AST).
+ ******************************************************************************/
+static xerror parser_free(parser *self)
+{
+	assert(self);
+
+	xerror err = scanner_free(self->scn);
 
 	if (err) {
 		xerror_issue("cannot free scanner");
 		return err;
 	}
+
+	mem_vector_free(&self->mempool, NULL);
 
 	return XESUCCESS;
 }
@@ -173,13 +225,16 @@ static void _usererror(const uint32_t line, const char *msg, ...)
  * @fn lexcpy
  * @brief Copy a src lexeme of length n to the dest pointer and reformat it as
  * a valid C string.
+ * @remark The dest pointer is added to the parser mempool
  ******************************************************************************/
-static void lexcpy(char **dest, char *src, uint32_t n)
+static void lexcpy(parser *self, char **dest, char *src, uint32_t n)
 {
 	assert(src);
 	assert(n);
 
 	kmalloc(*dest, sizeof(char) * n);
+
+	mem_vector_push(&self->mempool, *dest);
 
 	memcpy(*dest, src, sizeof(char) * n);
 }
@@ -199,7 +254,7 @@ static size_t extract_arrnum(parser *self)
 	char *end = NULL;
 	char *tmp = NULL;
 
-	lexcpy(&tmp, self->tok.lexeme, self->tok.len);
+	lexcpy(self, &tmp, self->tok.lexeme, self->tok.len);
 
 	candidate = strtoll(tmp, &end, 10);
 
@@ -290,8 +345,7 @@ static void parser_advance(parser *self)
  * throw it away. Receive new tokens from the scanner channel until a sequence
  * point is found.
  * @return This function guarantees on return that the token held by the parser
- * is a sequence point. If at least one token was thrown away, the ill_formed
- * flag on the parser will be set.
+ * is a sequence point. 
  ******************************************************************************/
 static void synchronize(parser *self)
 {
@@ -337,7 +391,6 @@ static void synchronize(parser *self)
 			usererror(fmt, self->tok.len, self->tok.lexeme);
 			fallthrough;
 		default:
-			self->ill_formed = true;
 			break;
 		}
 
@@ -362,8 +415,8 @@ success:
  * @fn rec_parse
  * @brief Recursive descent entry point; configure a root file node, load the
  * first token into the parser, and descend!
- * @return The returned root file node is erroneous if the ill_formed flag on
- * the parser is set and the errors attribute is positive.
+ * @return The returned root file node is erroneous if the errors member is
+ * greater than zero.
  ******************************************************************************/
 static file *rec_parse(parser *self, char *fname)
 {
@@ -433,9 +486,12 @@ static fiat rec_fiat(parser *self)
 			parser_advance(self);
 			break;
 		}
+
+		mem_vector_reset(&self->mempool, NULL);
 	} Catch (exception) {
 		synchronize(self);
 		node.tag = NODE_INVALID;
+		mem_vector_reset(&self->mempool, free);
 	}
 
 	return node;
@@ -470,7 +526,7 @@ static decl rec_struct(parser *self)
 		Throw(XXPARSE);
 	}
 
-	lexcpy(&node.udt.name, self->tok.lexeme, self->tok.len);
+	lexcpy(self, &node.udt.name, self->tok.lexeme, self->tok.len);
 
 	move_check_move(self, _LEFTBRACE, "expected '{' after name");
 
@@ -497,6 +553,10 @@ static member_vector rec_members(parser *self)
 	member_vector vec = {0};
 	member_vector_init(&vec, 0, 4);
 
+	//vector<member> stores members directly, not their pointers, so the
+	//parser mempool only needs to track the single vector data pointer.
+	mem_vector_push(&self->mempool, vec.data);
+
 	member attr = {
 		.name = NULL,
 		.typ = NULL,
@@ -514,7 +574,7 @@ static member_vector rec_members(parser *self)
 			Throw(XXPARSE);
 		}
 
-		lexcpy(&attr.name, self->tok.lexeme, self->tok.len);
+		lexcpy(self, &attr.name, self->tok.lexeme, self->tok.len);
 
 		move_check_move(self, _COLON, "expected ':' after name");
 
@@ -562,7 +622,7 @@ decl rec_func(parser *self)
 		Throw(XXPARSE);
 	}
 
-	lexcpy(&node.function.name, self->tok.lexeme, self->tok.len);
+	lexcpy(self, &node.function.name, self->tok.lexeme, self->tok.len);
 
 	//parameter list
 	move_check_move(self, _LEFTPAREN, "missing '(' after function name");
@@ -613,6 +673,10 @@ static param_vector rec_params(parser *self)
 	param_vector vec = {0};
 	param_vector_init(&vec, 0, 4);
 
+	//vector<param> stores params directly instead of pointers to params,
+	//so the mempool only needs to track the vector data pointer.
+	mem_vector_push(&self->mempool, vec.data); 
+
 	param attr  = {
 		.name = NULL,
 		.typ = NULL,
@@ -635,7 +699,7 @@ static param_vector rec_params(parser *self)
 			Throw(XXPARSE);
 		}
 
-		lexcpy(&attr.name, self->tok.lexeme, self->tok.len);
+		lexcpy(self, &attr.name, self->tok.lexeme, self->tok.len);
 
 		move_check_move(self, _COLON, "expected ':' after name");
 
@@ -662,11 +726,12 @@ type *rec_type(parser *self)
 
 	type *node = NULL;
 	kmalloc(node, sizeof(type));
+	mem_vector_push(&self->mempool, node);
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
 		node->tag = NODE_BASE;
-		lexcpy(&node->base, self->tok.lexeme, self->tok.len);
+		lexcpy(self, &node->base, self->tok.lexeme, self->tok.len);
 		parser_advance(self);
 		break;
 
