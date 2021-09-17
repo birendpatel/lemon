@@ -19,7 +19,7 @@
  *
  * The only serious limitation is that all dynamic memory allocations within a
  * try-block are not automatically released when an exception occurs. For this
- * reason the parser contains a mem_vector. All allocations push their heap 
+ * reason the parser contains a mem_vector. All allocations push their heap
  * pointer to the mem_vector. On an exception the allocations are free'd. On
  * success, the vector is reset and the allocations are ignored. This typically
  * happens in rec_fiat().
@@ -80,6 +80,8 @@ static expr *rec_assignment(parser *self);
 static expr *rec_logicalor(parser *self);
 static expr *rec_logicaland(parser *self);
 static expr *rec_equality(parser *self);
+static expr *rec_term(parser *self);
+static expr *rec_factor(parser *self);
 
 //parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file **ast)
@@ -103,7 +105,7 @@ xerror parse(char *src, options *opt, char *fname, file **ast)
 		_usererror(0, "\n1 syntax error found.");
 	}
 
-	err = parser_free(&prs); 
+	err = parser_free(&prs);
 
 	if (err) {
 		xerror_issue("cannot free parser");
@@ -374,7 +376,7 @@ static void parser_advance(parser *self)
  * throw it away. Receive new tokens from the scanner channel until a sequence
  * point is found.
  * @return This function guarantees on return that the token held by the parser
- * is a sequence point. 
+ * is a sequence point.
  ******************************************************************************/
 static void synchronize(parser *self)
 {
@@ -709,7 +711,7 @@ static param_vector rec_params(parser *self)
 
 	//vector<param> stores params directly instead of pointers to params,
 	//so the mempool only needs to track the vector data pointer.
-	mem_vector_push(&self->mempool, vec.data); 
+	mem_vector_push(&self->mempool, vec.data);
 
 	param attr  = {
 		.name = NULL,
@@ -795,7 +797,7 @@ static decl rec_var(parser *self)
 	check_move(self, _EQUAL, "declaration must have an initializer");
 
 	//TODO node.variable.value expression
-	
+
 	check_move(self, _SEMICOLON, "missing ';' after declaration");
 
 	return node;
@@ -1038,4 +1040,126 @@ static expr *rec_equality(parser *self)
 
 exit_loop:
 	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_term
+ * @brief249 <term> ::= <factor> (("+" | "-" | "|" | "^") <factor>)*
+ ******************************************************************************/
+static expr *rec_term(parser *self)
+{
+	assert(self);
+
+	expr *node = rec_factor(self);
+
+	while (true) {
+		switch (self->tok.type) {
+		case _ADD:
+			fallthrough;
+
+		case _MINUS:
+			fallthrough;
+
+		case _BITOR:
+			fallthrough;
+
+		case _BITXOR:
+			expr *tmp = node;
+			node = expr_init(NODE_BINARY);
+
+			node->binary.left = tmp;
+			node->binary.operator = self->tok.type;
+
+			parser_advance(self);
+			node->binary.right = rec_factor(self);
+
+		default:
+			goto exit_loop;
+		}
+	}
+
+exit_loop:
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_factor
+ * @brief <factor> ::= <unary> (("*"|"/"|"%"|">>"|"<<"|"&") <unary>)*
+ ******************************************************************************/
+static expr *rec_factor(parser *self)
+{
+	assert(self);
+
+	expr *node = rec_unary(self);
+
+	while (true) {
+		switch (self->tok.type) {
+		case _STAR:
+			fallthrough;
+
+		case _DIV:
+			fallthrough;
+
+		case _MOD:
+			fallthrough;
+
+		case _LSHIFT:
+			fallthrough;
+
+		case _RSHIFT:
+			fallthrough;
+
+		case _AMPERSAND:
+			expr *tmp = node;
+			node = expr_init(NODE_BINARY);
+
+			node->binary.left = tmp;
+			node->binary.operator = self->tok.type;
+
+			parser_advance(self);
+			node->binary.right = rec_unary(self);
+
+		default:
+			goto exit_lopo;
+		}
+	}
+
+exit_loop:
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_unary
+ * @brief <unary> ::= ("-" | "+" | "'" | "!" | "*" | "&" | <cast>) <unary> 
+ * | <primary>
+ ******************************************************************************/
+static expr *rec_unary(parser *self)
+{
+	assert(self);
+
+	switch (self->tok.type) {
+	case _MINUS:
+		fallthrough;
+
+	case _PLUS:
+		fallthrough;
+
+	case _BITNOT:
+		fallthrough;
+
+	case _NOT:
+		fallthrough;
+
+	case _STAR:
+		fallthrough;
+
+	case _AMPERSAND:
+		;
+
+	case _LEFTPAREN:
+		;
+
+	default:
+		;
+	}
 }

@@ -270,6 +270,7 @@ typedef enum exprtag {
 	NODE_ASSIGNMENT,
 	NODE_BINARY,
 	NODE_UNARY,
+	NODE_CAST,
 	NODE_CALL,
 	NODE_SELECTOR,
 	NODE_INDEX,
@@ -303,16 +304,14 @@ struct expr {
 		} binary;
 
 		struct {
-			enum {
-				UNARY_BASIC,
-				UNARY_CAST,
-			} tag;
 			expr *operand;
-			union {
-				char *cast;
-				token_type operator;
-			};
+			token_type operator;
 		} unary;
+
+		struct {
+			expr *operand;
+			type *casttype;
+		} cast;
 
 		struct {
 			expr *name;
