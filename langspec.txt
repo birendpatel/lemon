@@ -187,7 +187,7 @@ LITERAL ::= INT_LITERAL
 # statement that is not referenced by any goto statement is a semantic error.
 #-------------------------------------------------------------------------------
 
-<label statement> ::= IDENTIFIER ":" <statement>
+<label statement> ::= "label" IDENTIFIER ":" <statement>
 
 #-------------------------------------------------------------------------------
 # Import statements reference file names.

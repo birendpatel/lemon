@@ -73,6 +73,7 @@ decl rec_func(parser *self);
 static param_vector rec_params(parser *self);
 type *rec_type(parser *self);
 static decl rec_var(parser *self);
+static stmt rec_stmt(parser *self);
 
 //parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file **ast)
@@ -479,6 +480,7 @@ static fiat rec_fiat(parser *self)
 
 		default:
 			node.tag = NODE_STMT;
+			node.statement = rec_stmt(self);
 			parser_advance(self);
 			break;
 		}
@@ -798,6 +800,61 @@ type *rec_type(parser *self)
 		usererror("expected type but none found");
 
 		Throw(XXPARSE);
+		break;
+	}
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_stmt
+ * @brief Create a statement node.
+ * @return Always returns a valid node. May throw a parse exception.
+ ******************************************************************************/
+static stmt rec_stmt(parser *self)
+{
+	assert(self);
+
+	stmt node = {0};
+
+	switch(self->tok.type) {
+	case _LEFTBRACKET:
+		break;
+
+	case _FOR:
+		break;
+
+	case _WHILE:
+		break;
+
+	case _SWITCH:
+		break;
+
+	case _IF:
+		break;
+
+	case _RETURN:
+		break;
+
+	case _GOTO:
+		break;
+
+	case _IMPORT:
+		break;
+
+	case _BREAK:
+		break;
+
+	case _CONTINUE:
+		break;
+
+	case _FALLTHROUGH:
+		break;
+
+	case _LABEL:
+		break;
+
+	default:
 		break;
 	}
 

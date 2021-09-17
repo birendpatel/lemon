@@ -94,6 +94,7 @@ static const char *lookup[] = {
 	[_DEFAULT] = "DEFAULT",
 	[_FALLTHROUGH] = "FALLTHROUGH",
 	[_GOTO] = "GOTO",
+	[_LABEL] = "LABEL",
 	[_LET] = "LET",
 	[_MUT] = "MUT",
 	[_STRUCT] = "STRUCT",

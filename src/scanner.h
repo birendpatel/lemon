@@ -74,6 +74,7 @@ typedef enum token_type {
 	_DEFAULT,
 	_FALLTHROUGH,
 	_GOTO,
+	_LABEL,
 
 	//keywords, assignment
 	_LET,
