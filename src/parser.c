@@ -72,6 +72,7 @@ static member_vector rec_members(parser *self);
 decl rec_func(parser *self);
 static param_vector rec_params(parser *self);
 type *rec_type(parser *self);
+static decl rec_var(parser *self);
 
 //parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file **ast)
@@ -258,17 +259,11 @@ static size_t extract_arrnum(parser *self)
 
 	candidate = strtoll(tmp, &end, 10);
 
-	if (candidate == LLONG_MIN) {
-		usererror("array length cannot be a large negative integer");
-		Throw(XXPARSE);
-	} else if (candidate == LONG_MAX) {
+	if (candidate == LONG_MAX) {
 		usererror("array length is too large");
 		Throw(XXPARSE);
 	} else if (*end != '\0') {
 		usererror("array length is not a simple base-10 integer");
-		Throw(XXPARSE);
-	} else if (candidate < 0) {
-		usererror("array length cannot be negative");
 		Throw(XXPARSE);
 	} else if (candidate == 0) {
 		usererror("array length cannot be zero");
@@ -479,6 +474,7 @@ static fiat rec_fiat(parser *self)
 		case _LET:
 			node.tag = NODE_DECL;
 			parser_advance(self);
+			node.declaration = rec_var(self);
 			break;
 
 		default:
@@ -711,6 +707,56 @@ static param_vector rec_params(parser *self)
 	}
 
 	return vec;
+}
+
+/*******************************************************************************
+ * @fn rec_var
+ * @brief Create a variable declaration node.
+ * @return The return node is always valid. A parse exception may be thrown.
+ ******************************************************************************/
+static decl rec_var(parser *self)
+{
+	assert(self);
+
+	decl node = {
+		.tag = NODE_VARIABLE,
+		.variable = {
+			.name = NULL,
+			.vartype = NULL,
+			.value = NULL,
+			.mutable = false,
+			.public = false,
+		}
+	};
+
+	if (self->tok.type == _PUB) {
+		node.variable.public = true;
+		parser_advance(self);
+	}
+
+	if (self->tok.type == _MUT) {
+		node.variable.mutable = true;
+		parser_advance(self);
+	}
+
+	if (self->tok.type != _IDENTIFIER) {
+		usererror("expected lvalue in variable declaration");
+		Throw(XXPARSE);
+	}
+
+	lexcpy(self, &node.variable.name, self->tok.lexeme, self->tok.len);
+
+	move_check_move(self, _COLON, "expected ':' before type");
+
+	node.variable.vartype = rec_type(self);
+
+	check_move(self, _EQUAL, "declaration must have an initializer");
+
+	//TODO node.variable.value expression
+	
+	check_move(self, _SEMICOLON, "missing ';' after declaration");
+
+	return node;
 }
 
 /*******************************************************************************

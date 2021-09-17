@@ -159,7 +159,7 @@ struct decl {
 
 		struct {
 			char *name;
-			char *type;
+			type *vartype;
 			expr *value;
 			bool mutable;
 			bool public;
