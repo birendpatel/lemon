@@ -63,6 +63,7 @@ static size_t extract_arrnum(parser *self);
 
 //node management
 static file *file_init(char *fname);
+static expr *expr_init(parser *self, exprtag tag);
 
 //recursive descent
 static file *rec_parse(parser *self, char *fname);
@@ -74,6 +75,11 @@ static param_vector rec_params(parser *self);
 type *rec_type(parser *self);
 static decl rec_var(parser *self);
 static stmt rec_stmt(parser *self);
+static stmt rec_exprstmt(parser *self);
+static expr *rec_assignment(parser *self);
+static expr *rec_logicalor(parser *self);
+static expr *rec_logicaland(parser *self);
+static expr *rec_equality(parser *self);
 
 //parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file **ast)
@@ -180,7 +186,27 @@ static file *file_init(char *fname)
 	return ast;
 }
 
-//-----------------------------------------------------------------------------
+/*******************************************************************************
+ * @fn expr_init
+ * @brief Create an expression node on heap and add the pointer to the mempool.
+ ******************************************************************************/
+static expr *expr_init(parser *self, exprtag tag)
+{
+	assert(self);
+	assert(tag >= NODE_ASSIGNMENT && tag <= NODE_IDENT);
+
+	expr *new = NULL;
+
+	kmalloc(new, sizeof(expr));
+
+	mem_vector_push(&self->mempool, new);
+
+	new->tag = tag;
+
+	return new;
+}
+
+//------------------------------------------------------------------------------
 //helper functions
 
 /*******************************************************************************
@@ -245,8 +271,8 @@ static void lexcpy(parser *self, char **dest, char *src, uint32_t n)
  * @fn extract_arrnum
  * @brief Extract a number from the non-null terminated lexeme held in the
  * current parser token.
- * @return If the number is incompletely read or non-positive then an XXPARSE
- * exception is thrown. On success the size_t representation is returned.
+ * @return If the number is not a simple positive integer less than LLONG_MAX
+ * then a parse exception is thrown. Otherwise a size_t representation is given.
  ******************************************************************************/
 static size_t extract_arrnum(parser *self)
 {
@@ -380,7 +406,7 @@ static void synchronize(parser *self)
 		case _CASE:
 			fallthrough;
 		case _EOF:
-			goto success;
+			goto exit_loop;
 
 		//non-sequence points
 		case _INVALID:
@@ -400,7 +426,7 @@ static void synchronize(parser *self)
 		}
 	} while (true);
 
-success:
+exit_loop:
 	return;
 }
 
@@ -462,26 +488,22 @@ static fiat rec_fiat(parser *self)
 		switch (self->tok.type) {
 		case _STRUCT:
 			node.tag = NODE_DECL;
-			parser_advance(self);
 			node.declaration = rec_struct(self);
 			break;
 
 		case _FUNC:
 			node.tag = NODE_DECL;
-			parser_advance(self);
 			node.declaration= rec_func(self);
 			break;
 
 		case _LET:
 			node.tag = NODE_DECL;
-			parser_advance(self);
 			node.declaration = rec_var(self);
 			break;
 
 		default:
 			node.tag = NODE_STMT;
 			node.statement = rec_stmt(self);
-			parser_advance(self);
 			break;
 		}
 
@@ -498,6 +520,7 @@ static fiat rec_fiat(parser *self)
 /*******************************************************************************
  * @fn rec_struct
  * @brief Implementation of the <struct declaration> production.
+ * @param self The token held by the parser on invocation must be _STRUCT.
  * @decl The returned UDT node is always valid. A parse exception may be thrown.
  ******************************************************************************/
 static decl rec_struct(parser *self)
@@ -509,10 +532,12 @@ static decl rec_struct(parser *self)
 		.udt = {
 			.name = NULL,
 			.members = {0},
-			.line = self->tok.line,
 			.public = false
-		}
+		},
+		.line = self->tok.line
 	};
+
+	parser_advance(self);
 
 	if (self->tok.type == _PUB) {
 		node.udt.public = true;
@@ -591,6 +616,7 @@ static member_vector rec_members(parser *self)
 /*******************************************************************************
  * @fn rec_func
  * @brief Create a function declaration node.
+ * @param self The token held by the parser on invocation must be _FUNC.
  * @return Function node is always valid. A parse exception may be thrown.
  ******************************************************************************/
 decl rec_func(parser *self)
@@ -605,10 +631,12 @@ decl rec_func(parser *self)
 			.recv = NULL,
 			.block = NULL,
 			.params = {0},
-			.line = self->tok.line,
 			.public = false
-		}
+		},
+		.line = self->tok.line
 	};
+
+	parser_advance(self);
 
 	if (self->tok.type == _PUB) {
 		node.function.public = true;
@@ -714,6 +742,7 @@ static param_vector rec_params(parser *self)
 /*******************************************************************************
  * @fn rec_var
  * @brief Create a variable declaration node.
+ * @param self The token held by the parser on invocation must be _VAR.
  * @return The return node is always valid. A parse exception may be thrown.
  ******************************************************************************/
 static decl rec_var(parser *self)
@@ -728,8 +757,11 @@ static decl rec_var(parser *self)
 			.value = NULL,
 			.mutable = false,
 			.public = false,
-		}
+		},
+		.line = self->tok.line
 	};
+
+	parser_advance(self);
 
 	if (self->tok.type == _PUB) {
 		node.variable.public = true;
@@ -815,7 +847,7 @@ static stmt rec_stmt(parser *self)
 {
 	assert(self);
 
-	stmt node = {0};
+	stmt node = { 0 };
 
 	switch(self->tok.type) {
 	case _LEFTBRACKET:
@@ -855,8 +887,147 @@ static stmt rec_stmt(parser *self)
 		break;
 
 	default:
+		node = rec_exprstmt(self);
 		break;
 	}
 
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_exprstmt
+ * @brief Create an expression statement node.
+ * @param self The token held by the parser on invocation must be the first
+ * token of the expression.
+ * @return Always returns a valid node. May throw a parse exception.
+ ******************************************************************************/
+static stmt rec_exprstmt(parser *self)
+{
+	assert(self);
+
+	stmt node = {
+		.tag = NODE_EXPRSTMT,
+		.exprstmt = NULL,
+		.line = self->tok.line
+	};
+
+	node.exprstmt = rec_assignment(self);
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_assignment
+ * @brief <assignment> ::= <logical or> ("=" <assignment>)?
+ * @remark Note that Lemon does not allow chained assignments.
+ ******************************************************************************/
+static expr *rec_assignment(parser *self)
+{
+	assert(self);
+
+	expr *node = rec_logicalor(self);
+
+	if (self->tok.type == _EQUAL) {
+		expr *tmp = node;
+		node = expr_init(self, NODE_ASSIGNMENT);
+		node->assignment.lvalue = tmp;
+
+		parser_advance(self);
+		node->assignment.rvalue = rec_logicalor(self);
+	}
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_logicalor
+ * @brief <logical or> ::= <logical and> ("||" <logical and>)*
+ ******************************************************************************/
+static expr *rec_logicalor(parser *self)
+{
+	assert(self);
+
+	expr *node = rec_logicaland(self);
+
+	while (self->tok.type == _OR) {
+		expr *tmp = node;
+		node = expr_init(self, NODE_BINARY);
+
+		node->binary.left = tmp;
+		node->binary.operator = _OR;
+
+		parser_advance(self);
+		node->binary.right = rec_logicaland(self);
+	}
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_logicaland
+ * @brief <logical and> ::= <equality> ("&&" <equality>)*
+ ******************************************************************************/
+static expr *rec_logicaland(parser *self)
+{
+	assert(self);
+
+	expr *node = rec_equality(self);
+
+	while (self->tok.type == _AND) {
+		expr *tmp = node;
+		node = expr_init(self, NODE_BINARY);
+
+		node->binary.left = tmp;
+		node->binary.operator = _AND;
+
+		parser_advance(self);
+		node->binary.right = rec_equality(self);
+	}
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn equality
+ * @brief <equality> ::= <term> ((">"|"<"|">="|"<="|"=="|"!=") <term>)*
+ ******************************************************************************/
+static expr *rec_equality(parser *self)
+{
+	assert(self);
+
+	expr *node = rec_term(self);
+
+	while (true) {
+		switch (self->tok.type) {
+		case _GREATER:
+			fallthrough;
+
+		case _LESS:
+			fallthrough;
+
+		case _GEQ:
+			fallthrough;
+
+		case _LEQ:
+			fallthrough;
+
+		case _EQUALEQUAL:
+			fallthrough;
+
+		case _NOTEQUAL:
+			expr *tmp = node;
+			node = expr_init(self, NODE_BINARY);
+
+			node->binary.left = tmp;
+			node->binary.operator = self->tok.type;
+
+			parser_advance();
+			node->binary.right = rec_term(self);
+
+		default:
+			goto exit_loop;
+		}
+	}
+
+exit_loop:
 	return node;
 }

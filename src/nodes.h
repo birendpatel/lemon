@@ -143,7 +143,6 @@ struct decl {
 		struct {
 			char *name;
 			member_vector members;
-			uint32_t line;
 			bool public;
 		} udt;
 
@@ -153,7 +152,6 @@ struct decl {
 			type *recv;
 			stmt *block;
 			param_vector params;
-			uint32_t line;
 			bool public;
 		} function;
 
@@ -165,6 +163,8 @@ struct decl {
 			bool public;
 		} variable;
 	};
+
+	uint32_t line;
 };
 
 //finish vector<decl> implementation now that sizeof(decl) is available
