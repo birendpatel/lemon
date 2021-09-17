@@ -304,7 +304,7 @@ static size_t extract_arrnum(parser *self)
  * @fn _check
  * @brief Advance to the next token if A is true. Check the token against the
  * input type and throw XEPARSE if it doesn't match. Advance again on a
- * successfuly match if Z is true.
+ * successful match if Z is true.
  * @remark Use the check, move_check, check_move, and move_check_move macros.
  ******************************************************************************/
 static void  _check(parser *self, token_type type, char *msg, bool A, bool Z)
@@ -349,6 +349,13 @@ static void parser_advance(parser *self)
 	assert(self);
 
 	if (scanner_recv(self->scn, &self->tok)) {
+		//reading past EOF is an off-by-one bug in the second-to-last
+		//function in the call stack. Very easy fix: backtrace on gdb
+		//to locate the function. At least one call to parser_advance()
+		//in its body is occuring too early.
+		//
+		//This is relegated to an assertion as a tradeoff to improve
+		//readability and simplicity of the descent algorithm.
 		assert(0 != 0 && "attempted to read past EOF");
 	}
 
@@ -411,6 +418,7 @@ static void synchronize(parser *self)
 		//non-sequence points
 		case _INVALID:
 			usererror(fmt, self->tok.len, self->tok.lexeme);
+			self->errors++;
 			fallthrough;
 		default:
 			break;
