@@ -339,8 +339,8 @@ struct expr {
 		} rvarlit;
 
 		struct {
-			char *raw;
-			token_type typ;
+			char *rep;
+			token_type littype;
 		} lit;
 
 		struct {

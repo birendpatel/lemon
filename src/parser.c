@@ -82,6 +82,10 @@ static expr *rec_logicaland(parser *self);
 static expr *rec_equality(parser *self);
 static expr *rec_term(parser *self);
 static expr *rec_factor(parser *self);
+static expr *rec_unary(parser *self);
+static rec_primary(parser *self);
+static expr *rec_rvar_or_ident(parser *self);
+static expr *rec_rvar(parser *self, token prev);
 
 //parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file **ast)
@@ -940,6 +944,7 @@ static expr *rec_assignment(parser *self)
 		expr *tmp = node;
 		node = expr_init(self, NODE_ASSIGNMENT);
 		node->assignment.lvalue = tmp;
+		node->line = self->tok.line;
 
 		parser_advance(self);
 		node->assignment.rvalue = rec_logicalor(self);
@@ -964,6 +969,7 @@ static expr *rec_logicalor(parser *self)
 
 		node->binary.left = tmp;
 		node->binary.operator = _OR;
+		node->line = self->tok.line;
 
 		parser_advance(self);
 		node->binary.right = rec_logicaland(self);
@@ -988,6 +994,7 @@ static expr *rec_logicaland(parser *self)
 
 		node->binary.left = tmp;
 		node->binary.operator = _AND;
+		node->line = self->tok.line;
 
 		parser_advance(self);
 		node->binary.right = rec_equality(self);
@@ -1029,6 +1036,7 @@ static expr *rec_equality(parser *self)
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
+			node->line = self->tok.line;
 
 			parser_advance();
 			node->binary.right = rec_term(self);
@@ -1069,6 +1077,7 @@ static expr *rec_term(parser *self)
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
+			node->line = self->tok.line;
 
 			parser_advance(self);
 			node->binary.right = rec_factor(self);
@@ -1115,6 +1124,7 @@ static expr *rec_factor(parser *self)
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
+			node->line = self->tok.line;
 
 			parser_advance(self);
 			node->binary.right = rec_unary(self);
@@ -1137,6 +1147,8 @@ static expr *rec_unary(parser *self)
 {
 	assert(self);
 
+	expr *node = NULL;
+
 	switch (self->tok.type) {
 	case _MINUS:
 		fallthrough;
@@ -1154,12 +1166,138 @@ static expr *rec_unary(parser *self)
 		fallthrough;
 
 	case _AMPERSAND:
-		;
+		node = expr_init(self, NODE_UNARY);
+		node->unary.operator = self->tok.type;
+		node->line = self->tok.line;
+		parser_advance(self);
+		node->unary.operand = rec_unary(self);
+		break;
 
 	case _LEFTPAREN:
-		;
+		node = expr_init(self, NODE_CAST);
+		node->line = self->tok.line;
+		parser_advance(self);
+		node->cast.casttype = rec_type(self);
+		check_move(self, _RIGHTPAREN, "expected ')' after type casting");
+		node->cast.operand = rec_unary(self);
 
 	default:
-		;
+		node = rec_primary(self);
 	}
+
+	return node;
 }
+
+/*******************************************************************************
+ * @fn rec_primary
+ * @brief <primary> ::= <atom> (<call> | <selector> | <index>)*
+ * @remark <atom> production is expanded and implemented in rec_primary
+ ******************************************************************************/
+static rec_primary(parser *self)
+{
+	assert(self);
+
+	expr *node = NULL;
+
+	switch (self->tok.type) {
+	case _IDENTIFIER:
+		node = rec_rvar_or_ident(self);
+		break;
+
+	case _LITERALINT:
+		fallthrough;
+
+	case _LITERALFLOAT:
+		fallthrough;
+
+	case _LITERALSTR:
+		fallthrough;
+
+	case _NULL:
+		fallthrough;
+
+	case _SELF:
+		fallthrough;
+
+	case _TRUE:
+		fallthrough;
+
+	case _FALSE:
+		node = expr_init(self, NODE_LIT);
+		node->line = self->tok.line;
+		lexcpy(self, &node->lit.rep, self->tok.lexeme, self->tok.len);
+		node->lit.littype = self->tok.type;
+		parser_advance(self);
+		break;
+
+	default:
+		usererror("expression is ill-formed");
+		Throw(XXPARSE);
+	}
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_rvar_or_ident
+ * @brief Distinguish a leading identifier as a simple identifier node or as a
+ * complex rvar literal.
+ * @return Always returns a valid node. May throw a parse exception.
+ ******************************************************************************/
+static expr *rec_rvar_or_ident(parser *self)
+{
+	assert(self);
+
+	token tmp = self->tok;
+
+	parser_advance(self);
+
+	if (self->tok.type == _TILDE) {
+		return rec_rvar(self, token prev);
+	}
+
+	expr *node = expr_init(self, NODE_IDENT);
+	node->line = tmp.line;
+	lexcpy(self, &node->ident.name, tmp.lexeme, tmp.len);
+
+	//no scanner advance due to previous tilde check
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_rvar
+ * @brief Create a random variable literal expression node. The current token
+ * held by the parser must be the tilde.
+ * @param prev The leading identifier representing the random distribution
+ * @return Always returns a valid node. May throw a parse exception.
+ ******************************************************************************/
+static expr *rec_rvar(parser *self, token prev)
+{
+	assert(self);
+
+	expr *node = expr_init(NODE_RVARLIT);
+	
+	node->line = prev.line;
+
+	lexcpy(self, &node->rvarlit.dist, prev.lexeme, prev.len);
+
+	parser_advance(self);
+
+	//some random distributions are not parameterized
+	if (self->tok.type == _SEMICOLON) {
+		node->rvarlit.args = {
+			.len = 0,
+			.cap = 0,
+			.data = NULL
+		};
+
+		return node;
+	}
+
+	node->rvarlit.args = rec_args(self); 
+}
+
+/*******************************************************************************
+ * @fn rec_args
+ * @brief Process an argument list into an expr_vector.
+ ******************************************************************************/
