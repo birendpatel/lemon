@@ -77,7 +77,12 @@ make_vector(test, test, static)
 //designated initializers.
 make_vector(size_t, idx, static)
 
-//The implementation of fiat, decl, stmt, and expr vectors  must be postponed.
+//vector<expr *> is used by complex atoms and function calls. Pointers simplify
+//implementation details for the parser by allowing rvar and call expressions
+//to reuse expression handlers in the recursive descent algorithm.
+make_vector(expr *, expr, static)
+
+//The implementation of fiat, decl, and the stmt vectors  must be postponed.
 //Their corresponding vector_init functions need to have access to sizeof(T) at
 //compile time, but this knowledge is not available until the corresponding
 //structs are defined.
@@ -89,9 +94,6 @@ declare_vector(decl, decl)
 
 alias_vector(stmt)
 declare_vector(stmt, stmt)
-
-alias_vector(expr)
-declare_vector(expr, expr)
 
 /*******************************************************************************
  * @enum typetag
@@ -350,15 +352,6 @@ struct expr {
 
 	uint32_t line;
 };
-
-//finish vector<expr> now that sizeof(expr) is available 
-api_vector(expr, expr, static)
-impl_vector_init(expr, expr, static)
-impl_vector_free(expr, expr, static)
-impl_vector_push(expr, expr, static)
-impl_vector_get(expr, expr, static)
-impl_vector_set(expr, expr, static)
-impl_vector_reset(expr, expr, static)
 
 /*******************************************************************************
  * @enum fiattag

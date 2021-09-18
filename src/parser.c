@@ -1295,9 +1295,28 @@ static expr *rec_rvar(parser *self, token prev)
 	}
 
 	node->rvarlit.args = rec_args(self); 
+	return node;
 }
 
 /*******************************************************************************
  * @fn rec_args
  * @brief Process an argument list into an expr_vector.
+ * @remark Vector capacity is set heuristically.
  ******************************************************************************/
+ static expr_vector rec_args(parser *self)
+ {
+ 	assert(self);
+
+	expr_vector vec = {0};
+	expr_vector_init(&vec, 0, 4);
+
+	while (self->tok.type != _SEMICOLON) {
+		if (vec.len > 0) {
+			move_check(self, _COMMA, "expected ',' after arg");
+		}
+
+		expr_vector_push(&vec, rec_assignment(self));
+	}
+
+	return vec;
+ }
