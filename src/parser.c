@@ -83,9 +83,10 @@ static expr *rec_equality(parser *self);
 static expr *rec_term(parser *self);
 static expr *rec_factor(parser *self);
 static expr *rec_unary(parser *self);
-static rec_primary(parser *self);
+static expr *rec_primary(parser *self);
 static expr *rec_rvar_or_ident(parser *self);
 static expr *rec_rvar(parser *self, token prev);
+static expr_vector rec_args(parser *self);
 
 //parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file **ast)
@@ -926,6 +927,9 @@ static stmt rec_exprstmt(parser *self)
 	};
 
 	node.exprstmt = rec_assignment(self);
+
+	check_move(self, _SEMICOLON, "missing ';' after expression");
+
 	return node;
 }
 
@@ -1012,6 +1016,7 @@ static expr *rec_equality(parser *self)
 	assert(self);
 
 	expr *node = rec_term(self);
+	expr *tmp = NULL;
 
 	while (true) {
 		switch (self->tok.type) {
@@ -1031,14 +1036,14 @@ static expr *rec_equality(parser *self)
 			fallthrough;
 
 		case _NOTEQUAL:
-			expr *tmp = node;
+			tmp = node;
 			node = expr_init(self, NODE_BINARY);
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
 			node->line = self->tok.line;
 
-			parser_advance();
+			parser_advance(self);
 			node->binary.right = rec_term(self);
 
 		default:
@@ -1059,6 +1064,7 @@ static expr *rec_term(parser *self)
 	assert(self);
 
 	expr *node = rec_factor(self);
+	expr *tmp = NULL;
 
 	while (true) {
 		switch (self->tok.type) {
@@ -1072,8 +1078,8 @@ static expr *rec_term(parser *self)
 			fallthrough;
 
 		case _BITXOR:
-			expr *tmp = node;
-			node = expr_init(NODE_BINARY);
+			tmp = node;
+			node = expr_init(self, NODE_BINARY);
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
@@ -1100,6 +1106,7 @@ static expr *rec_factor(parser *self)
 	assert(self);
 
 	expr *node = rec_unary(self);
+	expr *tmp = NULL;
 
 	while (true) {
 		switch (self->tok.type) {
@@ -1119,8 +1126,8 @@ static expr *rec_factor(parser *self)
 			fallthrough;
 
 		case _AMPERSAND:
-			expr *tmp = node;
-			node = expr_init(NODE_BINARY);
+			tmp = node;
+			node = expr_init(self, NODE_BINARY);
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
@@ -1130,7 +1137,7 @@ static expr *rec_factor(parser *self)
 			node->binary.right = rec_unary(self);
 
 		default:
-			goto exit_lopo;
+			goto exit_loop;
 		}
 	}
 
@@ -1153,7 +1160,7 @@ static expr *rec_unary(parser *self)
 	case _MINUS:
 		fallthrough;
 
-	case _PLUS:
+	case _ADD:
 		fallthrough;
 
 	case _BITNOT:
@@ -1180,6 +1187,7 @@ static expr *rec_unary(parser *self)
 		node->cast.casttype = rec_type(self);
 		check_move(self, _RIGHTPAREN, "expected ')' after type casting");
 		node->cast.operand = rec_unary(self);
+		break;
 
 	default:
 		node = rec_primary(self);
@@ -1193,7 +1201,7 @@ static expr *rec_unary(parser *self)
  * @brief <primary> ::= <atom> (<call> | <selector> | <index>)*
  * @remark <atom> production is expanded and implemented in rec_primary
  ******************************************************************************/
-static rec_primary(parser *self)
+static expr *rec_primary(parser *self)
 {
 	assert(self);
 
@@ -1253,7 +1261,7 @@ static expr *rec_rvar_or_ident(parser *self)
 	parser_advance(self);
 
 	if (self->tok.type == _TILDE) {
-		return rec_rvar(self, token prev);
+		return rec_rvar(self, tmp);
 	}
 
 	expr *node = expr_init(self, NODE_IDENT);
@@ -1275,7 +1283,7 @@ static expr *rec_rvar(parser *self, token prev)
 {
 	assert(self);
 
-	expr *node = expr_init(NODE_RVARLIT);
+	expr *node = expr_init(self, NODE_RVARLIT);
 	
 	node->line = prev.line;
 
@@ -1285,7 +1293,7 @@ static expr *rec_rvar(parser *self, token prev)
 
 	//some random distributions are not parameterized
 	if (self->tok.type == _SEMICOLON) {
-		node->rvarlit.args = {
+		node->rvarlit.args = (expr_vector) {
 			.len = 0,
 			.cap = 0,
 			.data = NULL
@@ -1303,9 +1311,9 @@ static expr *rec_rvar(parser *self, token prev)
  * @brief Process an argument list into an expr_vector.
  * @remark Vector capacity is set heuristically.
  ******************************************************************************/
- static expr_vector rec_args(parser *self)
- {
- 	assert(self);
+static expr_vector rec_args(parser *self)
+{
+	assert(self);
 
 	expr_vector vec = {0};
 	expr_vector_init(&vec, 0, 4);
@@ -1319,4 +1327,4 @@ static expr *rec_rvar(parser *self, token prev)
 	}
 
 	return vec;
- }
+}

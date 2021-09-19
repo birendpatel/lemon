@@ -336,7 +336,7 @@ struct expr {
 		} arraylit;
 
 		struct {
-			expr *dist;
+			char *dist;
 			expr_vector args;
 		} rvarlit;
 
