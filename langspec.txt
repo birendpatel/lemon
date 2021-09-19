@@ -252,7 +252,7 @@ LITERAL ::= INT_LITERAL
 
 <unary> ::= ("-" | "+" | "'" | "!" | "*" | "&" | <cast>) <unary> | <primary>
 
-<cast> ::= "(" IDENTIFIER ")"
+<cast> ::= ":" IDENTIFIER ":"
 
 <primary> ::= <atom> (<call> | <selector> | <index>)*
 

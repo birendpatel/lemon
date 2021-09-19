@@ -1200,12 +1200,12 @@ static expr *rec_unary(parser *self)
 		node->unary.operand = rec_unary(self);
 		break;
 
-	case _LEFTPAREN:
+	case _COLON:
 		node = expr_init(self, NODE_CAST);
 		node->line = self->tok.line;
 		parser_advance(self);
 		node->cast.casttype = rec_type(self);
-		check_move(self, _RIGHTPAREN, "expected ')' after type casting");
+		check_move(self, _COLON, "expected ':' after type casting");
 		node->cast.operand = rec_unary(self);
 		break;
 
@@ -1261,6 +1261,12 @@ static expr *rec_primary(parser *self)
 		lexcpy(self, &node->lit.rep, self->tok.lexeme, self->tok.len);
 		node->lit.littype = self->tok.type;
 		parser_advance(self);
+		break;
+
+	case _LEFTPAREN:
+		parser_advance(self);
+		node = rec_assignment(self);
+		check_move(self, _RIGHTPAREN, "expected ')' after grouping");
 		break;
 
 	default:
