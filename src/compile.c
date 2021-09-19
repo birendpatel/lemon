@@ -21,17 +21,9 @@ xerror compile(char *src, options *opt, char *fname)
 	file *ast = NULL;
 	xerror err = parse(src, opt, fname, &ast);
 
-	//temporary
 	if (err) {
 		return err;
 	}
-
-	printf("file name: %s\n", ast->name);
-
-	for (size_t i = 0; i < ast->fiats.len; i++) {
-		printf("tag: %d\n", ast->fiats.data[i].tag);
-	}
-	//end temporary
 
 	return XESUCCESS;
 }

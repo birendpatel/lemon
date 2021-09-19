@@ -801,7 +801,12 @@ static decl rec_var(parser *self)
 
 	check_move(self, _EQUAL, "declaration must have an initializer");
 
-	//TODO node.variable.value expression
+	if (self->tok.type == _SEMICOLON) {
+		usererror("missing rvalue in variable declaration");
+		Throw(XXPARSE);
+	}
+
+	node.variable.value = rec_assignment(self);
 
 	check_move(self, _SEMICOLON, "missing ';' after declaration");
 
@@ -1325,7 +1330,7 @@ static expr_vector rec_args(parser *self)
 
 	while (self->tok.type != _SEMICOLON) {
 		if (vec.len > 0) {
-			move_check(self, _COMMA, "expected ',' after arg");
+			check_move(self, _COMMA, "expected ',' after arg");
 		}
 
 		expr_vector_push(&vec, rec_assignment(self));
