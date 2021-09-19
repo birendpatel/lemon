@@ -73,9 +73,9 @@ typedef struct test {
 
 make_vector(test, test, static)
 
-//the vector<size_t> container is used by array literal expressions to track
+//the vector<intmax_t> container is used by array literal expressions to track
 //designated initializers.
-make_vector(size_t, idx, static)
+make_vector(intmax_t, idx, static)
 
 //vector<expr *> is used by complex atoms and function calls. Pointers simplify
 //implementation details for the parser by allowing rvar and call expressions
@@ -118,8 +118,8 @@ struct type {
 		type *pointer;
 
 		struct {
-			size_t len;
 			type *base;
+			intmax_t len;
 		} array;
 	};
 };

@@ -288,5 +288,5 @@ LITERAL ::= INT_LITERAL
 
 <tagged index> ::= ("[" INT_LITERAL "]" "=")? <expression>
 
-<rvar literal> ::= IDENTIFIER "~" <arguments>
+<rvar literal> ::= IDENTIFIER "~" "(" <arguments> ")"
 

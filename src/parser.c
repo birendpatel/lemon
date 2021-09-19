@@ -59,13 +59,13 @@ static void parser_advance(parser *self);
 static void synchronize(parser *self);
 static void lexcpy(parser *self, char **dest, char *src, uint32_t n);
 static void _check(parser *self, token_type type, char *msg, bool A, bool Z);
-static size_t extract_arrnum(parser *self);
+static intmax_t extract_arrnum(parser *self);
 
 //node management
 static file *file_init(char *fname);
 static expr *expr_init(parser *self, exprtag tag);
 
-//recursive descent
+//recursive descent declarations
 static file *rec_parse(parser *self, char *fname);
 static fiat rec_fiat(parser *self);
 static decl rec_struct(parser *self);
@@ -74,8 +74,12 @@ decl rec_func(parser *self);
 static param_vector rec_params(parser *self);
 type *rec_type(parser *self);
 static decl rec_var(parser *self);
+
+//recursive descent statements
 static stmt rec_stmt(parser *self);
 static stmt rec_exprstmt(parser *self);
+
+//recursive descent expressions
 static expr *rec_assignment(parser *self);
 static expr *rec_logicalor(parser *self);
 static expr *rec_logicaland(parser *self);
@@ -87,6 +91,8 @@ static expr *rec_primary(parser *self);
 static expr *rec_rvar_or_ident(parser *self);
 static expr *rec_rvar(parser *self, token prev);
 static expr_vector rec_args(parser *self);
+static expr *rec_arraylit(parser *self);
+static expr *rec_arraylit(parser *self);
 
 //parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file **ast)
@@ -267,21 +273,23 @@ static void lexcpy(parser *self, char **dest, char *src, uint32_t n)
 	assert(src);
 	assert(n);
 
-	kmalloc(*dest, sizeof(char) * n);
+	kmalloc(*dest, sizeof(char) * n + 1);
 
 	mem_vector_push(&self->mempool, *dest);
 
 	memcpy(*dest, src, sizeof(char) * n);
+
+	(*dest)[n] = '\0';
 }
 
 /*******************************************************************************
  * @fn extract_arrnum
  * @brief Extract a number from the non-null terminated lexeme held in the
  * current parser token.
- * @return If the number is not a simple positive integer less than LLONG_MAX
- * then a parse exception is thrown. Otherwise a size_t representation is given.
+ * @return If the number is not a simple nonnegitive integer less than LLONG_MAX
+ * then a parse exception is thrown. Else, an intmax representation is given.
  ******************************************************************************/
-static size_t extract_arrnum(parser *self)
+static intmax_t extract_arrnum(parser *self)
 {
 	assert(self);
 
@@ -294,17 +302,16 @@ static size_t extract_arrnum(parser *self)
 	candidate = strtoll(tmp, &end, 10);
 
 	if (candidate == LONG_MAX) {
-		usererror("array length is too large");
+		usererror("array index is too large");
 		Throw(XXPARSE);
 	} else if (*end != '\0') {
-		usererror("array length is not a simple base-10 integer");
-		Throw(XXPARSE);
-	} else if (candidate == 0) {
-		usererror("array length cannot be zero");
+		usererror("array index is not a simple base-10 integer");
 		Throw(XXPARSE);
 	}
 
-	return (size_t) candidate;
+	assert(candidate >= 0 && "scanner int literal has minus token");
+
+	return (intmax_t) candidate;
 }
 
 /*******************************************************************************
@@ -843,7 +850,11 @@ type *rec_type(parser *self)
 
 	case _LEFTBRACKET:
 		move_check(self, _LITERALINT, "expected array size");
+
+		//array length should not be zero, but this check is
+		//relegated to the context sensitive analyser.
 		node->array.len = extract_arrnum(self);
+
 		move_check_move(self, _RIGHTBRACKET, "expected ']'");
 		node->array.base = rec_type(self);
 		break;
@@ -1222,6 +1233,10 @@ static expr *rec_primary(parser *self)
 		node = rec_rvar_or_ident(self);
 		break;
 
+	case _LEFTBRACKET:
+		node = rec_arraylit(self);
+		break;
+
 	case _LITERALINT:
 		fallthrough;
 
@@ -1292,6 +1307,7 @@ static expr *rec_rvar_or_ident(parser *self)
 static expr *rec_rvar(parser *self, token prev)
 {
 	assert(self);
+	assert(self->tok.type == _TILDE);
 
 	expr *node = expr_init(self, NODE_RVARLIT);
 	
@@ -1318,17 +1334,21 @@ static expr *rec_rvar(parser *self, token prev)
 
 /*******************************************************************************
  * @fn rec_args
- * @brief Process an argument list into an expr_vector.
+ * @brief Process an argument list into an expr_vector. The current token held
+ * in the parser must be a _LEFTPAREN
  * @remark Vector capacity is set heuristically.
  ******************************************************************************/
 static expr_vector rec_args(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _LEFTPAREN);
 
 	expr_vector vec = {0};
 	expr_vector_init(&vec, 0, 4);
 
-	while (self->tok.type != _SEMICOLON) {
+	parser_advance(self); //move off left parenthesis
+
+	while (self->tok.type != _RIGHTPAREN) {
 		if (vec.len > 0) {
 			check_move(self, _COMMA, "expected ',' after arg");
 		}
@@ -1336,5 +1356,60 @@ static expr_vector rec_args(parser *self)
 		expr_vector_push(&vec, rec_assignment(self));
 	}
 
+	parser_advance(self); //move off right parenthesis
+
 	return vec;
+}
+
+/*******************************************************************************
+ * @fn rec_arraylit
+ * @brief Process an array literal into an expression node. The current token
+ * held by the parser must be a _LEFTBRACKET.
+ * @return Always returns a valid node. May throw a parse exception. Every
+ * value in the values vector has an associated value in the indicies vector
+ * at the same vector index. When the associated value in the indicies vector
+ * is -1, then the value in the values vector does not have a tagged index.
+ ******************************************************************************/
+static expr *rec_arraylit(parser *self)
+{
+	assert(self);
+	assert(self->tok.type == _LEFTBRACKET);
+
+	static char *tagerr = "tagged array index must be an integer";
+	static char *closeerr = "missing ']' after tagged index";
+	static char *eqerr = "missing '=' after tagged index";
+
+	expr *node = expr_init(self, NODE_ARRAYLIT);
+
+	node->line = self->tok.line;
+	idx_vector_init(&node->arraylit.indicies, 0, 4);
+	expr_vector_init(&node->arraylit.values, 0, 4);
+
+	parser_advance(self); //move off left bracket
+
+	while (self->tok.type != _RIGHTBRACKET) {
+		if (node->arraylit.values.len > 0) {
+			check_move(self, _COMMA, "expected ',' after value");
+		}
+
+		if (self->tok.type == _LEFTBRACKET) {
+			move_check(self, _LITERALINT, tagerr);
+
+			intmax_t idx = extract_arrnum(self);
+			idx_vector_push(&node->arraylit.indicies, idx);
+			
+			move_check_move(self, _RIGHTBRACKET, closeerr);
+			check_move(self, _EQUAL, eqerr);
+		} else {
+			idx_vector_push(&node->arraylit.indicies, -1);
+		}
+
+		expr_vector_push(&node->arraylit.values, rec_assignment(self));
+	}
+
+	parser_advance(self); //move off right bracket
+
+	assert(node->arraylit.indicies.len == node->arraylit.values.len);
+
+	return node;
 }
