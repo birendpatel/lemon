@@ -966,9 +966,10 @@ static expr *rec_logicalor(parser *self)
 	assert(self);
 
 	expr *node = rec_logicaland(self);
+	expr *tmp = NULL;
 
 	while (self->tok.type == _OR) {
-		expr *tmp = node;
+		tmp = node;
 		node = expr_init(self, NODE_BINARY);
 
 		node->binary.left = tmp;
@@ -1045,6 +1046,7 @@ static expr *rec_equality(parser *self)
 
 			parser_advance(self);
 			node->binary.right = rec_term(self);
+			break;
 
 		default:
 			goto exit_loop;
@@ -1087,6 +1089,7 @@ static expr *rec_term(parser *self)
 
 			parser_advance(self);
 			node->binary.right = rec_factor(self);
+			break;
 
 		default:
 			goto exit_loop;
@@ -1135,6 +1138,7 @@ static expr *rec_factor(parser *self)
 
 			parser_advance(self);
 			node->binary.right = rec_unary(self);
+			break;
 
 		default:
 			goto exit_loop;
@@ -1205,6 +1209,7 @@ static expr *rec_primary(parser *self)
 {
 	assert(self);
 
+	static const char *errfmt = "expression is ill-formed at '%.*s'";
 	expr *node = NULL;
 
 	switch (self->tok.type) {
@@ -1239,7 +1244,7 @@ static expr *rec_primary(parser *self)
 		break;
 
 	default:
-		usererror("expression is ill-formed");
+		usererror(errfmt, self->tok.len, self->tok.lexeme);
 		Throw(XXPARSE);
 	}
 
