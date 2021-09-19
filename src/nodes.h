@@ -322,7 +322,7 @@ struct expr {
 
 		struct {
 			expr *name;
-			expr *attr;
+			expr *attr; //ident expr
 		} selector;
 
 		struct {

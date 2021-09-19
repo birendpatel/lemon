@@ -93,6 +93,8 @@ static expr *rec_rvar(parser *self, token prev);
 static expr_vector rec_args(parser *self);
 static expr *rec_arraylit(parser *self);
 static expr *rec_arraylit(parser *self);
+static expr *rec_ident(parser *self, token tok);
+static expr *rec_access(parser *self, expr *prev);
 
 //parser entry point; configure parser members and launch recursive descent
 xerror parse(char *src, options *opt, char *fname, file **ast)
@@ -1219,7 +1221,8 @@ static expr *rec_unary(parser *self)
 /*******************************************************************************
  * @fn rec_primary
  * @brief <primary> ::= <atom> (<call> | <selector> | <index>)*
- * @remark <atom> production is expanded and implemented in rec_primary
+ * @remark <atom> production is expanded and implemented in rec_primary while
+ * optional calls, selectors, and indicies are implemented in rec_access.
  ******************************************************************************/
 static expr *rec_primary(parser *self)
 {
@@ -1274,7 +1277,41 @@ static expr *rec_primary(parser *self)
 		Throw(XXPARSE);
 	}
 
-	return node;
+	return rec_access(self, node);
+}
+
+/*******************************************************************************
+ * @fn rec_access
+ * @brief <call> | <selector> | <index>
+ ******************************************************************************/
+static expr *rec_access(parser *self, expr *prev)
+{
+	assert(self);
+	assert(prev);
+
+	expr *node = NULL;
+
+	switch (self->tok.type) {
+	case _DOT:
+		move_check(self, _IDENTIFIER, "missing attribute after '.'");
+		node = expr_init(self, NODE_SELECTOR);
+		node->selector.name = prev;
+		node->selector.attr = rec_ident(self, self->tok);
+		parser_advance(self);
+		break;
+
+	case _LEFTPAREN:
+		break;
+
+	case _LEFTBRACKET:
+		break;
+
+	//recursion base case
+	default:
+		return prev;
+	}
+
+	return rec_access(self, node);
 }
 
 /*******************************************************************************
@@ -1293,13 +1330,24 @@ static expr *rec_rvar_or_ident(parser *self)
 
 	if (self->tok.type == _TILDE) {
 		return rec_rvar(self, tmp);
+	} else {
+		return rec_ident(self, tmp);
 	}
+}
+
+/*******************************************************************************
+ * @fn rec_ident
+ * @brief Simple identifier nodes. Creates an identifier from the token input
+ * rather than from the parser.
+ ******************************************************************************/
+static expr *rec_ident(parser *self, token tok)
+{
+	assert(self);
 
 	expr *node = expr_init(self, NODE_IDENT);
-	node->line = tmp.line;
-	lexcpy(self, &node->ident.name, tmp.lexeme, tmp.len);
+	node->line = tok.line;
+	lexcpy(self, &node->ident.name, tok.lexeme, tok.len);
 
-	//no scanner advance due to previous tilde check
 	return node;
 }
 
