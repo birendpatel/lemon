@@ -3,26 +3,26 @@
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
  * @brief Recursive descent parser.
  *
- * @remark There are two classes of errors found in the parser: compiler errors
- * and user errors. User errors are not logged in the xerror buffer and they do
- * not cause the parser to terminate. User errors are not handled via normal C
- * error code propogation. Instead, they throw exceptions. Whenever an exception
- * is caught at the appropriate level, it triggers the parser to synchronize to
- * a new sequence point and the parser continues as normal.
+ * @remark The parser may encounter two types of errors: compiler errors and
+ * user errors. Compiler errors are treated in the same fashion as the rest of
+ * the program; Log the issue via xerror and propogate the error code up the 
+ * call chain.
  *
- * The use of C-style exception handling makes the recursive descent algorithm
- * implemented here readable, terse, and simple. It plays very nicely with
- * recursion, and without it we would have (and did originally have) an extra
- * 1000 lines of error checking and recovery paths to deal with. As the ancient
- * C gods once said, the supply of new lines on your screen is not a renewable
- * resource.
+ * User errors are very different. They are not logged via xerror. They do not
+ * cause the parser to terminate. They do not propogate error codes. Instead,
+ * they throw exceptions. Whenever an exception is caught, the parser will
+ * synchronize to a new sequence point within the token stream. Sequence points
+ * are, generally speaking, any tokens which identify or hint at the start of a
+ * new statement or declaration.
  *
- * The only serious limitation is that all dynamic memory allocations within a
- * try-block are not automatically released when an exception occurs. For this
- * reason the parser contains a mem_vector. All allocations push their heap
- * pointer to the mem_vector. On an exception the allocations are free'd. On
- * success, the vector is reset and the allocations are ignored. This typically
- * happens in rec_fiat().
+ * The only serious limitation to setjmp/longjmp exception handling is that
+ * dynamic memory allocations made within a try-block are not released when an
+ * exception occurs. For this reason, the parser contains a vector<void*> used
+ * to track and release all memory allocations that were requested since the
+ * last successful sequence point. The parser cannot walk the erroneous subtree
+ * in post-order to release the allocations because sometimes an exception is
+ * thrown before a parent and child are connected. This results in a dangling
+ * pointer. So, every kmalloc call must be coupled to an immediate vector push.
  */
 
 #include <assert.h>
