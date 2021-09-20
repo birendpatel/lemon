@@ -64,6 +64,7 @@ static intmax_t extract_arrnum(parser *self);
 //node management
 static file *file_init(char *fname);
 static expr *expr_init(parser *self, exprtag tag);
+static stmt *stmt_init(parser *self, stmt src);
 
 //recursive descent declarations
 static file *rec_parse(parser *self, char *fname);
@@ -78,6 +79,7 @@ static decl rec_var(parser *self);
 //recursive descent statements
 static stmt rec_stmt(parser *self);
 static stmt rec_exprstmt(parser *self);
+static stmt rec_block(parser *self);
 
 //recursive descent expressions
 static expr *rec_assignment(parser *self);
@@ -217,6 +219,27 @@ static expr *expr_init(parser *self, exprtag tag)
 	mem_vector_push(&self->mempool, new);
 
 	new->tag = tag;
+
+	return new;
+}
+
+/*******************************************************************************
+ * @fn stmtcpy
+ * @brief Create a statment node on heap and copy the contents of the input
+ * statement node to the new heap node. The new heap pointer is added to the
+ * parser mempool.
+ ******************************************************************************/
+static stmt *stmt_init(parser *self, stmt src)
+{
+	assert(self);
+
+	stmt *new = NULL;
+
+	kmalloc(new, sizeof(stmt));
+
+	mem_vector_push(&self->mempool, new);
+
+	memcpy(new, &src, sizeof(stmt));
 
 	return new;
 }
@@ -705,7 +728,10 @@ decl rec_func(parser *self)
 		node.function.recv = rec_type(self);
 	}
 
-	//TODO block statement
+	//body
+	check(self, _LEFTBRACE, "missing body in function declaration");
+	node.function.block = stmt_init(self, rec_block(self));
+
 	return node;
 }
 
@@ -883,7 +909,8 @@ static stmt rec_stmt(parser *self)
 	stmt node = { 0 };
 
 	switch(self->tok.type) {
-	case _LEFTBRACKET:
+	case _LEFTBRACE:
+		node = rec_block(self);
 		break;
 
 	case _FOR:
@@ -923,6 +950,39 @@ static stmt rec_stmt(parser *self)
 		node = rec_exprstmt(self);
 		break;
 	}
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_block
+ * @brief <block statement> ::= "{" <fiat>* "}" . The current token held in the
+ * parser must be a _LEFTBRACE token.
+ * @return Always returns a valid block node. May throw a parse exception. At
+ * return the parser will have consumed the terminating right brace.
+ ******************************************************************************/
+static stmt rec_block(parser *self)
+{
+	assert(self);
+	assert(self->tok.type == _LEFTBRACE);
+
+	stmt node = {
+		.tag = NODE_BLOCK,
+		.block = {
+			.fiats = {0}
+		},
+		.line = self->tok.line
+	};
+
+	fiat_vector_init(&node.block.fiats, 0, 4);
+
+	parser_advance(self); //move off left brace 
+
+	while (self->tok.type != _RIGHTBRACE) {
+		fiat_vector_push(&node.block.fiats, rec_fiat(self));
+	}
+
+	parser_advance(self); //move off right brace
 
 	return node;
 }
