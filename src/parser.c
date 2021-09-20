@@ -65,6 +65,7 @@ static intmax_t extract_arrnum(parser *self);
 static file *file_init(char *fname);
 static expr *expr_init(parser *self, exprtag tag);
 static stmt *stmt_init(parser *self, stmt src);
+static decl *decl_init(parser *self, decl src);
 
 //recursive descent declarations
 static file *rec_parse(parser *self, char *fname);
@@ -83,6 +84,7 @@ static stmt rec_block(parser *self);
 static stmt rec_label(parser *self);
 static stmt rec_anonymous_target(parser *self);
 static stmt rec_named_target(parser *self);
+static stmt rec_forloop(parser *self);
 
 //recursive descent expressions
 static expr *rec_assignment(parser *self);
@@ -222,6 +224,27 @@ static expr *expr_init(parser *self, exprtag tag)
 	mem_vector_push(&self->mempool, new);
 
 	new->tag = tag;
+
+	return new;
+}
+
+/*******************************************************************************
+ * @fn decl_init
+ * @brief Create a decl node on heap and copy the contents of the input decl
+ * node to the new heap node. The new heap pointer is added to the parser
+ * mempool.
+ ******************************************************************************/
+static decl *decl_init(parser *self, decl src)
+{
+	assert(self);
+
+	decl *new = NULL;
+
+	kmalloc(new, sizeof(decl));
+
+	mem_vector_push(&self->mempool, new);
+
+	memcpy(new, &src, sizeof(decl));
 
 	return new;
 }
@@ -917,6 +940,7 @@ static stmt rec_stmt(parser *self)
 		break;
 
 	case _FOR:
+		node = rec_forloop(self);
 		break;
 
 	case _WHILE:
@@ -989,6 +1013,45 @@ static stmt rec_block(parser *self)
 	}
 
 	parser_advance(self); //move off right brace
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_forloop
+ * @brief <for statement> ::= "for" "(" (<short declaration> | <expression>) ";"
+ * <expression> ";" <expression> ")" <block statement> . The token held
+ * in the parser should be the _FOR keyword.
+ ******************************************************************************/
+static stmt rec_forloop(parser *self)
+{
+	assert(self);
+
+	stmt node = {
+		.tag = NODE_FORLOOP,
+		.line = self->tok.line
+	};
+
+	move_check_move(self, _LEFTPAREN, "missing '(' after 'for' keyword");
+
+	//initial condition
+	if (self->tok.type == _LET) {
+		node.forloop.tag = FOR_DECL;
+		node.forloop.shortvar = decl_init(self, rec_var(self));
+		//rec_var consumes the terminating semicolon
+	} else {
+		node.forloop.tag = FOR_INIT;
+		node.forloop.init = rec_assignment(self);
+		check_move(self, _SEMICOLON, "missing ';' after init");
+	}
+
+	node.forloop.cond = rec_assignment(self);
+	check_move(self, _SEMICOLON, "missing ';' after condition");
+
+	node.forloop.post = rec_assignment(self);
+	check_move(self, _RIGHTPAREN, "missing ')' after post expression");
+
+	node.forloop.block = stmt_init(self, rec_block(self));
 
 	return node;
 }

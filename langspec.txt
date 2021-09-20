@@ -134,7 +134,7 @@ LITERAL ::= INT_LITERAL
 <variable declaration> ::= 
 	"let" "pub"? "mut"? IDENTIFIER ":" <type> "=" <expression> ";"
 
-<short declaration> ::= IDENTIFIER : <type> "=" <expression>
+<short declaration> ::= "let" IDENTIFIER : <type> "=" <expression>
 
 #-------------------------------------------------------------------------------
 # types are identifiers perhaps prefixed with leading symbols which construct
@@ -215,7 +215,7 @@ LITERAL ::= INT_LITERAL
 <for statement> ::= 
 	"for" "(" (<short declaration> | <expression>) ";"
 	<expression> ";"
-	<expression> ";" ")"
+	<expression> ")"
 	<block statement>
 
 <while statement> ::= "while" "(" <expression> ")" <block statement>
