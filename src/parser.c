@@ -85,6 +85,8 @@ static stmt rec_label(parser *self);
 static stmt rec_anonymous_target(parser *self);
 static stmt rec_named_target(parser *self);
 static stmt rec_forloop(parser *self);
+static stmt rec_whileloop(parser *self);
+static stmt rec_branch(parser *self);
 
 //recursive descent expressions
 static expr *rec_assignment(parser *self);
@@ -944,12 +946,14 @@ static stmt rec_stmt(parser *self)
 		break;
 
 	case _WHILE:
+		node = rec_whileloop(self);
 		break;
 
 	case _SWITCH:
 		break;
 
 	case _IF:
+		node = rec_branch(self);
 		break;
 
 	case _RETURN:
@@ -1052,6 +1056,98 @@ static stmt rec_forloop(parser *self)
 	check_move(self, _RIGHTPAREN, "missing ')' after post expression");
 
 	node.forloop.block = stmt_init(self, rec_block(self));
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_whileloop
+ * @brief <while statement> ::= "while" "(" <expression> ")" <block statement> .
+ * The current token in the parser should be the _WHILE keyword.
+ ******************************************************************************/
+static stmt rec_whileloop(parser *self)
+{
+	assert(self);
+
+	stmt node = {
+		.tag = NODE_WHILELOOP,
+		.line = self->tok.line
+	};
+
+	move_check_move(self, _LEFTPAREN, "expected '(' after 'while'");
+
+	node.whileloop.cond = rec_assignment(self);
+
+	check_move(self, _RIGHTPAREN, "expected ')' after while condition");
+
+	if (self->tok.type == _LEFTBRACE) {
+		node.whileloop.block = stmt_init(self, rec_block(self));
+	} else {
+		usererror("expected block statement after while loop");
+		Throw(XXPARSE);
+	}
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_branch
+ * @brief <branch statement> ::=  "if" "(" <short declaration>? <expression> ")"
+ * <block statement> ("else" (<branch statement> | <block statement>))? . The
+ * current token in the parser should be the _IF keyword.
+ ******************************************************************************/
+static stmt rec_branch(parser *self)
+{
+	assert(self);
+
+	stmt node = {
+		.tag = NODE_BRANCH,
+		.line = self->tok.line
+	};
+
+	//condition test
+	move_check_move(self, _LEFTPAREN, "missing '(' after 'if'");
+
+	if (self->tok.type == _LET) {
+		node.branch.shortvar = decl_init(self, rec_var(self));
+		//rec_var consumes terminating semicolon
+	} else {
+		node.branch.shortvar = NULL;
+	}
+
+	node.branch.cond = rec_assignment(self);
+
+	check_move(self, _RIGHTPAREN, "missing ')' after if condition");
+
+	//if branch
+	if (self->tok.type == _LEFTBRACE) {
+		node.branch.pass = stmt_init(self, rec_block(self));
+	} else {
+		usererror("expected block statement after if condition");
+		Throw(XXPARSE);
+	}
+
+	//else branch
+	if (self->tok.type != _ELSE) {
+		node.branch.fail = NULL;
+		return node;
+	}
+
+	parser_advance(self);
+
+	switch (self->tok.type) {
+	case _IF:
+		node.branch.fail = stmt_init(self, rec_branch(self));
+		break;
+
+	case _LEFTBRACE:
+		node.branch.fail = stmt_init(self, rec_block(self));
+		break;
+	
+	default:
+		usererror("expected 'else if' or 'else {...}' after block");
+		Throw(XXPARSE);
+	}
 
 	return node;
 }
