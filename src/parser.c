@@ -1293,17 +1293,37 @@ static expr *rec_access(parser *self, expr *prev)
 
 	switch (self->tok.type) {
 	case _DOT:
-		move_check(self, _IDENTIFIER, "missing attribute after '.'");
 		node = expr_init(self, NODE_SELECTOR);
+		node->line = self->tok.line;
+		
+		move_check(self, _IDENTIFIER, "missing attribute after '.'");
+		
 		node->selector.name = prev;
 		node->selector.attr = rec_ident(self, self->tok);
+		
 		parser_advance(self);
 		break;
 
 	case _LEFTPAREN:
+		node = expr_init(self, NODE_CALL);
+		node->line = self->tok.line;
+
+		node->call.name = prev;
+		node->call.args = rec_args(self);
+
 		break;
 
 	case _LEFTBRACKET:
+		node = expr_init(self, NODE_INDEX);
+		node->line = self->tok.line;
+
+		parser_advance(self);
+
+		node->index.name = prev;
+		node->index.key = rec_assignment(self);
+
+		check_move(self, _RIGHTBRACKET, "missing ']' after index");
+
 		break;
 
 	//recursion base case
@@ -1371,25 +1391,17 @@ static expr *rec_rvar(parser *self, token prev)
 
 	parser_advance(self);
 
-	//some random distributions are not parameterized
-	if (self->tok.type == _SEMICOLON) {
-		node->rvarlit.args = (expr_vector) {
-			.len = 0,
-			.cap = 0,
-			.data = NULL
-		};
-
-		return node;
-	}
-
 	node->rvarlit.args = rec_args(self); 
+
 	return node;
 }
 
 /*******************************************************************************
  * @fn rec_args
  * @brief Process an argument list into an expr_vector. The current token held
- * in the parser must be a _LEFTPAREN
+ * in the parser must be a _LEFTPAREN.
+ * @return On return the node is always valid and the right parenthesis will
+ * have been consumed by the parser. A parse exception may be thrown.
  * @remark Vector capacity is set heuristically.
  ******************************************************************************/
 static expr_vector rec_args(parser *self)
