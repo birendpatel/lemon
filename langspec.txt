@@ -134,7 +134,7 @@ LITERAL ::= INT_LITERAL
 <variable declaration> ::= 
 	"let" "pub"? "mut"? IDENTIFIER ":" <type> "=" <expression> ";"
 
-<short declaration> ::= IDENTIFIER : <type> "=" <expression>
+<short declaration> ::= "let" IDENTIFIER : <type> "=" <expression>
 
 #-------------------------------------------------------------------------------
 # types are identifiers perhaps prefixed with leading symbols which construct
@@ -187,7 +187,7 @@ LITERAL ::= INT_LITERAL
 # statement that is not referenced by any goto statement is a semantic error.
 #-------------------------------------------------------------------------------
 
-<label statement> ::= IDENTIFIER ":" <statement>
+<label statement> ::= "label" IDENTIFIER ":" <statement>
 
 #-------------------------------------------------------------------------------
 # Import statements reference file names.
@@ -215,7 +215,7 @@ LITERAL ::= INT_LITERAL
 <for statement> ::= 
 	"for" "(" (<short declaration> | <expression>) ";"
 	<expression> ";"
-	<expression> ";" ")"
+	<expression> ")"
 	<block statement>
 
 <while statement> ::= "while" "(" <expression> ")" <block statement>
@@ -252,7 +252,7 @@ LITERAL ::= INT_LITERAL
 
 <unary> ::= ("-" | "+" | "'" | "!" | "*" | "&" | <cast>) <unary> | <primary>
 
-<cast> ::= "(" IDENTIFIER ")"
+<cast> ::= ":" IDENTIFIER ":"
 
 <primary> ::= <atom> (<call> | <selector> | <index>)*
 
@@ -288,5 +288,5 @@ LITERAL ::= INT_LITERAL
 
 <tagged index> ::= ("[" INT_LITERAL "]" "=")? <expression>
 
-<rvar literal> ::= IDENTIFIER "~" <arguments>
+<rvar literal> ::= IDENTIFIER "~" "(" <arguments> ")"
 

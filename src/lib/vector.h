@@ -3,14 +3,15 @@
  * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
  * @brief Templated vector data structure for shallow copies.
  *
- * @details This file is plug and play, but the user does need to configure
- * macro definitions for the three error codes VECTOR_ESUCCESS, VECTOR_ENOMEM,
- * and VECTOR_EFULL. These codes must be integers.
+ * @details This file is plug and play, but with a few words of advice. Vectors
+ * use a little memset trick to immediately induce a segementation violation
+ * whenever stdlib allocs fail. You will first have to remove the kmalloc
+ * wrapper and introduce errors codes to impl_vector_init and impl_vector_push
+ * if you want to avoid this behavior. Vectors also intentionally crash if you
+ * attempt to push more than SIZE_MAX elements.
  *
- * This error code design was implemented so that applications which use
- * vectors do not have to take special considerations in their error handling
- * logic to handle vector codes. If you have a function with dense and
- * complex error paths, dealing with two sets of codes is a nightmare.
+ * Since vector.h was originally designed for the Lemon compiler, this fail
+ * fast and die early approach suited the compiler requirements well. YMMV.
  */
 
 #pragma once
@@ -34,20 +35,8 @@
 	#define VECTOR_TRACE(msg) do { } while (0)
 #endif
 
-//function returned successfully
-#ifndef VECTOR_ESUCCESS
-	#error "vector.h requires user to implement VECTOR_ESUCCESS int code"
-#endif
-
-//cannot allocate memory
-#ifndef VECTOR_ENOMEM
-	#error "vector.h requires user to implement VECTOR_ENOMEM int code"
-#endif
-
-//cannot append because vector is full
-#ifndef VECTOR_EFULL
-	#error "vector.h requires user to implement VECTOR_EFULL int code"
-#endif
+//kmalloc
+#define kmalloc(target, bytes) memset((target = malloc(bytes)), 0, 1)
 
 //typedef and forward declaration
 #define alias_vector(pfix)					               \
@@ -63,9 +52,9 @@ struct pfix##_vector {					                       \
 
 //prototypes
 #define api_vector(T, pfix, cls)					       \
-cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap);       \
+cls void pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap);      \
 cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T));	       \
-cls int pfix##_vector_push(pfix##_vector *self, T datum);	               \
+cls void pfix##_vector_push(pfix##_vector *self, T datum);	               \
 cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum);     \
 cls T pfix##_vector_set(pfix##_vector *self, const size_t i, T datum);         \
 cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T));
@@ -77,10 +66,9 @@ cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T));
 /*******************************************************************************
  * @def impl_vector_init
  * @brief Initialize and zero-out the first 'len' elements.
- * @return VECTOR_ENOMEM if dynamic memory allocation fails
  ******************************************************************************/
 #define impl_vector_init(T, pfix, cls)				               \
-cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)        \
+cls void pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)       \
 {                                                                              \
 	assert(self);							       \
 	assert(len <= cap);						       \
@@ -89,18 +77,12 @@ cls int pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)        \
 	self->len = len;                                                       \
 	self->cap = cap;                                                       \
 									       \
-	self->data = malloc(cap * sizeof(T));                                  \
-									       \
-	if (!self->data) {                                                     \
-		VECTOR_TRACE("init fail; cannot allocate memory");	       \
-		return VECTOR_ENOMEM;                                          \
-	}                                                                      \
+	size_t bytes = cap * sizeof(T);					       \
+	kmalloc(self->data, bytes);           				       \
                       	 	 	 	 	                       \
 	memset(self->data, 0, len * sizeof(T));				       \
 									       \
 	VECTOR_TRACE("vector initialized");				       \
-									       \
-	return VECTOR_ESUCCESS;						       \
 }
 
 /*******************************************************************************
@@ -137,16 +119,14 @@ cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T))	       \
 /*******************************************************************************
  * @def impl_vector_push
  * @brief Append an element to the end of the vector in amoritized O(1) time.
- * @return VECTOR_EFULL if vector is already at max capacity or VECTOR_ENOMEM
- * if dynamic memory allocation fails.
  ******************************************************************************/
 #define impl_vector_push(T, pfix, cls)					       \
-cls int pfix##_vector_push(pfix##_vector *self, T datum)	               \
+cls void pfix##_vector_push(pfix##_vector *self, T datum)	               \
 {									       \
 	assert(self);							       \
                                                                                \
 	if (self->len == SIZE_MAX) {                                           \
-		return VECTOR_EFULL;                                           \
+		abort();			                               \
 	}                                                                      \
 									       \
 	if (self->len == self->cap) {					       \
@@ -161,12 +141,9 @@ cls int pfix##_vector_push(pfix##_vector *self, T datum)	               \
 			new_cap = GROW_CAP(self->cap);			       \
 		}							       \
 									       \
-		T *tmp = malloc(new_cap * sizeof(T));			       \
-									       \
-		if (!tmp) {						       \
-			VECTOR_TRACE("push fail; cannot allocate memory");     \
-			return VECTOR_ENOMEM;				       \
-		}							       \
+		T *tmp = NULL;					               \
+		size_t bytes = new_cap * sizeof(T);			       \
+		kmalloc(tmp, bytes);		                               \
 									       \
 		memcpy(tmp, self->data, self->len * sizeof(T));                \
 									       \
@@ -182,8 +159,6 @@ cls int pfix##_vector_push(pfix##_vector *self, T datum)	               \
 	self->len++;							       \
     									       \
 	VECTOR_TRACE("push successful");				       \
-									       \
-	return VECTOR_ESUCCESS;						       \
 }
 
 /*******************************************************************************
@@ -225,7 +200,7 @@ cls T pfix##_vector_set(pfix##_vector *self, const size_t i, T datum)          \
 /*******************************************************************************
  * @def impl_vector_reset
  * @brief Remove all elements from the vector but retain its capacity. After
- * reset, the vector will have a length of zero. 
+ * reset, the vector will have a length of zero.
  * @param vfree If vfree is not null, it will be called on each element that
  * is present in the vector before initiating a reset.
  ******************************************************************************/
@@ -244,7 +219,7 @@ cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T))	       \
 									       \
 	self->len = 0;							       \
 }
-								       
+
 /*******************************************************************************
  * @def make_vector
  * @brief Create a generic vector named pfix_vector which contains elements

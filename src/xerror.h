@@ -18,11 +18,13 @@
  *
  * The xerror logger stores messages in an internal buffer and flushes to stderr
  * when full or when fatal messages are passed. If the macro XERROR_DEBUG is
- * defined, then all log levels on all log calls will trigger an immediate 
+ * defined, then all log levels on all log calls will trigger an immediate
  * flush.
  */
 
 #pragma once
+
+#include "../extern/cexception/CException.h"
 
 /*******************************************************************************
  * @typedef xerror
@@ -96,7 +98,7 @@ const char *xerror_str(const xerror err);
 
 //error codes
 #define XESUCCESS     0 /**< @brief Function returned successfully. */
-#define XENOMEM       1 /**< @brief Dynamic allocation failed. */
+#define XENOMEM	      1 /**< @brief Allocation in 3rd party library failed. */
 #define XEOPTION      2 /**< @brief Options parsing failed. */
 #define XEFULL        3 /**< @brief A container is at capacity. */
 #define XEFILE        4 /**< @brief IO failure. */
@@ -105,13 +107,57 @@ const char *xerror_str(const xerror err);
 #define XETHREAD      7 /**< @brief A Multithreading issue has occured. */
 #define XEUNDEFINED   8 /**< @brief A generic unspecified error has occured. */
 
-//mapping between vector codes and xerror codes
-#define VECTOR_ESUCCESS XESUCCESS
-#define VECTOR_ENOMEM	XENOMEM
-#define VECTOR_EFULL	XEFULL
-
 //mapping between channel codes and xerror codes
 #define CHANNEL_ESUCCESS XESUCCESS
-#define CHANNEL_ENOMEM	 XENOMEM
 #define CHANNEL_EBUSY	 XEBUSY
 #define CHANNEL_ECLOSED  XECLOSED
+
+//exceptions
+#define XXPARSE ((CEXCEPTION_T) 1) /**< @brief Cannot parse current token */
+
+//colour macros provided by @gon1332 at stackoverflow.com/questions/2616906/
+//note several changes: 1) macro names are expanded 2) no-op wrapper where
+//the macro must be defined on the makefile (so that we don't have to check
+//the terminfo database on behalf of the user).
+#ifdef COLOURS
+	#define COLOUR_RESET	"\x1B[0m"
+	#define ANSI_RED  	"\x1B[31m"
+	#define ANSI_GREEN  	"\x1B[32m"
+	#define ANSI_YELLOW 	"\x1B[33m"
+	#define ANSI_BLUE  	"\x1B[34m"
+	#define ANSI_MAGENTA	"\x1B[35m"
+	#define ANSI_CYAN  	"\x1B[36m"
+	#define ANSI_WHITE      "\x1B[37m"
+
+	#define RED(str)	(ANSI_RED str COLOUR_RESET)
+	#define GREEN(str)	(ANSI_GREEN str COLOUR_RESET)
+	#define YELLOW(str)	(ANSI_YELLOW str COLOUR_RESET)
+	#define BLUE(str)	(ANSI_BLUE str COLOUR_RESET)
+	#define MAGENTA(str)	(ANSI_MAGENTA str COLOUR_RESET)
+	#define CYAN(str)	(ANSI_CYAN str COLOUR_RESET)
+	#define WHITE(str)	(ANSI_WHITE str COLOUR_RESET)
+
+	#define BOLD(srt) 	"\x1B[1m" str COLOUR_RESET
+	#define UNDERLINE(x) 	"\x1B[4m" str COLOUR_RESET
+#else
+	#define COLOUR_RESET
+	#define ANSI_RED
+	#define ANSI_GREEN
+	#define ANSI_YELLOW
+	#define ANSI_BLUE
+	#define ANSI_MAGENTA
+	#define ANSI_CYAN
+	#define ANSI_WHITE
+
+	#define RED(str) str
+	#define GREEN(str) str
+	#define YELLOW(str) str
+	#define BLUE(str) str
+	#define MAGENTA(str) str
+	#define CYAN(str) str
+	#define WHITE(str) str
+
+	#define BOLD(str) str
+	#define UNDERLINE(str) str
+
+#endif

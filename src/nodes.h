@@ -73,11 +73,16 @@ typedef struct test {
 
 make_vector(test, test, static)
 
-//the vector<size_t> container is used by array literal expressions to track
+//the vector<intmax_t> container is used by array literal expressions to track
 //designated initializers.
-make_vector(size_t, idx, static)
+make_vector(intmax_t, idx, static)
 
-//The implementation of fiat, decl, stmt, and expr vectors  must be postponed.
+//vector<expr *> is used by complex atoms and function calls. Pointers simplify
+//implementation details for the parser by allowing rvar and call expressions
+//to reuse expression handlers in the recursive descent algorithm.
+make_vector(expr *, expr, static)
+
+//The implementation of fiat, decl, and the stmt vectors  must be postponed.
 //Their corresponding vector_init functions need to have access to sizeof(T) at
 //compile time, but this knowledge is not available until the corresponding
 //structs are defined.
@@ -89,9 +94,6 @@ declare_vector(decl, decl)
 
 alias_vector(stmt)
 declare_vector(stmt, stmt)
-
-alias_vector(expr)
-declare_vector(expr, expr)
 
 /*******************************************************************************
  * @enum typetag
@@ -116,8 +118,8 @@ struct type {
 		type *pointer;
 
 		struct {
-			size_t len;
 			type *base;
+			intmax_t len;
 		} array;
 	};
 };
@@ -143,7 +145,6 @@ struct decl {
 		struct {
 			char *name;
 			member_vector members;
-			uint32_t line;
 			bool public;
 		} udt;
 
@@ -153,18 +154,19 @@ struct decl {
 			type *recv;
 			stmt *block;
 			param_vector params;
-			uint32_t line;
 			bool public;
 		} function;
 
 		struct {
 			char *name;
-			char *type;
+			type *vartype;
 			expr *value;
 			bool mutable;
 			bool public;
 		} variable;
 	};
+
+	uint32_t line;
 };
 
 //finish vector<decl> implementation now that sizeof(decl) is available
@@ -270,6 +272,7 @@ typedef enum exprtag {
 	NODE_ASSIGNMENT,
 	NODE_BINARY,
 	NODE_UNARY,
+	NODE_CAST,
 	NODE_CALL,
 	NODE_SELECTOR,
 	NODE_INDEX,
@@ -303,16 +306,14 @@ struct expr {
 		} binary;
 
 		struct {
-			enum {
-				UNARY_BASIC,
-				UNARY_CAST,
-			} tag;
 			expr *operand;
-			union {
-				char *cast;
-				token_type operator;
-			};
+			token_type operator;
 		} unary;
+
+		struct {
+			expr *operand;
+			type *casttype;
+		} cast;
 
 		struct {
 			expr *name;
@@ -321,7 +322,7 @@ struct expr {
 
 		struct {
 			expr *name;
-			expr *attr;
+			expr *attr; //ident expr
 		} selector;
 
 		struct {
@@ -335,13 +336,13 @@ struct expr {
 		} arraylit;
 
 		struct {
-			expr *dist;
+			char *dist;
 			expr_vector args;
 		} rvarlit;
 
 		struct {
-			char *raw;
-			token_type typ;
+			char *rep;
+			token_type littype;
 		} lit;
 
 		struct {
@@ -352,20 +353,12 @@ struct expr {
 	uint32_t line;
 };
 
-//finish vector<expr> now that sizeof(expr) is available 
-api_vector(expr, expr, static)
-impl_vector_init(expr, expr, static)
-impl_vector_free(expr, expr, static)
-impl_vector_push(expr, expr, static)
-impl_vector_get(expr, expr, static)
-impl_vector_set(expr, expr, static)
-impl_vector_reset(expr, expr, static)
-
 /*******************************************************************************
  * @enum fiattag
  * @brief Union tag for struct fiat
  ******************************************************************************/
 typedef enum fiattag {
+	NODE_INVALID,
 	NODE_DECL,
 	NODE_STMT,
 } fiattag;

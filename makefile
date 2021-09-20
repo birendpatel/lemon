@@ -20,19 +20,42 @@ vpath %.h ./src
 vpath %.h ./src/lib
 vpath %.h ./src/assets
 vpath %.h ./extern/unity
+vpath %.h ./extern/cexception
 
 vpath %.c ./src
 vpath %.c ./src/lib
 vpath %.c ./src/assets
 vpath %.c ./extern/unity
+vpath %.c ./extern/cexception
 
-objects_raw := main.o xerror.o options.o compile.o parser.o scanner.o kmap.o 
+objects_raw := main.o xerror.o options.o compile.o parser.o scanner.o kmap.o \
+	cexception.o
 
 DEBUG_DIR = ./debug/
 objects_debug := $(addprefix $(DEBUG_DIR), $(objects_raw))
 
 RELEASE_DIR = ./release/
 objects_release := $(addprefix $(RELEASE_DIR), $(objects_raw))
+
+#-------------------------------------------------------------------------------
+# source dependencies
+#-------------------------------------------------------------------------------
+
+main_deps := xerror.h compile.h options.h vector.h
+
+xerror_deps := xerror.h CException.h
+
+options_deps := xerror.h options.h
+
+compile_deps := xerror.h compile.h parser.h
+
+parser_deps := xerror.h parser.h channel.h scanner.h nodes.h defs.h options.h
+
+scanner_deps := xerror.h scanner.h channel.h kmap.h
+
+kmap_deps := kmap.h scanner.h
+
+cexception_deps := CException.c
 
 #-------------------------------------------------------------------------------
 # debug build
@@ -54,25 +77,28 @@ debug_deps:
 $(DEBUG_DIR)lemon: $(objects_debug)
 	$(CC) -o $@ $^ -lpthread
 
-$(DEBUG_DIR)main.o: main.c xerror.h compile.h options.h vector.h
+$(DEBUG_DIR)main.o: main.c $(main_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(DEBUG_DIR)xerror.o: xerror.c xerror.h
+$(DEBUG_DIR)xerror.o: xerror.c $(xerror_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(DEBUG_DIR)options.o : options.c xerror.h options.h
+$(DEBUG_DIR)options.o : options.c $(options_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(DEBUG_DIR)compile.o : compile.c xerror.h compile.h parser.h
+$(DEBUG_DIR)compile.o : compile.c $(compile_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(DEBUG_DIR)parser.o : parser.c xerror.h parser.h channel.h scanner.h nodes.h
+$(DEBUG_DIR)parser.o : parser.c $(parser_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(DEBUG_DIR)scanner.o : scanner.c xerror.h scanner.h channel.h kmap.h
+$(DEBUG_DIR)scanner.o : scanner.c $(scanner_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(DEBUG_DIR)kmap.o : kmap.c kmap.h scanner.h
+$(DEBUG_DIR)kmap.o : kmap.c $(kmap_deps)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(DEBUG_DIR)cexception.o : CException.c $(cexception_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 #-------------------------------------------------------------------------------
@@ -81,7 +107,7 @@ $(DEBUG_DIR)kmap.o : kmap.c kmap.h scanner.h
 
 .PHONY: release release_deps
 
-release: CFLAGS += -O2
+release: CFLAGS += -O3
 release: release_deps $(RELEASE_DIR)lemon
 	@echo "\nBuild finished successfully."
 	@echo "Lemon was compiled in release mode."
@@ -93,25 +119,28 @@ release_deps:
 $(RELEASE_DIR)lemon: $(objects_release)
 	$(CC) -o $@ $^ -lpthread
 
-$(RELEASE_DIR)main.o: main.c xerror.h compile.h options.h vector.h
+$(RELEASE_DIR)main.o: main.c $(main_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(RELEASE_DIR)xerror.o: xerror.c xerror.h
+$(RELEASE_DIR)xerror.o: xerror.c $(xerror_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(RELEASE_DIR)options.o : options.c xerror.h options.h
+$(RELEASE_DIR)options.o : options.c $(options_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(RELEASE_DIR)compile.o : compile.c xerror.h compile.h parser.h
+$(RELEASE_DIR)compile.o : compile.c $(compile_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(RELEASE_DIR)parser.o : parser.c xerror.h parser.h channel.h scanner.h nodes.h
+$(RELEASE_DIR)parser.o : parser.c $(parser_deps) 
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(RELEASE_DIR)scanner.o : scanner.c xerror.h scanner.h channel.h kmap.h
+$(RELEASE_DIR)scanner.o : scanner.c $(scanner_deps) 
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(RELEASE_DIR)kmap.o : kmap.c kmap.h scanner.h
+$(RELEASE_DIR)kmap.o : kmap.c $(kmap_deps)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(RELEASE_DIR)cexception.o : CException.c $(cexception_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 #-------------------------------------------------------------------------------

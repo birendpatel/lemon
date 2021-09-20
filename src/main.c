@@ -53,7 +53,7 @@ void char_vector_cleanup(char_vector *v) {
 
 //prototypes
 xerror run_repl(options *opt);
-xerror run(options *opt, char *source);
+xerror run(options *opt, char *source, char *fname);
 void display_header(void);
 xerror run_file(options *opt, int argc, char **argv, int argi);
 void char_vector_cleanup(char_vector *v);
@@ -129,12 +129,7 @@ xerror run_repl(options *opt)
 	xerror err = XEUNDEFINED;
 	RAII char_vector buf = {0};
 
-	err = char_vector_init(&buf, 0, KiB(1));
-
-	if (err) {
-		xerror_issue("cannot init char vector");
-		return XENOMEM;
-	}
+	char_vector_init(&buf, 0, KiB(1));
 
 	while (true) {
 		int prev = 0;
@@ -161,24 +156,14 @@ xerror run_repl(options *opt)
 				fprintf(stdout, "... ");
 			}
 
-			err = char_vector_push(&buf, (char) curr);
-
-			if (err) {
-				xerror_issue("cannot push to char vector");
-				return err;
-			}
+			char_vector_push(&buf, (char) curr);
 
 			prev = curr;
 		}
 
 		//satisfy string requirement requested by run()
-		err = char_vector_push(&buf, '\0');
+		char_vector_push(&buf, '\0');
 		
-		if (err) {
-			xerror_issue("cannot push to char vector");
-			return err;
-		}
-
 		err = run_unknown(opt, buf.data, buf.len);
 
 		if (err) {
@@ -252,7 +237,7 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		}
 
 		fclose(fp);
-		err = run(opt, buf);
+		err = run(opt, buf, argv[i]);
 		free(buf);
 		
 		if (err) {
@@ -316,17 +301,13 @@ xerror get_bytecount(FILE *fp, size_t *n)
  * @param buf Will be a valid pointer to heap if function is successful. User
  * is responsible for managing the memory.
  * @param n Ok if zero
+ * @return XEFILE if read fails.
  ******************************************************************************/
 xerror disk_to_heapstr(FILE *fp, char **buf, size_t n)
 {
 	assert(fp);
 
-	*buf = malloc(sizeof(char) * n + 1);
-
-	if (*buf == NULL) {
-		xerror_issue("cannot allocate enough memory for file size");
-		return XENOMEM;
-	}
+	kmalloc(*buf, sizeof(char) * n + 1);
 
 	size_t match = fread(*buf, sizeof(char), n, fp);
 
@@ -387,7 +368,7 @@ xerror run_unknown(options *opt, char *source, size_t n)
 		return XESUCCESS;
 	}
 
-	return run(opt, source);	
+	return run(opt, source, NULL);	
 }
 
 /*******************************************************************************
@@ -395,7 +376,7 @@ xerror run_unknown(options *opt, char *source, size_t n)
  * @brief Compile source text to bytecode and execute it on the virtual machine.
  * @param src Null terminated char array.
  ******************************************************************************/
-xerror run(options *opt, char *src)
+xerror run(options *opt, char *src, char *fname)
 {
 	assert(opt);
 	assert(src);
@@ -406,7 +387,7 @@ xerror run(options *opt, char *src)
 		fprintf(stderr, "compiler pass: echo\n");
 	}
 
-	err = compile(src, opt);
+	err = compile(src, opt, fname);
 
 	return err;
 }

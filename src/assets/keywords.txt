@@ -14,6 +14,7 @@ case, _CASE
 default, _DEFAULT
 fallthrough, _FALLTHROUGH
 goto, _GOTO
+label, _LABEL
 let, _LET
 mut, _MUT
 struct, _STRUCT

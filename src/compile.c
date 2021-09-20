@@ -7,14 +7,23 @@
 #include <assert.h>
 
 #include "compile.h"
+#include "nodes.h"
 #include "parser.h"
 
-xerror compile(char *src, options *opt)
+//temporary
+#include <stdio.h>
+
+xerror compile(char *src, options *opt, char *fname)
 {
 	assert(opt);
 	assert(src);
 
-	parse(src, opt);
+	file *ast = NULL;
+	xerror err = parse(src, opt, fname, &ast);
+
+	if (err) {
+		return err;
+	}
 
 	return XESUCCESS;
 }
