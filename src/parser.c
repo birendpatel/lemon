@@ -80,6 +80,9 @@ static decl rec_var(parser *self);
 static stmt rec_stmt(parser *self);
 static stmt rec_exprstmt(parser *self);
 static stmt rec_block(parser *self);
+static stmt rec_label(parser *self);
+static stmt rec_anonymous_target(parser *self);
+static stmt rec_named_target(parser *self);
 
 //recursive descent expressions
 static expr *rec_assignment(parser *self);
@@ -899,7 +902,7 @@ type *rec_type(parser *self)
 
 /*******************************************************************************
  * @fn rec_stmt
- * @brief Create a statement node.
+ * @brief Jump table for statement handlers.
  * @return Always returns a valid node. May throw a parse exception.
  ******************************************************************************/
 static stmt rec_stmt(parser *self)
@@ -926,24 +929,27 @@ static stmt rec_stmt(parser *self)
 		break;
 
 	case _RETURN:
-		break;
+		fallthrough;
 
 	case _GOTO:
-		break;
+		fallthrough;
 
 	case _IMPORT:
+		node = rec_named_target(self);
 		break;
 
 	case _BREAK:
-		break;
+		fallthrough;
 
 	case _CONTINUE:
-		break;
+		fallthrough;
 
 	case _FALLTHROUGH:
+		node = rec_anonymous_target(self);
 		break;
 
 	case _LABEL:
+		node = rec_label(self);
 		break;
 
 	default:
@@ -983,6 +989,118 @@ static stmt rec_block(parser *self)
 	}
 
 	parser_advance(self); //move off right brace
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_named_target
+ * @brief goto, import, and return statments. The current token in the parser
+ * should be the leading token of the statement.
+ ******************************************************************************/
+static stmt rec_named_target(parser *self)
+{
+	assert(self);
+
+	stmt node = {
+		.line = self->tok.line
+	};
+
+	switch (self->tok.type) {
+	case _GOTO:
+		node.tag = NODE_GOTOLABEL;
+		move_check(self, _IDENTIFIER, "missing goto target");
+		lexcpy(self, &node.gotolabel, self->tok.lexeme, self->tok.len);
+		move_check_move(self, _SEMICOLON, "missing ';' after goto");
+		break;
+
+	case _IMPORT:
+		node.tag = NODE_IMPORT;
+		move_check(self, _IDENTIFIER, "missing import name");
+		lexcpy(self, &node.import, self->tok.lexeme, self->tok.len);
+		move_check_move(self, _SEMICOLON, "missing ';' after import");
+		break;
+
+	case _RETURN:
+		node.tag = NODE_RETURNSTMT;
+		parser_advance(self);
+
+		//func returns nothing
+		if (self->tok.type == _SEMICOLON) {
+			node.returnstmt = NULL;
+			parser_advance(self);
+			break;
+		}
+
+		node.returnstmt = rec_assignment(self);
+		check_move(self, _SEMICOLON, "missing ';' after return");
+		break;
+	}
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_anonymous_target
+ * @brief break, continue, and fallthrough statements. The current token in the
+ * parser should be the leading token of the statement.
+ ******************************************************************************/
+static stmt rec_anonymous_target(parser *self)
+{
+	assert(self);
+	
+	stmt node = {
+		.line = self->tok.line
+	};
+
+	switch (self->tok.type) {
+	case _BREAK:
+		node.tag = NODE_BREAKSTMT;
+		move_check_move(self, _SEMICOLON, "missing ';' after break");
+		break;
+	
+	case _CONTINUE:
+		node.tag = NODE_CONTINUESTMT;
+		move_check_move(self, _SEMICOLON, "missing ';' after continue");
+		break;
+
+	case _FALLTHROUGH:
+		node.tag = NODE_FALLTHROUGHSTMT;
+		move_check_move(self, _SEMICOLON, "missing ';' after fall");
+		break;
+
+	default:
+		assert(0 != 0 && "func called on non-anonymous token");
+	}
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_label
+ * @brief <label statement> ::= "label" IDENTIFIER ":" <statement> . The current
+ * token in the parser must be the _LABEL keyword.
+ ******************************************************************************/
+static stmt rec_label(parser *self)
+{
+	assert(self);
+
+	stmt node = {
+		.tag = NODE_LABEL,
+		.label = {
+			.name = NULL,
+			.target = NULL
+		},
+		.line = self->tok.line
+	};
+
+	move_check(self, _IDENTIFIER, "label name is not an identifier");
+
+	lexcpy(self, &node.label.name, self->tok.lexeme, self->tok.len);
+
+	move_check_move(self, _COLON, "missing ':' after label name");
+
+	node.label.target = stmt_init(self, rec_stmt(self));
 
 	return node;
 }
