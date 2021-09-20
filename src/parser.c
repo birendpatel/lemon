@@ -87,6 +87,8 @@ static stmt rec_named_target(parser *self);
 static stmt rec_forloop(parser *self);
 static stmt rec_whileloop(parser *self);
 static stmt rec_branch(parser *self);
+static stmt rec_switch(parser *self);
+static test_vector rec_tests(parser *self);
 
 //recursive descent expressions
 static expr *rec_assignment(parser *self);
@@ -476,8 +478,6 @@ static void synchronize(parser *self)
 		case _IF:
 			fallthrough;
 		case _SWITCH:
-			fallthrough;
-		case _CASE:
 			fallthrough;
 		case _EOF:
 			goto exit_loop;
@@ -950,6 +950,7 @@ static stmt rec_stmt(parser *self)
 		break;
 
 	case _SWITCH:
+		node = rec_switch(self);
 		break;
 
 	case _IF:
@@ -1088,6 +1089,78 @@ static stmt rec_whileloop(parser *self)
 	}
 
 	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_switch
+ * @brief <switch statement> ::= "switch" "(" <expression> ")" "{" 
+ * <case statement>* "}"
+ * The token currently held by the parser should be the _SWITCH keyword.
+ ******************************************************************************/
+static stmt rec_switch(parser *self)
+{
+	assert(self);
+
+	stmt node = {
+		.tag = NODE_SWITCHSTMT,
+		.line = self->tok.line
+	};
+
+	move_check_move(self, _LEFTPAREN, "missing '(' after 'switch'");
+
+	node.switchstmt.controller = rec_assignment(self);
+
+	check_move(self, _RIGHTPAREN, "missing ')' after switch condition");
+
+	check_move(self, _LEFTBRACE, "missing '{' to open switch body");
+
+	node.switchstmt.tests = rec_tests(self);
+
+	check_move(self, _RIGHTBRACE, "missing '}' to close switch body");
+
+	return node;
+}
+
+/*******************************************************************************
+ * @fn rec_tests
+ * @brief <case statement> ::= ("case" <expression> | "default") <block stmt>
+ ******************************************************************************/
+static test_vector rec_tests(parser *self)
+{
+	assert(self);
+
+	test_vector vec = {0};
+	test_vector_init(&vec, 0, 4);
+
+	test t = {
+		.cond = NULL,
+		.pass = NULL
+	};
+
+	while (self->tok.type == _CASE || self->tok.type == _DEFAULT) {
+		switch (self->tok.type) {
+		case _CASE:
+			parser_advance(self);
+			t.cond = rec_assignment(self);
+			break;
+
+		case _DEFAULT:
+			parser_advance(self);
+			t.cond = NULL;
+			break;
+		}
+
+		if (self->tok.type != _LEFTBRACE) {
+			usererror("switch cases must use block statements");
+			Throw(XXPARSE);
+		}
+
+		t.pass = stmt_init(self, rec_block(self));
+		test_vector_push(&vec, t);
+		memset(&t, 0, sizeof(test));
+	}
+
+	return vec;
 }
 
 /*******************************************************************************
