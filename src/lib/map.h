@@ -18,9 +18,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-//provide map tracing on stderr if MAP_TRACE_STDERR is defined. The Thread IDs
-//are provided but they may collide because the opaque pthread_t struct uses a
-//void cast. This is a portable mechanism but it is not an injective function.
+//tracing provides Thread IDs but they may collide. The opaque pthread_t struct
+//uses a void cast for portability, but this is not an injective function.
 #ifdef MAP_TRACE_STDERR
 	#include <pthread.h>
 	#include <stdio.h>
@@ -55,43 +54,45 @@ struct pfix##_pair {							       \
 	uint8_t flags;							       \
 };
 
-//pair flag in bit position 0; closed indicates the slot is occupied
-#define MAP_SLOT_CLOSED 1 << 0
-#define MAP_SLOT_OPEN 	0 << 0
+//slot flag at bit position 0; closed indicates the slot is occupied
+#define MAP_SLOT_CLOSED		1 << 0
+#define MAP_SLOT_OPEN 		0 << 0
 
-//pair flag in bit position 1; ghost indicates the kv pair was removed
-#define MAP_SLOT_GHOST	1 << 1
-#define MAP_SLOT_ALIVE	0 << 1	
+//slot flag at bit position 1; garbage indicates the kv pair was removed
+#define MAP_SLOT_GARBAGE	1 << 1
+#define MAP_SLOT_ACTIVE		0 << 1	
 
 //the user should not write directly to the map members. Doing so will corrupt
 //either the load factor or the linear probe.
 //
 //cap provides the length of the data array. len is the total combined number
-//of ghost and closed slots. A slot might be both ghost and closed, but this
+//of garbage and closed slots. A slot might be both garbage and closed, but this
 //counts +1 to length, not +2.
-//
-//kfree and vfree are used in impl_map_free and impl_map_resize. If non-null,
-//they are invoked on keys (kfree) or values (vfree) for garbage collection.
 #define declare_map(pfix, K, V)						       \
 struct pfix##_map {							       \
 	uint64_t len;							       \
 	uint64_t cap;							       \
 	pfix##_pair *data;						       \
-	void (*kfree) (K value);					       \
-	void (*vfree) (V value);					       \
 };
-
-#define impl_dummy_kfree(K, pfix, cls)					       \
-cls void pfix##_dummy_kfree(__attribute__((unused)) K key) { return; }
-
-#define impl_dummy_vfree(V, pfix, cls)					       \
-cls void pfix##_dummy_vfree(__attribute__((unused) V value) { return; }
 
 #ifndef __SIZEOF_INT128__
 	#error "map.h requires 128-bit integer support"
 #endif
 
 //range reduction wrapper over the user-provided hash function.
+//
+//this uses a bit hack typically used in embedded devices and some C compilers
+//to optimize a multiply + divide. It uses far fewer CPU cycles than modulo.
+//
+//lately the technique goes under the name "fastrange" after a paper authored
+//by Daniel Lemire at the University of Quebec. I am not sure the credit is
+//due, as it mostly seems to be a rediscovery of the technique. I originally
+//learned it from the comments of Jacob Vecht and Bill Holland in the blog post:
+//
+//https://embeddedgurus.com/stack-overflow/2011/02/
+//efficient-c-tip-13-use-the-modulus-operator-with-caution/#comment-29259
+//
+//That discussion precedes the fastrange paper by several years.
 #define impl_hash(K, pfix, cls, hfuncptr)				       \
 cls uint64_t pfix##_hash(const K key, uint64_t m)			       \
 {									       \
@@ -105,12 +106,30 @@ cls bool pfix##_equal(K key_1, K key_2)					       \
 	return eqptr(key_1, key_2);					       \
 }
 
+//at compile time, optimizations will remove the branch when kfptr is null and
+//reduce the entire function to a no-op.
+#define impl_kfree(K, pfix, cls, kfptr)					       \
+cls void pfix##_kfree(K value)						       \
+{									       \
+	if (kfptr) {							       \
+		kfptr(K);						       \
+	}								       \
+}
+
+#define impl_vfree(V, pfix, cls, vfptr)					       \
+cls void pfix##_vfree(V value)						       \
+{									       \
+	if (vfptr) {							       \
+		vfptr(V);						       \
+	}								       \
+}
+
 //prototypes
 #define api_map(K, V, pfix, cls)					       \
-cls void pfix##_dummy_kfree(K key);					       \
-cls void pfix##_dummy_vfree(V value);					       \
 cls uint64_t pfix##_hash(const K key, uint64_t m);			       \
 cls bool pfix##_equal(K key_1, K key_2);				       \
+cls void pfix##_kfree(K value);					               \
+cls void pfix##_vfree(V value);						       \
 cls void pfix##_map_init(pfix##_map *self, uint64_t cap);		       \
 cls void pfix##_map_free(pfix##_map *self);				       \
 cls int pfix##_map_insert(pfix##_map *self, const K key, const V value);       \
@@ -122,7 +141,7 @@ cls void pfix##_map_search(pfix##_map *self, const K key, V *value);
  * @def impl_map_init
  * @brief Initialize a new map with a starting capacity.
  ******************************************************************************/
-#define impl_map_init(K, V, pfix, cls, vfptr, kfptr)			       \
+#define impl_map_init(K, V, pfix, cls)					       \
 cls void pfix##_map_init(pfix##_map *self, uint64_t cap)		       \
 {									       \
 	assert(self);							       \
@@ -133,18 +152,6 @@ cls void pfix##_map_init(pfix##_map *self, uint64_t cap)		       \
 									       \
 	self->len = 0;							       \
 	self->cap = cap;						       \
-									       \
-	self->kfree = kfptr;						       \
-									       \
-	if (!self->kfree) {						       \
-		self->kfree = pfix##_dummy_kfree;			       \
-	}								       \
-									       \
-	self->vfree = vfptr;					               \
-									       \
-	if (!self->vfree) {					               \
-		self->vfree = pfix##_dummy_vfree;			       \
-	}								       \
 									       \
 	size_t bytes = sizeof(pfix##_pair) * cap;	 		       \
 	kmalloc(self->data, bytes);					       \
@@ -170,8 +177,8 @@ cls void pfix##_map_free(pfix##_map *self)                                     \
 									       \
 	for (uint64_t i = 0; i < self->cap; i++) {			       \
 		if (self->data[i].flags & MAP_SLOT_CLOSED) {                   \
-			self->vfree(self->data[i].key);			       \
-			self->kfree(self->data[i].value);		       \
+			pfix##_kfree(self->data[i].key);		       \
+			pfix##_vfree(self->data[i].value);		       \
 		}							       \
 	}							               \
 									       \
@@ -269,19 +276,20 @@ cls void pfix##_map_resize(pfix##_map *self)
  * The eqptr is a function pointer used to compare two keys. Its signature must
  * be bool (*)(K, K) and should return true only if the two keys are identical.
  *
- * vfptr and kfptr are the vfree and kfree function pointers, see doc comments
- * for the map struct. They have signatures void (*)(K) and void (*)(V) or NULL.
+ * vfptr and kfptr have signatures void (*)(K) and void(*)(V), respectively.
+ * They may be NULL. These functions are invoked on keys and/or values when
+ * the map is free'd or when it performs cleanup operations during resizing.
  ******************************************************************************/
 #define make_map(K, V, pfix, cls, hfuncptr, eqptr, vfptr, kfptr)	       \
 	alias_map(pfix)							       \
 	declare_pair(K, V, pfix)					       \
 	declare_map(pfix, K, V)						       \
 	api_map(K, V, pfix, cls)					       \
-	impl_dummy_kfree(K, pfix, cls)					       \
-	impl_dummy_vfree(V, pfix, cls)					       \
 	impl_hash(K, pfix, cls, hfuncptr)				       \
 	impl_equal(K, pfix, cls, eqptr)					       \
-	impl_map_init(K, V, pfix, cls, vfptr, kfptr)			       \
+	impl_kfree(K, pfix, cls, kfptr)					       \
+	impl_vfree(V, pfix, cls, vfptr)					       \
+	impl_map_init(K, V, pfix, cls)					       \
 	impl_map_free(K, V, pfix, cls)					       \
 	impl_map_insert(K, V, pfix, cls)		                       \
 	impl_map_resize(K, V, pfix, cls)
