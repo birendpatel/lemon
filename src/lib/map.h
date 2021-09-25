@@ -6,8 +6,10 @@
  * @details This file is plug and play, but with a few words of advice. Maps use
  * a memset trick to immediately induce a segmentation violation whenever stdlib
  * allocs fail. You must remove the kmalloc wrapper and introduce error codes
- * where appropriate if you want to avoid this behavior. The program will also
- * abort if you attempt to add more than UINT64_MAX elements to the hash table.
+ * where appropriate if you want to avoid this behavior.
+ *
+ * It is recommended that you run initially with assertions enabled as most
+ * API calls use assertions to validate preconditions.
  */
 
 #pragma once
@@ -43,6 +45,10 @@
 	#error "user must implement the MAP_EEXISTS integer error code"
 #endif
 
+#ifndef MAP_EFULL
+	#error "user must implement the MAP_EFULL integer error code"
+#endif
+
 #define alias_map(pfix)							       \
 typedef struct pfix##_map pfix##_map;
 
@@ -51,23 +57,11 @@ typedef struct pfix##_map pfix##_map;
 struct pfix##_pair {							       \
 	K key;								       \
 	V value;							       \
-	uint8_t flags;							       \
+	bool closed;							       \
 };
-
-//slot flag at bit position 0; closed indicates the slot is occupied
-#define MAP_SLOT_CLOSED		1 << 0
-#define MAP_SLOT_OPEN 		0 << 0
-
-//slot flag at bit position 1; garbage indicates the kv pair was removed
-#define MAP_SLOT_GARBAGE	1 << 1
-#define MAP_SLOT_ACTIVE		0 << 1	
 
 //the user should not write directly to the map members. Doing so will corrupt
 //either the load factor or the linear probe.
-//
-//cap provides the length of the data array. len is the total combined number
-//of garbage and closed slots. A slot might be both garbage and closed, but this
-//counts +1 to length, not +2.
 #define declare_map(pfix, K, V)						       \
 struct pfix##_map {							       \
 	uint64_t len;							       \
@@ -81,18 +75,12 @@ struct pfix##_map {							       \
 
 //range reduction wrapper over the user-provided hash function.
 //
-//this uses a bit hack typically used in embedded devices and some C compilers
+//this uses a bit hack typically used in embedded devices and some compilers
 //to optimize a multiply + divide. It uses far fewer CPU cycles than modulo.
-//
-//lately the technique goes under the name "fastrange" after a paper authored
-//by Daniel Lemire at the University of Quebec. I am not sure the credit is
-//due, as it mostly seems to be a rediscovery of the technique. I originally
-//learned it from the comments of Jacob Vecht and Bill Holland in the blog post:
+//See comments from Jacob Vecht and Bill Holland at:
 //
 //https://embeddedgurus.com/stack-overflow/2011/02/
 //efficient-c-tip-13-use-the-modulus-operator-with-caution/#comment-29259
-//
-//That discussion precedes the fastrange paper by several years.
 #define impl_hash(K, pfix, cls, hfuncptr)				       \
 cls uint64_t pfix##_hash(const K key, uint64_t m)			       \
 {									       \
@@ -145,10 +133,7 @@ cls void pfix##_map_search(pfix##_map *self, const K key, V *value);
 cls void pfix##_map_init(pfix##_map *self, uint64_t cap)		       \
 {									       \
 	assert(self);							       \
-									       \
-	if (cap == 0) {							       \
-		abort();						       \
-	}								       \
+	assert(cap != 0);						       \
 									       \
 	self->len = 0;							       \
 	self->cap = cap;						       \
@@ -172,18 +157,23 @@ cls void pfix##_map_free(pfix##_map *self)                                     \
 	assert(self);							       \
 									       \
 	if (!self->data) {						       \
+		MAP_TRACE("map not initialized; nothing to free.");            \
 		return;							       \
 	}								       \
 									       \
+	MAP_TRACE("freeing map elements");				       \
 	for (uint64_t i = 0; i < self->cap; i++) {			       \
-		if (self->data[i].flags & MAP_SLOT_CLOSED) {                   \
+		if (self->data[i].closed) { 		                       \
 			pfix##_kfree(self->data[i].key);		       \
 			pfix##_vfree(self->data[i].value);		       \
 		}							       \
 	}							               \
 									       \
+	MAP_TRACE("freeing map data pointer");				       \
 	free(self->data);						       \
 }
+
+#define LOAD_FACTOR_THRESHOLD 0.5
 
 /*******************************************************************************
  * @def impl_map_insert
@@ -195,42 +185,53 @@ cls void pfix##_map_free(pfix##_map *self)                                     \
 #define impl_map_insert(K, V, pfix, cls)				       \
 cls int pfix##_map_insert(pfix##_map *self, const K key, const V value)        \
 {									       \
-	assert(self);
-	assert(self->data);
-
-	double load_factor = (double) self->len / (double) self->cap;
-
-	/* len check must happen before probe. The probe does not check */
-	/* if it has wrapped around so it will trap into an infinite loop */
-	/* if no slots are available */
-	if (self->len == UINT64_MAX) {
-		abort();
-	}
-
-	if (load_factor >= 0.5) {
-		pfix##_map_resize(self);
-	}
-
-	uint64_t pos = pfix##_hash(K, self->cap);
-
-	/* linear probe */
-	while (true) {
-		if (!self->data[pos].closed) {
-			break;
-		} else if (pfix##_equal(K, self->data[pos].key)) {
-			return MAP_EEXIST;
-		}
-
-		pos = pos + 1 >= self->cap ? 0 : pos + 1;
-	}
-
-	self->data[pos].closed = true;
-	self->data[pos].key = K;
-	self->data[pos].value = V;
-	self->len++;
-
-	return MAP_ESUCCESS;
+	assert(self);							       \
+	assert(self->data);						       \
+									       \
+	if (self->len == UINT64_MAX) {					       \
+		return MAP_EFULL;					       \
+	}								       \
+									       \
+	static bool lock = false;					       \
+									       \
+	if (!lock) {							       \
+		MAP_TRACE("locked load factor");			       \
+		lock = true;						       \
+									       \
+		if (self->cap == UINT64_MAX) {				       \
+			MAP_TRACE("permanently locking load factor");	       \
+			goto probe;					       \
+		}							       \
+									       \
+		pfix##_map_resize(self);				       \
+									       \
+		lock = false;						       \
+		MAP_TRACE("unlocked load factor");			       \
+	}								       \
+									       \
+probe:									       \
+	uint64_t pos = pfix##_hash(K, self->cap);			       \
+									       \
+	while (true) {							       \
+		if (!self->data[pos].closed) {                                 \
+			break;						       \
+		}							       \
+									       \
+		if (pfix##_equal(K, self->data[pos].key)) {		       \
+			return MAP_EEXISTS;				       \
+		}							       \
+									       \
+		pos = pos + 1 >= self->cap ? 0 : pos + 1;		       \
+	}								       \
+									       \
+	self->data[pos].key = K;					       \
+	self->data[pos].value = V;					       \
+	self->data[pos].closed = true;	 				       \
+	self->len++;							       \
+									       \
+	return MAP_ESUCCESS;					               \
 }
+
 /*******************************************************************************
  * @def impl_map_resize
  * @brief Internal function; Do not call directly from user code.
@@ -240,10 +241,6 @@ cls void pfix##_map_resize(pfix##_map *self)
 {
 	assert(self);
 	assert(self->data);
-
-	if (self->cap == UINT64_MAX) {
-		return;
-	}
 
 	uint64_t new_cap = 0;
 
