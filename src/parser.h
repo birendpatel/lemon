@@ -1,18 +1,9 @@
-/**
- * @file parser.h
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v.3.0.
- * @brief Parser API.
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v.3.0.
 
 #pragma once
 
 #include "options.h"
 #include "xerror.h"
 
-/*******************************************************************************
- * @fn parse
- * @brief Transform raw source code to an abstract syntax tree.
- * @param src Null terminated char array
- * @param file Points to a valid AST root node if function returns succesfully.
- ******************************************************************************/
+//create an abstract syntax tree. The input src must be null terminated.
 xerror parse(char *src, options *opt, char *fname, file **ast);

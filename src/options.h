@@ -1,15 +1,14 @@
-/*
- * @file options.h
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Lemon command line options API.
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+// API for the command line options handler
 
 #pragma once
 
 #include <stdint.h>
+#include <stdio.h>
 
 #include "xerror.h"
 
+//all options are represented as bit flags within some category
 typedef struct options {
 	uint8_t diagnostic;
 	uint8_t ir;
@@ -17,7 +16,7 @@ typedef struct options {
 	uint8_t user;
 } options;
 
-//bitwise operations for reading the options struct
+//bit flag positions within the options struct
 #define DIAGNOSTIC_ALL 		1 << 0
 #define DIAGNOSTIC_OPT		1 << 1
 #define DIAGNOSTIC_PASS		1 << 2
@@ -27,24 +26,15 @@ typedef struct options {
 #define MACHINE_NORUN		1 << 1
 #define USER_INTERACTIVE	1 << 0
 
-/*******************************************************************************
- * @fn options_init
- * @brief Initialize an options struct to the default state.
- *******************************************************************************/
 options options_init(void);
 
-/*******************************************************************************
- * @fn options_parse
- * @brief GNU argp option parser. Must be invoked before reading from options.
- * @param argi Index in argv of the first element not parsed by this function.
- * The argv argument is reordered so that all elements in argv from [argi, argc)
- * are elements that were not parsed.
- * @returns Possibly LEMON_ENOMEM or LEMON_EOPTION.
- ******************************************************************************/
+//must be invoked before reading flags from the options struct.
+//
+//on success, argi is the index of the first element in argv that was not parsed
+//by the options handler. Argv is reordered so that all elements in argv from
+//[argi, argc) are elements that were not parsed.
+//
+//returns XENOMEM, XEOPTION, or XESUCCESS.
 xerror options_parse(options *self, int argc, char **argv, int *argi);
 
-/*******************************************************************************
- * @fn options_display
- * @brief Print all options on stderr.
- ******************************************************************************/
-void options_display(options *self);
+void options_fprintf(options *self, FILE *stream);

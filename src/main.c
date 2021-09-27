@@ -81,7 +81,7 @@ int main(int argc, char **argv)
 	}
 
 	if (opt.diagnostic & DIAGNOSTIC_OPT) {
-		options_display(&opt);
+		options_fprintf(&opt, stderr);
 	}
 
 	if (argi == argc) {

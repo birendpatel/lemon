@@ -7,7 +7,6 @@
 #include <argp.h>
 #include <assert.h>
 #include <errno.h>
-#include <stdio.h>
 
 #include "defs.h"
 #include "options.h"
@@ -160,25 +159,26 @@ xerror options_parse(options *self, int argc, char **argv, int *argi)
 
 #define TO_BOOL(x) ((x) ? 1 : 0)
 
-void options_display(options *self)
+void options_fprintf(options *self, FILE *stream)
 {
-	fprintf(stderr, "OPTIONS\n\n");
+	assert(stream);
+	fprintf(stream, "OPTIONS\n\n");
 
-	fprintf(stderr, "diagnostic\n");
-	fprintf(stderr, "\tall: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_ALL));
-	fprintf(stderr, "\topt: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_OPT));
-	fprintf(stderr, "\tpass: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_PASS));
-	fprintf(stderr, "\ttokens: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_TOKENS));
-	fprintf(stderr, "\tthread: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_THREAD));
+	fprintf(stream, "diagnostic\n");
+	fprintf(stream, "\tall: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_ALL));
+	fprintf(stream, "\topt: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_OPT));
+	fprintf(stream, "\tpass: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_PASS));
+	fprintf(stream, "\ttokens: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_TOKENS));
+	fprintf(stream, "\tthread: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_THREAD));
 
-	fprintf(stderr, "\nintermediate representation\n");
-	fprintf(stderr, "\tdisassemble: %d\n", TO_BOOL(self->ir & IR_DISASSEMBLE));
+	fprintf(stream, "\nintermediate representation\n");
+	fprintf(stream, "\tdisassemble: %d\n", TO_BOOL(self->ir & IR_DISASSEMBLE));
 
-	fprintf(stderr, "\nvirtual machine\n");
-	fprintf(stderr, "\tnorun: %d\n", TO_BOOL(self->machine & MACHINE_NORUN));
+	fprintf(stream, "\nvirtual machine\n");
+	fprintf(stream, "\tnorun: %d\n", TO_BOOL(self->machine & MACHINE_NORUN));
 
-	fprintf(stderr, "\nuser preferences\n");
-	fprintf(stderr, "\tinteractive: %d\n", TO_BOOL(self->user & USER_INTERACTIVE));
+	fprintf(stream, "\nuser preferences\n");
+	fprintf(stream, "\tinteractive: %d\n", TO_BOOL(self->user & USER_INTERACTIVE));
 
-	fprintf(stderr, "\nEND OPTIONS\n\n");
+	fprintf(stream, "\nEND OPTIONS\n\n");
 }
