@@ -15,11 +15,6 @@ To install Lemon, you need a POSIX compliant system or POSIX comptability layer 
 - GCC 8.3.0+
 - GNU Make 4.2.1+
 
-If you want to hack around on the source code or become a contributor, you also need to install:
-
-- Doxygen 1.8.13+
-- Python 3.8.10
-
 # Installation Guide
 
 1. Clone this repository
