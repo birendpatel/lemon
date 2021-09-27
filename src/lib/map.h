@@ -121,8 +121,8 @@ cls void pfix##_vfree(V value);						       \
 cls void pfix##_map_init(pfix##_map *self, uint64_t cap);		       \
 cls void pfix##_map_free(pfix##_map *self);				       \
 cls int pfix##_map_insert(pfix##_map *self, const K key, const V value);       \
+cls int pfix##_map_probe(pfix##_map *self, const K key, const V value);        \
 cls void pfix##_map_resize(pfix##_map *self);				       \
-cls void pfix##_map_remove(pfix##_map *self, const K key, V *value);	       \
 cls void pfix##_map_search(pfix##_map *self, const K key, V *value);
 
 /*******************************************************************************
@@ -192,29 +192,32 @@ cls int pfix##_map_insert(pfix##_map *self, const K key, const V value)        \
 		return MAP_EFULL;					       \
 	}								       \
 									       \
-	static bool lock = false;					       \
+	const double load_factor = self->len / (double) self->cap;	       \
 									       \
-	if (!lock) {							       \
-		MAP_TRACE("locked load factor");			       \
-		lock = true;						       \
-									       \
-		if (self->cap == UINT64_MAX) {				       \
-			MAP_TRACE("permanently locking load factor");	       \
-			goto probe;					       \
-		}							       \
-									       \
+	if (self->cap != UINT64_MAX && load_factor > LOAD_FACTOR_THRESHOLD) {  \
 		pfix##_map_resize(self);				       \
+	}							 	       \
 									       \
-		lock = false;						       \
-		MAP_TRACE("unlocked load factor");			       \
-	}								       \
-									       \
-probe:									       \
+	return pfix##_map_probe(self, K, V);				       \
+}
+
+/*******************************************************************************
+ * @def impl_map_probe
+ * @brief Insertion via linear probing. Assumes there is at least one empty
+ * slot in the hash table. Do not call directly from user code.
+ * @return MAP_EEXISTS if K is already in the hash table regardless of V.
+ ******************************************************************************/
+#define impl_map_probe(K, V, pfix, cls)					       \
+cls int pfix##_map_probe(pfix##_map *self, const K key, const V value)         \
+{									       \
+	assert(self);							       \
+	assert(self->data);						       \
+								               \
 	uint64_t pos = pfix##_hash(K, self->cap);			       \
 									       \
 	while (true) {							       \
-		if (!self->data[pos].closed) {                                 \
-			break;						       \
+		if (!self->data[pos].closed) {				       \
+			 break;						       \
 		}							       \
 									       \
 		if (pfix##_equal(K, self->data[pos].key)) {		       \
@@ -223,13 +226,13 @@ probe:									       \
 									       \
 		pos = pos + 1 >= self->cap ? 0 : pos + 1;		       \
 	}								       \
-									       \
+								               \
 	self->data[pos].key = K;					       \
 	self->data[pos].value = V;					       \
-	self->data[pos].closed = true;	 				       \
-	self->len++;							       \
+	self->data[pos].closed = true;					       \
+	self->len++;						               \
 									       \
-	return MAP_ESUCCESS;					               \
+	return MAP_ESUCCESS;						       \
 }
 
 /*******************************************************************************
@@ -242,19 +245,29 @@ cls void pfix##_map_resize(pfix##_map *self)
 	assert(self);
 	assert(self->data);
 
-	uint64_t new_cap = 0;
+	pfix##_map new = {0};
+	uint64_t cap = 0;
 
 	if (self->len >= (UINT64_MAX / 2)) {
-		new_cap = UINT64_MAX;
+		cap = UINT64_MAX;
 	} else {
-		new_cap = self->len * 2;
+		cap = self->len * 2;
 	}
 
-	pfix##_map *old = self;
+	pfix##_map_init(&curr, cap);
 
-	pfix##_map_init(self, new_cap);
+	for (uint64_t i = 0; i < self->cap; i++) {
+		if (self->data[i].closed) {
+			K key = self->data[i].key;
+			V value = self->data[i].value;
 
-	
+			(void) pfix##_map_probe(&curr, key, value);
+		}
+	}
+
+	pfix##_map_free(self);
+
+	*self = new;
 }
 
 /*******************************************************************************
@@ -289,4 +302,5 @@ cls void pfix##_map_resize(pfix##_map *self)
 	impl_map_init(K, V, pfix, cls)					       \
 	impl_map_free(K, V, pfix, cls)					       \
 	impl_map_insert(K, V, pfix, cls)		                       \
+	impl_map_probe(K, V, pfix, cls)					       \
 	impl_map_resize(K, V, pfix, cls)
