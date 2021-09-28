@@ -18,44 +18,29 @@
 
 #include "lib/vector.h"
 
-xerror run_from_repl(options *opt);
-xerror compile(options *opt, char *source, char *fname);
-void display_header(void);
-xerror run_from_file(options *opt, int argc, char **argv, int argi);
-void file_cleanup(FILE **fp);
+xerror config_options(options *opt, int argc, char **argv, int *total_parsed);
+xerror exec_unknown(options *opt, int argc, char **argv, int total_parsed);
+xerror exec_from_file(options *opt, int argc, char **argv, int argi);
+xerror exec_from_repl(options *opt);
 xerror exec_shell_command(options *opt, char *src);
-xerror get_bytecount(FILE *fp, size_t *n);
-xerror duplicate_file_contents_as_string(FILE *fp, char **buf, size_t n);
+void display_header(void);
 void display_help(void);
+void file_cleanup(FILE **fp);
+xerror duplicate_file_contents_as_string(FILE *fp, char **buf, size_t n);
+xerror get_bytecount(FILE *fp, size_t *n);
+xerror compile(options *opt, char *source, char *fname);
 
 int main(int argc, char **argv)
 {
-	options opt = options_init();
-
+	options opt = {0};
 	int total_parsed = 0;
-	xerror err = options_parse(&opt, argc, argv, &total_parsed);
+	xerror err = XEUNDEFINED;
 
-	if (err) {
-		goto fail;
-	}
+	err = config_options(&opt, argc, argv, &total_parsed);
+	if (err) { goto fail; }
 
-	if (opt.diagnostic & DIAGNOSTIC_OPT) {
-		options_fprintf(&opt, stderr);
-	}
-
-	if (total_parsed == argc) {
-		err = run_from_repl(&opt);
-	} else {
-		err = run_from_file(&opt, argc, argv, total_parsed);
-
-		if (!err && (opt.user & USER_INTERACTIVE)) {
-			err = run_from_repl(&opt);
-		}
-	}
-
-	if (err) {
-		goto fail;
-	}
+	err = exec_unknown(&opt, argc, argv, total_parsed);
+	if (err) { goto fail; }
 
 	xerror_flush();
 	return EXIT_SUCCESS;
@@ -64,6 +49,45 @@ fail:
 	xerror_fatal("%s", xerror_str(err));
 	display_help();
 	return EXIT_FAILURE;
+}
+
+xerror config_options(options *opt, int argc, char **argv, int *total_parsed)
+{
+	assert(opt);
+	assert(argc);
+	assert(argv);
+	assert(total_parsed);
+
+	*opt = options_init();
+
+	xerror err = options_parse(opt, argc, argv, total_parsed);
+
+	if (!err && opt->diagnostic & DIAGNOSTIC_OPT) {
+		options_fprintf(opt, stderr);
+	}
+
+	return err;
+}
+
+xerror exec_unknown(options *opt, int argc, char **argv, int total_parsed)
+{
+	assert(opt);
+	assert(argc);
+	assert(argv);
+
+	xerror err = XEUNDEFINED;
+
+	if (total_parsed == argc) {
+		err = exec_from_repl(opt);
+	} else {
+		err = exec_from_file(opt, argc, argv, total_parsed);
+
+		if (!err && (opt->user & USER_INTERACTIVE)) {
+			err = exec_from_repl(opt);
+		}
+	}
+
+	return err;
 }
 
 void display_help(void)
@@ -96,7 +120,7 @@ void stdin_vector_cleanup(stdin_vector *vec) {
 
 #define RAII __attribute__((__cleanup__(stdin_vector_cleanup)))
 
-xerror run_from_repl(options *opt)
+xerror exec_from_repl(options *opt)
 {
 	RAII stdin_vector buf = {0};
 	stdin_vector_init(&buf, 0, KiB(1));
@@ -151,7 +175,7 @@ xerror run_from_repl(options *opt)
 	return XESUCCESS;
 }
 
-xerror run_from_file(options *opt, int argc, char **argv, int argi)
+xerror exec_from_file(options *opt, int argc, char **argv, int argi)
 {
 	assert(opt);
 	assert(argc);
