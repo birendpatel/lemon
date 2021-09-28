@@ -25,9 +25,8 @@ xerror exec_from_repl(options *opt);
 xerror exec_shell_command(options *opt, char *src);
 void display_header(void);
 void display_help(void);
-void file_cleanup(FILE **fp);
-xerror duplicate_file_contents_as_string(FILE *fp, char **buf, size_t n);
-xerror get_bytecount(FILE *fp, size_t *n);
+xerror copy_file_to_string(FILE *fp, char **buf, size_t n);
+xerror get_filesize(FILE *fp, size_t *n);
 xerror compile(options *opt, char *source, char *fname);
 
 int main(int argc, char **argv)
@@ -92,7 +91,7 @@ xerror exec_unknown(options *opt, int argc, char **argv, int total_parsed)
 
 void display_help(void)
 {
-	static const char *msg =
+	const char *msg =
 		"\nProgram failed. Report an issue: "
 		"https://github.com/birendpatel/lemon/issues\n";
 
@@ -101,7 +100,7 @@ void display_help(void)
 
 void display_header(void)
 {
-	static const char *msg =
+	const char *msg =
 		"Lemon (%s) (Compiler %s %s)\n"
 		"Copyright (C) 2021 Biren Patel.\n"
 		"GNU General Public License v3.0.\n\n"
@@ -112,18 +111,16 @@ void display_header(void)
 	fprintf(stdout, msg, LEMON_VERSION, __DATE__, __TIME__);
 }
 
+//C-style template which creates a vector<char> aliased as stdin_vector.
+//see /src/lib/vector.h
 make_vector(char, stdin, static inline)
-
-void stdin_vector_cleanup(stdin_vector *vec) {
-	stdin_vector_free(vec, NULL);
-}
-
-#define RAII __attribute__((__cleanup__(stdin_vector_cleanup)))
 
 xerror exec_from_repl(options *opt)
 {
-	RAII stdin_vector buf = {0};
-	stdin_vector_init(&buf, 0, KiB(1));
+	xerror err = XESUCCESS;
+
+	stdin_vector userinput = {0};
+	stdin_vector_init(&userinput, 0, KiB(1));
 
 	display_header();
 
@@ -140,7 +137,8 @@ xerror exec_from_repl(options *opt)
 
 			if (curr == EOF) {
 				fprintf(stdout, "\n");
-				return XESUCCESS;
+				err = XESUCCESS;
+				goto cleanup;
 			}
 
 			if (curr == '\n') {
@@ -151,28 +149,30 @@ xerror exec_from_repl(options *opt)
 				fprintf(stdout, "... ");
 			}
 
-			stdin_vector_push(&buf, (char) curr);
+			stdin_vector_push(&userinput, (char) curr);
 
 			prev = curr;
 		}
 
-		stdin_vector_push(&buf, '\0');
+		stdin_vector_push(&userinput, '\0');
 
-		bool not_shell_cmd = exec_shell_command(opt, buf.data);
+		bool not_shell_cmd = exec_shell_command(opt, userinput.data);
 
 		if (not_shell_cmd) {
-			xerror err = compile(opt, buf.data, NULL);
+			xerror err = compile(opt, userinput.data, NULL);
 
 			if (err) {
 				xerror_issue("cannot compile from repl");
-				return err;
+				goto cleanup;
 			}
 		}
 
-		stdin_vector_reset(&buf, NULL);
+		stdin_vector_reset(&userinput, NULL);
 	}
 
-	return XESUCCESS;
+cleanup:
+	stdin_vector_free(&userinput, NULL);
+	return err;
 }
 
 xerror exec_from_file(options *opt, int argc, char **argv, int argi)
@@ -195,7 +195,7 @@ xerror exec_from_file(options *opt, int argc, char **argv, int argi)
 		}
 
 		size_t len = 0;
-		err =  get_bytecount(fp, &len);
+		err =  get_filesize(fp, &len);
 
 		if (err) {
 			xerror_issue("%s: cannot get bytecount", argv[i]);
@@ -203,7 +203,7 @@ xerror exec_from_file(options *opt, int argc, char **argv, int argi)
 		}
 
 		char *buf = NULL;
-		err = duplicate_file_contents_as_string(fp, &buf, len);
+		err = copy_file_to_string(fp, &buf, len);
 
 		if (err) {
 			xerror_issue("%s: cannot copy to memory", argv[i]);
@@ -230,52 +230,70 @@ fail:
 	return err;
 }
 
-//fp must be an open file. On success, the file position indicator will be set
-//set to the beginning of the file.
-xerror get_bytecount(FILE *fp, size_t *n)
+//this function moves the file position indicator but will move it back to the
+//original position on a successful return.
+xerror get_filesize(FILE *openfile, size_t *bytes)
 {
-	assert(fp);
-	assert(n);
+	assert(openfile);
+	assert(bytes);
 
-	rewind(fp);
+	xerror xerr = XESUCCESS;
+	long savepoint = ftell(openfile);
 
-	long err = fseek(fp, 0L, SEEK_END);
+	if (savepoint == -1) {
+		xerror_issue("fseek: cannot save fpos: %s", strerror(errno));
+		return XEFILE;
+	}
+
+	long err = fseek(openfile, 0L, SEEK_END);
 
 	if (err == -1) {
-		xerror_issue("fseek: %s", strerror(errno));
-		return XEFILE;
+		xerror_issue("fseek: cannot move to EOF: %s", strerror(errno));
+		xerr = XEFILE;
+		goto reset;
 	}
 
-	long bytecount = ftell(fp);
+	long bytecount = ftell(openfile);
 
 	if (bytecount == -1) {
-		xerror_issue("ftell: %s", strerror(errno));
-		return XEFILE;
+		xerror_issue("ftell: cannot fetch count: %s", strerror(errno));
+		xerr = XEFILE;
+		goto reset;
 	}
 
-	*n = (size_t) bytecount;
+	*bytes = (size_t) bytecount;
 
-	rewind(fp);
+	xerr = XESUCCESS;
 
-	return XESUCCESS;
+reset:
+	err = fseek(openfile, savepoint, SEEK_SET);
+
+	if (err) {
+		xerror_issue("fseek: cannot reset fpos: %s", strerror(errno));
+		xerr = XEFILE;
+	}
+
+	return xerr;
 }
 
-//copy the contents of the open file fp into a heap buf as a string of length
-//n + 1, n >= 0. returns XEFILE if read of fp fails.
-xerror duplicate_file_contents_as_string(FILE *fp, char **buf, size_t n)
+xerror copy_file_to_string(FILE *openfile, char **dest, size_t filesize)
 {
-	assert(fp);
+	assert(openfile);
 
-	kmalloc(*buf, sizeof(char) * n + 1);
+	char *string = NULL;
 
-	size_t total_read = fread(*buf, sizeof(char), n, fp);
+	kmalloc(string, sizeof(char) * filesize + 1);
 
-	if (total_read != n) {
+	size_t total_read = fread(string, sizeof(char), filesize, openfile);
+
+	if (total_read != filesize) {
 		xerror_issue("%s", strerror(errno));
 		return XEFILE;
 	}
 
-	(*buf)[n] = '\0';
+	string[filesize] = '\0';
+
+	*dest = string;
 
 	return XESUCCESS;
 }
