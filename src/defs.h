@@ -3,7 +3,7 @@
 
 #pragma once
 
-#define LEMON_VERSION "(alpha)"
+#define LEMON_VERSION "Alpha"
 
 static inline size_t KiB(const size_t kilos) {
 	const size_t multiplier = 1024;

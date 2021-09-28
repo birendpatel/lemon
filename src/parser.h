@@ -6,4 +6,4 @@
 #include "xerror.h"
 
 //create an abstract syntax tree. The input src must be null terminated.
-xerror parse(char *src, options *opt, char *fname, file **ast);
+xerror parse(options *opt, char *src, char *fname, file **ast);

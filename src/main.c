@@ -1,30 +1,8 @@
-/*
- * @file main.c
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief The main file is responsible for options parsing, REPL management,
- * disk IO, and log management.
- * @details call graph:
- *
- *
- *   main ----> options_parse
- *     |
- *     |------> display_header
- *     |
- *     |------> help
- *     |
- *     |
- *     |          |----------> char_vector_cleanup
- *     |          |
- *     |          |
- *     |------> run_repl ----> run_unknown-------|
- *     |	 	                         |----> run
- *     |------> run_file-------------------------|
- *                |
- * 	          |-------> get_bytecount
- *	          |
- *	          |-------> disk_to_heapstr
- *
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+
+#ifndef __GNUC__
+	#error "Lemon requires a GNU C compiler"
+#endif
 
 #include <errno.h>
 #include <stdbool.h>
@@ -32,49 +10,30 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "compile.h"
 #include "defs.h"
-#include "lib/vector.h"
+#include "nodes.h"
 #include "options.h"
+#include "parser.h"
 #include "xerror.h"
 
-#ifndef __GNUC__
-	#error "Lemon requires a GNU C compiler"
-#endif
+#include "lib/vector.h"
 
-//vector<char> is used by the REPL for input buffering.
-make_vector(char, char, static inline)
-
-void char_vector_cleanup(char_vector *v) {
-	char_vector_free(v, NULL);
-}
-
-#define RAII __attribute__((__cleanup__(char_vector_cleanup)))
-
-//prototypes
-xerror run_repl(options *opt);
-xerror run(options *opt, char *source, char *fname);
+xerror run_from_repl(options *opt);
+xerror compile(options *opt, char *source, char *fname);
 void display_header(void);
-xerror run_file(options *opt, int argc, char **argv, int argi);
-void char_vector_cleanup(char_vector *v);
+xerror run_from_file(options *opt, int argc, char **argv, int argi);
 void file_cleanup(FILE **fp);
-xerror run_unknown(options *opt, char *source, size_t n);
+xerror exec_shell_command(options *opt, char *src);
 xerror get_bytecount(FILE *fp, size_t *n);
-xerror disk_to_heapstr(FILE *fp, char **buf, size_t n);
-void help(void);
+xerror duplicate_file_contents_as_string(FILE *fp, char **buf, size_t n);
+void display_help(void);
 
-/*******************************************************************************
- * @fn main
- * @brief Main parses the command line options and then delegates compilation
- * to either the REPL or the file reader.
- ******************************************************************************/
 int main(int argc, char **argv)
 {
-	xerror err = XEUNDEFINED;
-	int argi = 0;
 	options opt = options_init();
-	
-	err = options_parse(&opt, argc, argv, &argi);
+
+	int total_parsed = 0;
+	xerror err = options_parse(&opt, argc, argv, &total_parsed);
 
 	if (err) {
 		goto fail;
@@ -84,14 +43,13 @@ int main(int argc, char **argv)
 		options_fprintf(&opt, stderr);
 	}
 
-	if (argi == argc) {
-		display_header();
-		err = run_repl(&opt);
+	if (total_parsed == argc) {
+		err = run_from_repl(&opt);
 	} else {
-		err = run_file(&opt, argc, argv, argi);
+		err = run_from_file(&opt, argc, argv, total_parsed);
 
 		if (!err && (opt.user & USER_INTERACTIVE)) {
-			err = run_repl(&opt);
+			err = run_from_repl(&opt);
 		}
 	}
 
@@ -104,32 +62,46 @@ int main(int argc, char **argv)
 
 fail:
 	xerror_fatal("%s", xerror_str(err));
-	help();
+	display_help();
 	return EXIT_FAILURE;
 }
 
-/*******************************************************************************
- * @fn help
- * @brief Display message on fatal program termination
- ******************************************************************************/
-void help(void)
+void display_help(void)
 {
-	const char *help  = "\nProgram failed. Report an issue: " 
-			    "https://github.com/birendpatel/lemon/issues\n";
+	static const char *msg =
+		"\nProgram failed. Report an issue: "
+		"https://github.com/birendpatel/lemon/issues\n";
 
-	fprintf(stderr, "%s", help);
+	fprintf(stderr, "%s", msg);
 }
 
-/*******************************************************************************
- * @fn run_repl
- * @returns LEMON_ENOMEM, LEMON_EFULL, or LEMON_ESUCCESS
- ******************************************************************************/
-xerror run_repl(options *opt)
+void display_header(void)
 {
-	xerror err = XEUNDEFINED;
-	RAII char_vector buf = {0};
+	static const char *msg =
+		"Lemon (%s) (Compiler %s %s)\n"
+		"Copyright (C) 2021 Biren Patel.\n"
+		"GNU General Public License v3.0.\n\n"
+		"- Double tap 'return' to execute source code.\n"
+		"- Prefix input with '$' to execute a shell command.\n"
+		"- Exit with Ctrl-C.\n\n";
 
-	char_vector_init(&buf, 0, KiB(1));
+	fprintf(stdout, msg, LEMON_VERSION, __DATE__, __TIME__);
+}
+
+make_vector(char, stdin, static inline)
+
+void stdin_vector_cleanup(stdin_vector *vec) {
+	stdin_vector_free(vec, NULL);
+}
+
+#define RAII __attribute__((__cleanup__(stdin_vector_cleanup)))
+
+xerror run_from_repl(options *opt)
+{
+	RAII stdin_vector buf = {0};
+	stdin_vector_init(&buf, 0, KiB(1));
+
+	display_header();
 
 	while (true) {
 		int prev = 0;
@@ -137,7 +109,6 @@ xerror run_repl(options *opt)
 
 		fprintf(stdout, ">>> ");
 
-		//read input until a double newline occurs
 		while (true) {
 			fflush(stdout);
 
@@ -156,52 +127,31 @@ xerror run_repl(options *opt)
 				fprintf(stdout, "... ");
 			}
 
-			char_vector_push(&buf, (char) curr);
+			stdin_vector_push(&buf, (char) curr);
 
 			prev = curr;
 		}
 
-		//satisfy string requirement requested by run()
-		char_vector_push(&buf, '\0');
-		
-		err = run_unknown(opt, buf.data, buf.len);
+		stdin_vector_push(&buf, '\0');
 
-		if (err) {
-			xerror_issue("failed to run source from REPL");
-			return err;
+		bool not_shell_cmd = exec_shell_command(opt, buf.data);
+
+		if (not_shell_cmd) {
+			xerror err = compile(opt, buf.data, NULL);
+
+			if (err) {
+				xerror_issue("cannot compile from repl");
+				return err;
+			}
 		}
 
-		char_vector_reset(&buf, NULL);
+		stdin_vector_reset(&buf, NULL);
 	}
 
 	return XESUCCESS;
 }
 
-/*******************************************************************************
- * @fn display_header
- * @brief License, version, compile date, etc displayed on the REPL.
- ******************************************************************************/
-void display_header(void)
-{
-	fprintf(stdout, "Lemon %s ", LEMON_VERSION);
-	fprintf(stdout, "(Compiled %s %s)\n", __DATE__, __TIME__);
-	fprintf(stdout, "Copyright (C) 2021 Biren Patel. ");
-	fprintf(stdout, "GNU General Public License v3.0.\n\n");
-
-	fprintf(stdout, "- Double tap 'return' to execute your source code.\n");
-	fprintf(stdout, "- Run shell commands by prefixing them with '$'.\n");
-	fprintf(stdout, "- Exit Lemon with a keyboard interrupt (Ctrl-C)\n\n");
-
-	return;
-}
-
-/*******************************************************************************
- * @fn run_file
- * @brief Compile from source file.
- * @details Lemon does not yet have a module system. Therefore, all files are
- * processed sequentially in isolation.
- ******************************************************************************/
-xerror run_file(options *opt, int argc, char **argv, int argi)
+xerror run_from_file(options *opt, int argc, char **argv, int argi)
 {
 	assert(opt);
 	assert(argc);
@@ -229,7 +179,7 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		}
 
 		char *buf = NULL;
-		err = disk_to_heapstr(fp, &buf, len);
+		err = duplicate_file_contents_as_string(fp, &buf, len);
 
 		if (err) {
 			xerror_issue("%s: cannot copy to memory", argv[i]);
@@ -237,9 +187,9 @@ xerror run_file(options *opt, int argc, char **argv, int argi)
 		}
 
 		fclose(fp);
-		err = run(opt, buf, argv[i]);
+		err = compile(opt, buf, argv[i]);
 		free(buf);
-		
+
 		if (err) {
 			xerror_issue("%s: cannot compile contents", argv[i]);
 			goto fail;
@@ -256,62 +206,47 @@ fail:
 	return err;
 }
 
-/*******************************************************************************
- * @fn get_bytecount
- * @brief Extract the total number of bytes in a file
- * @param fp fp must be an open file. On success, the file position indicator
- * will be set to the beginning of the file.
- ******************************************************************************/
+//fp must be an open file. On success, the file position indicator will be set
+//set to the beginning of the file.
 xerror get_bytecount(FILE *fp, size_t *n)
 {
 	assert(fp);
 	assert(n);
 
-	long file_err = 0;
-
 	rewind(fp);
 
-	//move to the end of the file
-	file_err = fseek(fp, 0L, SEEK_END);
+	long err = fseek(fp, 0L, SEEK_END);
 
-	if (file_err == -1) {
+	if (err == -1) {
 		xerror_issue("fseek: %s", strerror(errno));
 		return XEFILE;
 	}
 
-	//extract total bytes
-	file_err = ftell(fp);
+	long bytecount = ftell(fp);
 
-	if (file_err == -1) {
+	if (bytecount == -1) {
 		xerror_issue("ftell: %s", strerror(errno));
 		return XEFILE;
 	}
 
-	*n = (size_t) file_err;
+	*n = (size_t) bytecount;
 
 	rewind(fp);
 
 	return XESUCCESS;
 }
 
-/*******************************************************************************
- * @fn disk_to_heapstr
- * @brief Read file contents into memory as a C string
- * @param fp Must be an open file
- * @param buf Will be a valid pointer to heap if function is successful. User
- * is responsible for managing the memory.
- * @param n Ok if zero
- * @return XEFILE if read fails.
- ******************************************************************************/
-xerror disk_to_heapstr(FILE *fp, char **buf, size_t n)
+//copy the contents of the open file fp into a heap buf as a string of length
+//n + 1, n >= 0. returns XEFILE if read of fp fails.
+xerror duplicate_file_contents_as_string(FILE *fp, char **buf, size_t n)
 {
 	assert(fp);
 
 	kmalloc(*buf, sizeof(char) * n + 1);
 
-	size_t match = fread(*buf, sizeof(char), n, fp);
+	size_t total_read = fread(*buf, sizeof(char), n, fp);
 
-	if (n != match) {
+	if (total_read != n) {
 		xerror_issue("%s", strerror(errno));
 		return XEFILE;
 	}
@@ -321,73 +256,53 @@ xerror disk_to_heapstr(FILE *fp, char **buf, size_t n)
 	return XESUCCESS;
 }
 
-/*******************************************************************************
- * @fn run_unknown
- * @brief Assess if the input is a shell command or if it is lemon source and
- * invoke the correct actions.
- * @param source Null terminated char array
- ******************************************************************************/
-//TODO: refactor shell handling and include the waitpid information.
-xerror run_unknown(options *opt, char *source, size_t n)
-{
-	assert(opt);
-	assert(source);
-	assert(n > 0);
-	assert(source[n - 1] == '\0');
-
-	if (source[0] == '$') {
-		int err = 0;
-
-		//let user expect behavior that they would expect from the man 3
-		//system docs. Therefore, if user enters '$\n\0' then the return
-		//status indicates if the shell is available on the system. Since
-		//the REPL waits for a double-enter, the check for a final NULL
-		//terminator is necessary.
-		if (strncmp("$\n\0", source, 3) == 0) {
-			err = system(NULL);
-		} else {
-			err = system(source + 1);
-		}
-
-		//we dont use xerror handler here because shell failures are not
-		//compiler failures. Instead, we pass the shell information onto
-		//the user but otherwise the compiler itself hasn't encountered
-		//an issue and is in a perfectly usable state.
-		switch (err) {
-		case -1:
-			perror(NULL);
-			break;
-		case 127:
-			fprintf(stderr, "cannot exec shell in child process\n");
-			break;
-		default:
-			fprintf(stderr, "shell termination status: %d\n", err);
-		}
-
-		/* dont shutdown the REPL when the shell fails */
-		return XESUCCESS;
-	}
-
-	return run(opt, source, NULL);	
-}
-
-/*******************************************************************************
- * @fn run
- * @brief Compile source text to bytecode and execute it on the virtual machine.
- * @param src Null terminated char array.
- ******************************************************************************/
-xerror run(options *opt, char *src, char *fname)
+//returns XESHELL if input src is not a shell command. Else, return XESUCCESS
+//even if the shell command failed. (shell failures are not compiler failures).
+//
+//src must be null terminated.
+xerror exec_shell_command(options *opt, char *src)
 {
 	assert(opt);
 	assert(src);
 
-	xerror err = XEUNDEFINED;
+	if (src[0] != '$') {
+		return XESHELL;
+	}
+
+	int err = 0;
+	const char *null_command = "$\n\0";
+	bool match = !strcmp(null_command, src);
+
+	if (match) {
+		err = system(NULL);
+	} else {
+		err = system(src + 1);
+	}
+
+	if (err == -1) {
+		perror(NULL);
+	} else if (WIFEXITED(err)) {
+		fprintf(stderr, "termination status; %d\n", WEXITSTATUS(err));
+	}
+
+	return XESUCCESS;
+}
+
+xerror compile(options *opt, char *src, char *fname)
+{
+	assert(opt);
+	assert(src);
 
 	if (opt->diagnostic & DIAGNOSTIC_PASS) {
 		fprintf(stderr, "compiler pass: echo\n");
 	}
 
-	err = compile(src, opt, fname);
+	file *ast = NULL;
+	xerror err = parse(opt, src, fname, &ast);
+
+	if (err) {
+		xerror_issue("cannot create abstact syntax tree");
+	}
 
 	return err;
 }

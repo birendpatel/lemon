@@ -108,7 +108,7 @@ static expr *rec_ident(parser *self, token tok);
 static expr *rec_access(parser *self, expr *prev);
 
 //parser entry point; configure parser members and launch recursive descent
-xerror parse(char *src, options *opt, char *fname, file **ast)
+xerror parse(options *opt, char *src, char *fname, file **ast)
 {
 	assert(src);
 	assert(opt);

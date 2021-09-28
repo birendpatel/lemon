@@ -1,8 +1,4 @@
-/**
- * @file options.c
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Lemon command line options implementation.
- */
+ // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <argp.h>
 #include <assert.h>
@@ -161,7 +157,6 @@ xerror options_parse(options *self, int argc, char **argv, int *argi)
 
 void options_fprintf(options *self, FILE *stream)
 {
-	assert(stream);
 	fprintf(stream, "OPTIONS\n\n");
 
 	fprintf(stream, "diagnostic\n");
