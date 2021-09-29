@@ -7,23 +7,24 @@
 #include "defs.h"
 #include "options.h"
 
-//argp options keys; options without a short name begin at 256
-#define DIAGNOSTIC_ALL_KEY	256
-#define DIAGNOSTIC_OPT_KEY	257
-#define DIAGNOSTIC_PASS_KEY	258
-#define DIAGNOSTIC_TOKENS_KEY	259
-#define DIAGNOSTIC_THREAD_KEY	260
-#define IR_DISASSEMBLE_KEY	'S'
-#define MACHINE_NORUN_KEY	'k'
-#define USER_INTERACTIVE_KEY	'i'
 
-//argp global parameters and docs
+#define NO_SHORT_OPTION(key) (256 + key)
+#define SHORT_OPTION(key) key
+
+#define DIAGNOSTIC_ALL_KEY	NO_SHORT_OPTION(0)
+#define DIAGNOSTIC_OPT_KEY	NO_SHORT_OPTION(1)
+#define DIAGNOSTIC_PASS_KEY	NO_SHORT_OPTION(2)
+#define DIAGNOSTIC_TOKENS_KEY	NO_SHORT_OPTION(3)
+#define DIAGNOSTIC_THREAD_KEY	NO_SHORT_OPTION(4)
+#define IR_DISASSEMBLE_KEY	SHORT_OPTION('S')
+#define MACHINE_NORUN_KEY	SHORT_OPTION('k')
+#define USER_INTERACTIVE_KEY	SHORT_OPTION('i')
+
 const char *argp_program_version = LEMON_VERSION;
-const char *argp_program_bug_address = "https://github.com/birendpatel/lemon/issues";
+const char *argp_program_bug_address = "github.com/birendpatel/lemon/issues";
 static char args_doc[] = "<file 1> ... <file n>";
 static char doc[] = "\nThis is the C Lemon interpreter for the Lemon language.";
 
-//argp options descriptions
 static struct argp_option options_info[] = {
 	{
 		.name = "Dall",
@@ -38,22 +39,22 @@ static struct argp_option options_info[] = {
 	{
 		.name = "Dpass",
 		.key  = DIAGNOSTIC_PASS_KEY,
-		.doc  = "Notify on all entry and exit points for all compiler passes."
+		.doc  = "Notify entry and exit points for all compiler passes."
 	},
 	{
 		.name = "Dtokens",
 		.key  = DIAGNOSTIC_TOKENS_KEY,
-		.doc  = "Display tokens on stderr once lexical analysis is complete."
+		.doc  = "Display tokens found during lexical analysis."
 	},
 	{
 		.name = "Dthread",
 		.key  = DIAGNOSTIC_THREAD_KEY,
-		.doc  = "Notify on all thread creation, detachment, exits, and joins."
+		.doc  = "Notify on thread creation and joins."
 	},
 	{
 		.name = "Iasm",
 		.key  = IR_DISASSEMBLE_KEY,
-		.doc  = "Output disassembled bytecode from the final pass to stderr."
+		.doc  = "Output disassembled bytecode."
 	},
 	{
 		.name = "Mkill",
@@ -64,11 +65,12 @@ static struct argp_option options_info[] = {
 		.key = USER_INTERACTIVE_KEY,
 		.doc = "Launch the REPL after the input files have executed."
 	},
-	{0} //terminator required by argp, otherwise nonprintables will appear in -?
+	
+	//terminator required by argp
+	{0} 
 };
 
-//argp parser actions
-error_t parser(int key, __attribute__((unused)) char *arg, struct argp_state *state)
+error_t parser(int key, unused char *arg, struct argp_state *state)
 {
 	options *opt = (options *) state->input;
 
@@ -107,12 +109,14 @@ error_t parser(int key, __attribute__((unused)) char *arg, struct argp_state *st
 
 	default:
 		return ARGP_ERR_UNKNOWN;
+		break;
 	}
 
 	return 0;
 }
 
-options options_init(void) {
+options OptionsInit(void) 
+{
 	options opt = {
 		.diagnostic = 0,
 		.ir = 0,
@@ -123,7 +127,7 @@ options options_init(void) {
 	return opt;
 }
 
-xerror options_parse(options *self, int argc, char **argv, int *argi)
+xerror OptionsParse(options *self, int argc, char **argv, int *argi)
 {
 	assert(self);
 	assert(argc > 0);
@@ -143,37 +147,42 @@ xerror options_parse(options *self, int argc, char **argv, int *argi)
 		return XENOMEM;
 	} else if (err == EINVAL) {
 		return XEOPTION;
-	} else {
-		//catch unknown errnos in debug mode.
-		//argp documentation only lists ENOMEM and EINVAL
-		//but suggests other error codes could appear.
-		assert(err == 0);
-	}
+	} 
+
+	//argp docs only list ENOMEM and EINVAL but suggest that other error
+	//codes could appear.
+	assert(err == 0);
 
 	return XESUCCESS;
 }
 
 #define TO_BOOL(x) ((x) ? 1 : 0)
 
-void options_fprintf(options *self, FILE *stream)
+void OptionsPrint(options *self, FILE *stream)
 {
-	fprintf(stream, "OPTIONS\n\n");
+	const char *msg = "diagnostic\n"
+			  "\tall: %d\n"
+			  "\topt: %d\n"
+			  "\tpass: %d\n"
+			  "\ttokens: %d\n"
+			  "\tthread: %d\n"
+			  "\nintermediate representation\n"
+			  "\tdisassemble: %d\n"
+			  "\nvirtual machine\n"
+			  "\tnorun: %d\n"
+			  "\nuser preferences\n"
+			  "\tinteractive: %d\n"
+			  "\n";
 
-	fprintf(stream, "diagnostic\n");
-	fprintf(stream, "\tall: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_ALL));
-	fprintf(stream, "\topt: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_OPT));
-	fprintf(stream, "\tpass: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_PASS));
-	fprintf(stream, "\ttokens: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_TOKENS));
-	fprintf(stream, "\tthread: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_THREAD));
+	int dall = TO_BOOL(self->diagnostic & DIAGNOSTIC_ALL);
+	int dopt = TO_BOOL(self->diagnostic & DIAGNOSTIC_OPT);
+	int dpass = TO_BOOL(self->diagnostic & DIAGNOSTIC_PASS);
+	int dtokens = TO_BOOL(self->diagnostic & DIAGNOSTIC_TOKENS);
+	int dthread = TO_BOOL(self->diagnostic & DIAGNOSTIC_THREAD);
+	int irdasm = TO_BOOL(self->ir & IR_DISASSEMBLE);
+	int mnorun = TO_BOOL(self->machine & MACHINE_NORUN);
+	int uinteractive = TO_BOOL(self->user & USER_INTERACTIVE);
 
-	fprintf(stream, "\nintermediate representation\n");
-	fprintf(stream, "\tdisassemble: %d\n", TO_BOOL(self->ir & IR_DISASSEMBLE));
-
-	fprintf(stream, "\nvirtual machine\n");
-	fprintf(stream, "\tnorun: %d\n", TO_BOOL(self->machine & MACHINE_NORUN));
-
-	fprintf(stream, "\nuser preferences\n");
-	fprintf(stream, "\tinteractive: %d\n", TO_BOOL(self->user & USER_INTERACTIVE));
-
-	fprintf(stream, "\nEND OPTIONS\n\n");
+	fprintf(stream, msg, dall, dopt, dpass, dtokens, dthread, irdasm,
+		mnorun, uinteractive);
 }

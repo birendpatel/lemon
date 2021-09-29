@@ -82,14 +82,14 @@ xerror ConfigOptions(options *opt, int argc, char **argv, int *total_parsed)
 	assert(argv);
 	assert(total_parsed);
 
-	*opt = options_init();
+	*opt = OptionsInit();
 
+	xerror err = OptionsParse(opt, argc, argv, total_parsed);
+	
 	bool state_flag = opt->diagnostic & DIAGNOSTIC_OPT;
 
-	xerror err = options_parse(opt, argc, argv, total_parsed);
-
 	if (!err && state_flag) {
-		options_fprintf(opt, stderr);
+		OptionsPrint(opt, stderr);
 	}
 
 	return err;

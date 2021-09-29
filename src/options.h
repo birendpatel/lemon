@@ -8,7 +8,7 @@
 
 #include "xerror.h"
 
-//every command line option is mapped to a bit flag.
+//command line options are represented as bit flags
 typedef struct options {
 	uint8_t diagnostic;
 	uint8_t ir;
@@ -16,7 +16,6 @@ typedef struct options {
 	uint8_t user;
 } options;
 
-//flags
 #define DIAGNOSTIC_ALL 		1 << 0
 #define DIAGNOSTIC_OPT		1 << 1
 #define DIAGNOSTIC_PASS		1 << 2
@@ -26,13 +25,13 @@ typedef struct options {
 #define MACHINE_NORUN		1 << 1
 #define USER_INTERACTIVE	1 << 0
 
-options options_init(void);
+options OptionsInit(void);
 
-//returns XEOPTION on failure or may abort within function.
+//This function may abort the program. Returns XENOMEM, XEOPTION, or XESUCCESS.
 //
 //on success, argi is the index in argv of the first element not parsed by the
 //options handler. The elements of argv are reordered so that all elements
 //from [argi, argc) are unparsed elements.
-xerror options_parse(options *self, int argc, char **argv, int *argi);
+xerror OptionsParse(options *self, int argc, char **argv, int *argi);
 
-void options_fprintf(options *self, FILE *stream);
+void OptionsPrint(options *self, FILE *stream);

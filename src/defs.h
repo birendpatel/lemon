@@ -16,6 +16,8 @@
 
 #define fallthrough __attribute__((fallthrough))
 
+#define unused __attribute__((unused))
+
 #define KiB(kilos) (1024 * kilos)
 
 //induce a segementation violation if the allocation request failed. The Lemon
