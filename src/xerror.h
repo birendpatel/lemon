@@ -64,7 +64,7 @@ void xerror_flush(void);
 #define XEFULL        3 //container is at capacity
 #define XEFILE        4 //IO failure
 #define XEBUSY        5 //a thread is waiting on a condition
-#define XECLOSED      6 //attempted to use a closed channel
+#define XECLOSED      6 //communication channel is closed
 #define XETHREAD      7 //multithreading issue has occured
 #define XESHELL	      8 //shell error
 #define XEUNDEFINED   9 //generic unspecified error has occured

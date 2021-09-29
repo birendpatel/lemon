@@ -5,12 +5,18 @@
 
 #define LEMON_VERSION "Alpha"
 
-static inline size_t KiB(const size_t kilos) {
-	const size_t multiplier = 1024;
-	return kilos * multiplier;
-}
+#ifdef __GNUC__
+	#define GCC_VERSION_MAJ (__GNUC__ * 10000)
+	#define GCC_VERSION_MIN (__GNUC_MINOR__ * 100)
+	#define GCC_VERSION_PCH (__GNUC_PATCHLEVEL__)
+	#define GCC_VERSION GCC_VERSION_MAJ + GCC_VERSION_MIN + GCC_VERSION_PCH
+#else
+	#define GCC_VERSION 0
+#endif
 
 #define fallthrough __attribute__((fallthrough))
+
+#define KiB(kilos) (1024 * kilos)
 
 //induce a segementation violation if the allocation request failed. The Lemon
 //compiler uses a "fail fast and fail early" design philosophy.

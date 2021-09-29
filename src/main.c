@@ -1,8 +1,11 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-
-#ifndef __GNUC__
-	#error "Lemon requires a GNU C compiler"
-#endif
+//
+// The main file contains all of the initialization and cleanup required before
+// and after compilation and execution. The main tasks are command line options
+// parsing, file IO, REPL management, symbol table management, and disassembly.
+//
+// The file also orchestrates the compiler phases and invokes each phase in turn
+// according to which optimisation and diagnostic flags have been set.
 
 #include <errno.h>
 #include <stdbool.h>
@@ -18,16 +21,32 @@
 
 #include "lib/vector.h"
 
-xerror config_options(options *opt, int argc, char **argv, int *total_parsed);
-xerror exec_unknown(options *opt, int argc, char **argv, int total_parsed);
-xerror exec_from_file(options *opt, int argc, char **argv, int argi);
-xerror exec_from_repl(options *opt);
-xerror exec_shell_command(options *opt, char *src);
-void display_header(void);
-void display_help(void);
-xerror copy_file_to_string(FILE *fp, char **buf, size_t n);
-xerror get_filesize(FILE *fp, size_t *n);
-xerror compile(options *opt, char *source, char *fname);
+#if GCC_VERSION < 80300
+	#error "Lemon requires GCC 8.3.0 or greater."
+#endif
+
+//C-style template which creates a vector<char> aliased as stdin_vector.
+make_vector(char, stdin, static inline)
+
+void StdinVectorCleanup(stdin_vector *vec)
+{
+	stdin_vector_free(vec, NULL);
+}
+
+#define RAII __attribute__((__cleanup__(StdinVectorCleanup)))
+
+xerror ConfigOptions(options *opt, int argc, char **argv, int *total_parsed);
+xerror ExecUnknown(options *opt, int argc, char **argv, int total_parsed);
+xerror ExecFile(options *opt, int argc, char **argv, int argi);
+xerror ExecRepl(options *opt);
+xerror CollectInputAsString(stdin_vector *userinput);
+bool IsShellCommand(char *src);
+void ExecShell(options *opt, char *src);
+void ShowHeader(void);
+void ShowHelp(void);
+xerror FileToString(FILE *fp, char **buf, size_t n);
+xerror GetFilesize(FILE *fp, size_t *n);
+xerror Compile(options *opt, char *source, char *fname);
 
 int main(int argc, char **argv)
 {
@@ -35,22 +54,28 @@ int main(int argc, char **argv)
 	int total_parsed = 0;
 	xerror err = XEUNDEFINED;
 
-	err = config_options(&opt, argc, argv, &total_parsed);
-	if (err) { goto fail; }
+	err = ConfigOptions(&opt, argc, argv, &total_parsed);
 
-	err = exec_unknown(&opt, argc, argv, total_parsed);
-	if (err) { goto fail; }
+	if (err) {
+		goto fail;
+	}
+
+	err = ExecUnknown(&opt, argc, argv, total_parsed);
+
+	if (err) {
+		goto fail;
+	}
 
 	xerror_flush();
 	return EXIT_SUCCESS;
 
 fail:
 	xerror_fatal("%s", xerror_str(err));
-	display_help();
+	ShowHelp();
 	return EXIT_FAILURE;
 }
 
-xerror config_options(options *opt, int argc, char **argv, int *total_parsed)
+xerror ConfigOptions(options *opt, int argc, char **argv, int *total_parsed)
 {
 	assert(opt);
 	assert(argc);
@@ -59,16 +84,18 @@ xerror config_options(options *opt, int argc, char **argv, int *total_parsed)
 
 	*opt = options_init();
 
+	bool state_flag = opt->diagnostic & DIAGNOSTIC_OPT;
+
 	xerror err = options_parse(opt, argc, argv, total_parsed);
 
-	if (!err && opt->diagnostic & DIAGNOSTIC_OPT) {
+	if (!err && state_flag) {
 		options_fprintf(opt, stderr);
 	}
 
 	return err;
 }
 
-xerror exec_unknown(options *opt, int argc, char **argv, int total_parsed)
+xerror ExecUnknown(options *opt, int argc, char **argv, int total_parsed)
 {
 	assert(opt);
 	assert(argc);
@@ -77,19 +104,19 @@ xerror exec_unknown(options *opt, int argc, char **argv, int total_parsed)
 	xerror err = XEUNDEFINED;
 
 	if (total_parsed == argc) {
-		err = exec_from_repl(opt);
+		err = ExecRepl(opt);
 	} else {
-		err = exec_from_file(opt, argc, argv, total_parsed);
+		err = ExecFile(opt, argc, argv, total_parsed);
 
 		if (!err && (opt->user & USER_INTERACTIVE)) {
-			err = exec_from_repl(opt);
+			err = ExecRepl(opt);
 		}
 	}
 
 	return err;
 }
 
-void display_help(void)
+void ShowHelp(void)
 {
 	const char *msg =
 		"\nProgram failed. Report an issue: "
@@ -98,7 +125,7 @@ void display_help(void)
 	fprintf(stderr, "%s", msg);
 }
 
-void display_header(void)
+void ShowHeader(void)
 {
 	const char *msg =
 		"Lemon (%s) (Compiler %s %s)\n"
@@ -111,71 +138,79 @@ void display_header(void)
 	fprintf(stdout, msg, LEMON_VERSION, __DATE__, __TIME__);
 }
 
-//C-style template which creates a vector<char> aliased as stdin_vector.
-//see /src/lib/vector.h
-make_vector(char, stdin, static inline)
-
-xerror exec_from_repl(options *opt)
+xerror ExecRepl(options *opt)
 {
-	xerror err = XESUCCESS;
-
-	stdin_vector userinput = {0};
+	RAII stdin_vector userinput = {0};
 	stdin_vector_init(&userinput, 0, KiB(1));
 
-	display_header();
+	ShowHeader();
 
 	while (true) {
-		int prev = 0;
-		int curr = 0;
+		xerror err = CollectInputAsString(&userinput);
 
-		fprintf(stdout, ">>> ");
-
-		while (true) {
-			fflush(stdout);
-
-			curr = fgetc(stdin);
-
-			if (curr == EOF) {
-				fprintf(stdout, "\n");
-				err = XESUCCESS;
-				goto cleanup;
-			}
-
-			if (curr == '\n') {
-				if (prev == '\n') {
-					break;
-				}
-
-				fprintf(stdout, "... ");
-			}
-
-			stdin_vector_push(&userinput, (char) curr);
-
-			prev = curr;
+		if (err == XECLOSED) {
+			return XESUCCESS;
 		}
 
-		stdin_vector_push(&userinput, '\0');
+		char *source = userinput.data;
 
-		bool not_shell_cmd = exec_shell_command(opt, userinput.data);
-
-		if (not_shell_cmd) {
-			xerror err = compile(opt, userinput.data, NULL);
+		if (IsShellCommand(source)) {
+			ExecShell(opt, source);
+		} else {
+			err = Compile(opt, source, NULL);
 
 			if (err) {
 				xerror_issue("cannot compile from repl");
-				goto cleanup;
+				return err;
 			}
 		}
 
 		stdin_vector_reset(&userinput, NULL);
 	}
+}
 
-cleanup:
-	stdin_vector_free(&userinput, NULL);
+//returns XECLOSED if encountered a SIGINT.
+xerror CollectInputAsString(stdin_vector *buffer)
+{
+	assert(buffer);
+
+	xerror err = XEUNDEFINED;
+	int prev = 0;
+	int curr = 0;
+
+	fprintf(stdout, ">>> ");
+
+	while (true) {
+		fflush(stdout);
+
+		curr = fgetc(stdin);
+
+		if (curr == EOF) {
+			fprintf(stdout, "\n");
+			err = XECLOSED;
+			break;
+		}
+
+		if (curr == '\n') {
+			if (prev == '\n') {
+				err = XESUCCESS;
+				break;
+			}
+
+			fprintf(stdout, "... ");
+		}
+
+		stdin_vector_push(buffer, (char) curr);
+
+		prev = curr;
+	}
+
+	stdin_vector_push(buffer, '\0');
+
 	return err;
 }
 
-xerror exec_from_file(options *opt, int argc, char **argv, int argi)
+xerror ExecFile(options *opt, int argc, char **argv, int argi)
 {
 	assert(opt);
 	assert(argc);
@@ -195,7 +230,7 @@ xerror exec_from_file(options *opt, int argc, char **argv, int argi)
 		}
 
 		size_t len = 0;
-		err =  get_filesize(fp, &len);
+		err =  GetFilesize(fp, &len);
 
 		if (err) {
 			xerror_issue("%s: cannot get bytecount", argv[i]);
@@ -203,7 +238,7 @@ xerror exec_from_file(options *opt, int argc, char **argv, int argi)
 		}
 
 		char *buf = NULL;
-		err = copy_file_to_string(fp, &buf, len);
+		err = FileToString(fp, &buf, len);
 
 		if (err) {
 			xerror_issue("%s: cannot copy to memory", argv[i]);
@@ -211,7 +246,7 @@ xerror exec_from_file(options *opt, int argc, char **argv, int argi)
 		}
 
 		fclose(fp);
-		err = compile(opt, buf, argv[i]);
+		err = Compile(opt, buf, argv[i]);
 		free(buf);
 
 		if (err) {
@@ -232,7 +267,7 @@ fail:
 
 //this function moves the file position indicator but will move it back to the
 //original position on a successful return.
-xerror get_filesize(FILE *openfile, size_t *bytes)
+xerror GetFilesize(FILE *openfile, size_t *bytes)
 {
 	assert(openfile);
 	assert(bytes);
@@ -276,13 +311,14 @@ reset:
 	return xerr;
 }
 
-xerror copy_file_to_string(FILE *openfile, char **dest, size_t filesize)
+xerror FileToString(FILE *openfile, char **dest, size_t filesize)
 {
 	assert(openfile);
 
 	char *string = NULL;
+	size_t string_size = sizeof(char) * filesize + 1;
 
-	kmalloc(string, sizeof(char) * filesize + 1);
+	kmalloc(string, string_size);
 
 	size_t total_read = fread(string, sizeof(char), filesize, openfile);
 
@@ -298,18 +334,19 @@ xerror copy_file_to_string(FILE *openfile, char **dest, size_t filesize)
 	return XESUCCESS;
 }
 
-//returns XESHELL if input src is not a shell command. Else, return XESUCCESS
-//even if the shell command failed. (shell failures are not compiler failures).
-//
-//src must be null terminated.
-xerror exec_shell_command(options *opt, char *src)
+bool IsShellCommand(char *src)
+{
+	if (src[0] == '$') {
+		return true;
+	}
+
+	return false;
+}
+
+void ExecShell(options *opt, char *src)
 {
 	assert(opt);
 	assert(src);
-
-	if (src[0] != '$') {
-		return XESHELL;
-	}
 
 	int err = 0;
 	const char *null_command = "$\n\0";
@@ -323,14 +360,10 @@ xerror exec_shell_command(options *opt, char *src)
 
 	if (err == -1) {
 		perror(NULL);
-	} else if (WIFEXITED(err)) {
-		fprintf(stderr, "termination status; %d\n", WEXITSTATUS(err));
-	}
-
-	return XESUCCESS;
+	} 
 }
 
-xerror compile(options *opt, char *src, char *fname)
+xerror Compile(options *opt, char *src, char *fname)
 {
 	assert(opt);
 	assert(src);
