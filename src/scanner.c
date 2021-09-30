@@ -233,7 +233,7 @@ xerror scanner_init(scanner **self, char *src, options *opt)
 
 	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
 		xerror_trace("scanner running in detached thread");
-		xerror_flush();
+		XerrorFlush();
 	}
 
 	tmp->src = src;
@@ -278,14 +278,14 @@ cleanup_channel_init:
 success:
 	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
 		xerror_trace("enter busy-wait");
-		xerror_flush();
+		XerrorFlush();
 	}
 
 	while (!signal) { }
 
 	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
 		xerror_trace("exit busy-wait");
-		xerror_flush();
+		XerrorFlush();
 	}
 
 	return XESUCCESS;

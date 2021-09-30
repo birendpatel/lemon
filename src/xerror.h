@@ -1,5 +1,4 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v.3.0.
-// Error handing API for all compiler and user errors.
 //
 //
 //                Thread   Level  File      Line
@@ -12,24 +11,22 @@
 //                                       |             |
 //                                      Func         Message
 //
-//
-// The xerror logger stores messages in an internal buffer and flushes to stderr
-// when full or when fatal messages are passed. If the macro XERROR_DEBUG is
-// defined, then all log levels on all log calls will trigger an immediate
-// flush.
+// Xerror is a suite of tools. For compiler errors, xerror provide a logging
+// mechanism, error codes, and exceptions. For user errors, xerror provides
+// formatting capabilities for error messages.
 
 #pragma once
 
 #include "../extern/cexception/CException.h"
 
-//the API guarantees for backwards and C library compatibility the xerror type
-//will always be an alias for the int type.
+//xerror is guaranteed to always alias int for glibc and backwards compatibility
 typedef int xerror;
 
-//This function will automatically flush its internal buffer to stderr whenever
-//it is full or when the level is XFATAL. All messages are newline terminated.
+//this function enqueues a new error message to an internal thread-safe buffer.
+//the buffer will automatically flush when full or when the level is XFATAL. All
+//messages are guaranteed to be newline terminated.
 __attribute__((__format__(__printf__, 5, 6)))
-void __xerror_log
+void XerrorLog
 (
 	const char *file,
 	const char *func,
@@ -41,45 +38,45 @@ void __xerror_log
 
 #define XFATAL 0
 
-#define xerror_fatal(msg, ...) 				               \
-__xerror_log(__FILE__, __func__, __LINE__, XFATAL, msg, ##__VA_ARGS__)
+#define xerror_fatal(msg, ...) \
+XerrorLog(__FILE__, __func__, __LINE__, XFATAL, msg, ##__VA_ARGS__)
 
 #define XERROR 1
 
-#define xerror_issue(msg, ...) 				               \
-__xerror_log(__FILE__, __func__, __LINE__, XERROR, msg, ##__VA_ARGS__)
+#define xerror_issue(msg, ...) \
+XerrorLog(__FILE__, __func__, __LINE__, XERROR, msg, ##__VA_ARGS__)
 
 #define XTRACE 2
 
-#define xerror_trace(msg, ...) 				               \
-__xerror_log(__FILE__, __func__, __LINE__, XTRACE, msg, ##__VA_ARGS__)
+#define xerror_trace(msg, ...) \
+XerrorLog(__FILE__, __func__, __LINE__, XTRACE, msg, ##__VA_ARGS__)
 
-//manually flush the internal xerror buffer.
-void xerror_flush(void);
+//manual full flush
+void XerrorFlush(void);
 
 //error codes
 #define XESUCCESS     0 //function returned successfully
-#define XENOMEM	      1 //allocation in 3rd party library failed
+#define XENOMEM	      1 //dynamic allocation failed
 #define XEOPTION      2 //options parsing failed
-#define XEFULL        3 //container is at capacity
+#define XEFULL        3 //data structure is at capacity
 #define XEFILE        4 //IO failure
-#define XEBUSY        5 //a thread is waiting on a condition
+#define XEBUSY        5 //thread is waiting on a condition
 #define XECLOSED      6 //communication channel is closed
 #define XETHREAD      7 //multithreading issue has occured
 #define XESHELL	      8 //shell error
-#define XEUNDEFINED   9 //generic unspecified error has occured
+#define XEUNDEFINED   9 //unspecified error
 
-//mapping between channel codes and xerror codes
+//code map for lib/channel.h
 #define CHANNEL_ESUCCESS XESUCCESS
 #define CHANNEL_EBUSY	 XEBUSY
 #define CHANNEL_ECLOSED  XECLOSED
 
-const char *xerror_str(const xerror err);
+const char *XerrorDescription(const xerror err);
 
 //exceptions
 #define XXPARSE ((CEXCEPTION_T) 1) // cannot parse the current token
 
-//colour macros provided by @gon1332 at stackoverflow.com/questions/2616906/
+//colours provided by @gon1332 at stackoverflow.com/questions/2616906/
 #ifdef COLOURS
 	#define COLOUR_RESET	"\x1B[0m"
 	#define ANSI_RED  	"\x1B[31m"

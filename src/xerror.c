@@ -1,109 +1,92 @@
-/**
- * @file xerror.c
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Error handling implementation.
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <assert.h>
 #include <pthread.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 
 #include "xerror.h"
 
-#define BUFLEN ((uint8_t) 64)
-#define STRLEN ((uint8_t) 128)
+#define BUFFER_CAPACITY ((uint8_t) 64)
+#define MESSAGE_MAX_LENGTH ((uint8_t) 128)
 
-//xqueue is an in-memory queue. xq is global because it simplifies application
-//code. There is no loss of safety because a) xqueue is thread safe b) xqueue
-//is completely encapsulated.
 struct xqueue {
 	pthread_mutex_t mutex;
-	char buf[BUFLEN][STRLEN];
+	char buf[BUFFER_CAPACITY][MESSAGE_MAX_LENGTH];
 	uint8_t len;
 };
 
 static struct xqueue xq = {
-	.mutex = PTHREAD_MUTEX_INITIALIZER
+	.mutex = PTHREAD_MUTEX_INITIALIZER,
+	.len = 0
 };
 
-//level codes lookup
-static const char *level_lookup[] = {
-	[XFATAL] = "FATAL",
-	[XERROR] = "ERROR",
-	[XTRACE] = "TRACE"
-};
-
-const char *get_level_name(const int level)
+static const char *GetLevelName(const int level)
 {
+	static const char *lookup[] = {
+		[XFATAL] = "FATAL",
+		[XERROR] = "ERROR",
+		[XTRACE] = "TRACE"
+	};
+
 	if (level >= XFATAL && level <= XTRACE) {
-		return level_lookup[level];
+		return lookup[level];
 	}
 
 	return "N/A";
 }
 
-//error codes lookup
-static const char *error_lookup[] = {
-	[XESUCCESS]   = "function terminated successfully",
-	[XENOMEM]     = "dynamic allocation failed",
-	[XEOPTION]    = "options parsing failed",
-	[XEFULL]      = "container is at capacity",
-	[XEFILE]      = "IO failure",
-	[XEBUSY]      = "thread waiting on condition",
-	[XECLOSED]    = "communication channel is closed",
-	[XETHREAD]    = "multithreading failure",
-	[XESHELL]     = "shell error",
-	[XEUNDEFINED] = "unspecified error"
-};
-
-const char *xerror_str(const xerror err)
+const char *XerrorDescription(const xerror err)
 {
+	static const char *lookup[] = {
+		[XESUCCESS]   = "function terminated successfully",
+		[XENOMEM]     = "dynamic allocation failed",
+		[XEOPTION]    = "options parsing failed",
+		[XEFULL]      = "data structure is at capacity",
+		[XEFILE]      = "IO failure",
+		[XEBUSY]      = "thread waiting on condition",
+		[XECLOSED]    = "communication channel is closed",
+		[XETHREAD]    = "multithreading failure",
+		[XESHELL]     = "shell error",
+		[XEUNDEFINED] = "unspecified error"
+	};
+
 	if (err >= XESUCCESS && err <= XEUNDEFINED) {
-		return error_lookup[err];
+		return lookup[err];
 	}
 
 	return "no error description available";
 }
 
-//this private function is a thread unsafe buffer flush which lets us
-//avoid using a recursive mutex. Since locking has a large overhead, any
-//call stack that has already acquired the xqueue mutex along its chain
-//should call this function.
-//
-//In particular, __xerror_log will deadlock if we use the public variant.
-static void __xerror_flush(void)
+static void FlushBuffer(bool need_mutex)
 {
-	for (uint8_t i = 0; i < xq.len; i++) {
-		fprintf(stderr, "%s\n", xq.buf[i]);
+	if (need_mutex) {
+		//mutex is a fast variant; return code is useless
+		(void) pthread_mutex_lock(&xq.mutex);
 	}
 
-        xq.len = 0;
+	for (uint8_t i = 0; i < xq.len; i++) {
+		(void) fprintf(stderr, "%s\n", xq.buf[i]);
+	}
+
+	xq.len = 0;
+
+	if (need_mutex) {
+		(void) pthread_mutex_unlock(&xq.mutex);
+	}
 }
 
-
-//lock return codes are not checked during a flush operation. The mutex is
-//initialized statically as a fast variant, so we can be sure that
-//EINVAL and EDEADLK will not occur.
-void xerror_flush(void)
+void XerrorFlush(void)
 {
-	(void) pthread_mutex_lock(&xq.mutex);
-
-	__xerror_flush();
-
-	(void) pthread_mutex_unlock(&xq.mutex);
+	FlushBuffer(true);
 }
 
-//logger doesn't check for printf errors. If such an error occurs then the
-//the logger will fail silently. At that point, the application program is
-//still able to pass error codes up the call chain, so the program will at
-//least exit with a status code.
-//
-//This design choice means that the logger is not a necessary element of
-//the application. It's convenient, but if it breaks then the compiler
-//will still be able to finish successfully.
-void __xerror_log
+//snprint and vsnprintf may fail in this function, but ignoring the errors
+//simplifies the API. Since the logger isn't a core compiler requirement, the
+//source code might still execute perfectly even if the logger breaks.
+void XerrorLog 
 (
 	const char *file,
 	const char *func,
@@ -122,34 +105,41 @@ void __xerror_log
 	va_list args;
 	va_start(args, msg);
 
-	const char *fmt = "(%p) %s %s:%s:%d ";
-	const char *lname = get_level_name(level);
-	const void *tid = (void *) pthread_self();
-	int n = 0;
-
 	pthread_mutex_lock(&xq.mutex);
-	
-	if (xq.len == BUFLEN) {
-		__xerror_flush();
+
+	if (xq.len == BUFFER_CAPACITY) {
+		FlushBuffer(false);
 	}
 
-	n = snprintf(xq.buf[xq.len], STRLEN, fmt, tid, lname, file, func, line);
-	
-	//buf + n points to the null char index or to the start of the buf row
-	//if snprintf failed
-	n = n < 0 ? 0 : n;
+	int total_printed = snprintf(
+		xq.buf[xq.len],
+		MESSAGE_MAX_LENGTH,
+		"(%p) %s %s:%s:%d ",
+		(void *) pthread_self(),
+		GetLevelName(level),
+		file,
+		func,
+		line
+	);
 
-	assert(STRLEN - n >= 0);
+	if (total_printed < 0) {
+		total_printed = 0;
+	}
 
-	(void) vsnprintf(xq.buf[xq.len] + n, (size_t) (STRLEN - n), msg, args);
+	int remaining_chars = (int) MESSAGE_MAX_LENGTH - total_printed;
+	assert(remaining_chars >= 0);
+
+	char *msg_offset = xq.buf[xq.len] + total_printed;
+
+	(void) vsnprintf(msg_offset, (size_t) remaining_chars, msg, args);
 
 	xq.len++;
 
 #ifdef XERROR_DEBUG
-	__xerror_flush();
+	FlushBuffer(false);
 #else
 	if (level == XFATAL) {
-		__xerror_flush();
+		FlushBuffer(false);
 	}
 #endif
 

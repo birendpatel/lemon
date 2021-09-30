@@ -66,11 +66,11 @@ int main(int argc, char **argv)
 		goto fail;
 	}
 
-	xerror_flush();
+	XerrorFlush();
 	return EXIT_SUCCESS;
 
 fail:
-	xerror_fatal("%s", xerror_str(err));
+	xerror_fatal("%s", XerrorDescription(err));
 	ShowHelp();
 	return EXIT_FAILURE;
 }
