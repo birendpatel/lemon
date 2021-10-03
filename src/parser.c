@@ -1,29 +1,25 @@
-/**
- * @file parser.c
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Recursive descent parser.
- *
- * @remark The parser may encounter two types of errors: compiler errors and
- * user errors. Compiler errors are treated in the same fashion as the rest of
- * the program; Log the issue via xerror and propogate the error code up the 
- * call chain.
- *
- * User errors are very different. They are not logged via xerror. They do not
- * cause the parser to terminate. They do not propogate error codes. Instead,
- * they throw exceptions. Whenever an exception is caught, the parser will
- * synchronize to a new sequence point within the token stream. Sequence points
- * are, generally speaking, any tokens which identify or hint at the start of a
- * new statement or declaration.
- *
- * The only serious limitation to setjmp/longjmp exception handling is that
- * dynamic memory allocations made within a try-block are not released when an
- * exception occurs. For this reason, the parser contains a vector<void*> used
- * to track and release all memory allocations that were requested since the
- * last successful sequence point. The parser cannot walk the erroneous subtree
- * in post-order to release the allocations because sometimes an exception is
- * thrown before a parent and child are connected. This results in a dangling
- * pointer. So, every kmalloc call must be coupled to an immediate vector push.
- */
+//Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+//
+//The recursive descent may encounter two types of errors: compiler errors and
+//user errors. Compiler errors are treated in the same fashion as the rest of
+//the program; Log the issue via xerror and propogate the error code up the 
+//call chain.
+//
+//User errors are very different. They are not logged via xerror. They do not
+//cause the parser to terminate. They do not propogate error codes. Instead,
+//they throw exceptions. Whenever an exception is caught, the parser will
+//synchronize to a new sequence point within the token stream. Sequence points
+//are, generally speaking, any tokens which identify or hint at the start of a
+//new statement or declaration.
+//
+//The only serious limitation to setjmp/longjmp exception handling is that
+//dynamic memory allocations made within a try-block are not released when an
+//exception occurs. For this reason, the parser contains a vector<void*> used
+//to track and release all memory allocations that were requested since the
+//last successful sequence point. The parser cannot walk the erroneous subtree
+//in post-order to release the allocations because sometimes an exception is
+//thrown before a parent and child are connected. This results in a dangling
+//pointer. So, every kmalloc call must be coupled to an immediate vector push.
 
 #include <assert.h>
 #include <limits.h>
@@ -39,13 +35,14 @@
 #include "options.h"
 #include "scanner.h"
 #include "xerror.h"
+#include "lib/channel.h"
 #include "lib/vector.h"
 
 make_vector(void *, mem, static inline)
 
 typedef struct parser {
-	scanner *scn;
 	options *opt;
+	token_channel *chan;
 	mem_vector mempool;
 	token tok;
 	size_t errors;
@@ -67,7 +64,7 @@ static expr *expr_init(parser *self, exprtag tag);
 static stmt *stmt_init(parser *self, stmt src);
 static decl *decl_init(parser *self, decl src);
 
-//recursive descent declarations
+//declarations
 static file *rec_parse(parser *self, char *fname);
 static fiat rec_fiat(parser *self);
 static decl rec_struct(parser *self);
@@ -77,7 +74,7 @@ static param_vector rec_params(parser *self);
 type *rec_type(parser *self);
 static decl rec_var(parser *self);
 
-//recursive descent statements
+//statements
 static stmt rec_stmt(parser *self);
 static stmt rec_exprstmt(parser *self);
 static stmt rec_block(parser *self);
@@ -90,7 +87,7 @@ static stmt rec_branch(parser *self);
 static stmt rec_switch(parser *self);
 static test_vector rec_tests(parser *self);
 
-//recursive descent expressions
+//expressions
 static expr *rec_assignment(parser *self);
 static expr *rec_logicalor(parser *self);
 static expr *rec_logicaland(parser *self);
@@ -142,18 +139,15 @@ xerror parse(options *opt, char *src, char *fname, file **ast)
 //------------------------------------------------------------------------------
 // parser management
 
-/*******************************************************************************
- * @fn parser_init
- * @brief Initialize a parser and configure the tokenizer. The magic number 8
- * is just a heurstic, a typical node often makes less than approx 8 allocations
- * before encountering a syntax error, if any.
- ******************************************************************************/
 static xerror parser_init(parser *self, options *opt, char *src)
 {
 	assert(opt);
 	assert(src);
 
-	xerror err = scanner_init(&self->scn, src, opt);
+	kmalloc(self->chan, sizeof(token_channel));
+	token_channel_init(self->chan, KiB(1));
+
+	xerror err = ScannerInit(opt, src, self->chan);
 
 	if (err) {
 		xerror_issue("cannot initialize scanner");
@@ -177,12 +171,14 @@ static xerror parser_free(parser *self)
 {
 	assert(self);
 
-	xerror err = scanner_free(self->scn);
+	xerror err = token_channel_free(self->chan, NULL);
 
 	if (err) {
-		xerror_issue("cannot free scanner");
+		xerror_issue("cannot free channel");
 		return err;
 	}
+
+	free(self->chan);
 
 	mem_vector_free(&self->mempool, NULL);
 
@@ -417,7 +413,7 @@ static void parser_advance(parser *self)
 {
 	assert(self);
 
-	if (scanner_recv(self->scn, &self->tok)) {
+	if (token_channel_recv(self->chan, &self->tok)) {
 		//reading past EOF is an off-by-one bug in the second-to-last
 		//function in the call stack. Very easy fix: backtrace on gdb
 		//to locate the function. At least one call to parser_advance()
@@ -429,7 +425,7 @@ static void parser_advance(parser *self)
 	}
 
 	if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
-		token_print(self->tok);
+		TokenPrint(self->tok, stderr);
 	}
 
 	if (self->tok.type == _INVALID) {
@@ -492,12 +488,12 @@ static void synchronize(parser *self)
 		}
 
 		//draw another token and try again
-		if (scanner_recv(self->scn, &self->tok)) {
+		if (token_channel_recv(self->chan, &self->tok)) {
 			assert(0 != 0 && "attempted to read past EOF");
 		}
 
 		if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
-			token_print(self->tok);
+			TokenPrint(self->tok, stderr);
 		}
 	} while (true);
 

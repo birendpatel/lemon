@@ -46,6 +46,8 @@ xerror_deps := xerror.h CException.h
 
 options_deps := xerror.h options.h
 
+scanner_deps := xerror.h defs.h kmap.h channel.h options.h
+
 parser_deps := xerror.h parser.h channel.h scanner.h nodes.h defs.h options.h
 
 kmap_deps := kmap.h scanner.h

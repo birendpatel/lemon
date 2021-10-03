@@ -95,8 +95,8 @@ const char *XerrorDescription(const xerror err);
 	#define CYAN(str)	(ANSI_CYAN str COLOUR_RESET)
 	#define WHITE(str)	(ANSI_WHITE str COLOUR_RESET)
 
-	#define BOLD(srt) 	"\x1B[1m" str COLOUR_RESET
-	#define UNDERLINE(x) 	"\x1B[4m" str COLOUR_RESET
+	#define BOLD(str) 	"\x1B[1m" str COLOUR_RESET
+	#define UNDERLINE(str) 	"\x1B[4m" str COLOUR_RESET
 #else
 	#define COLOUR_RESET
 	#define ANSI_RED

@@ -128,7 +128,7 @@ void ShowHelp(void)
 void ShowHeader(void)
 {
 	const char *msg =
-		"Lemon (%s) (Compiler %s %s)\n"
+		"Lemon (%s) (Compiled %s %s)\n"
 		"Copyright (C) 2021 Biren Patel.\n"
 		"GNU General Public License v3.0.\n\n"
 		"- Double tap 'return' to execute source code.\n"

@@ -51,3 +51,4 @@ The Lemon bytecode compiler and virtual machine are written in C with the GNU di
 - [ ] Refactor the makefile (MEDIUM)
 - [ ] Update makefile dependencies for headers (EASY)
 - [ ] Convert all diagnostic output to JSON (HARD)
+- [ ] Fix parser bug; infinite loop when statement not terminated in block (HARD)
