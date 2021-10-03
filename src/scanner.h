@@ -109,11 +109,13 @@ typedef struct token {
 #define TOKEN_BAD_NUM	1 << 0 // ill-formed number literal
 #define TOKEN_BAD_STR	1 << 1 // ill-formed string literal
 
+//scanner sends tokens on this communication channel in the order that they
+//are found. When lexical analysis is complete, the scanner sends a final _EOF
+//token and then closes the channel.
 make_channel(token, token, static)
 
 void TokenPrint(token tok, FILE *stream);
 
-typedef struct scanner scanner;
-
-//initialized in a new detached thread
+//initialized in a new detached thread.
+//channel must be initialized prior to this call.
 xerror ScannerInit(options *opt, char *ssrc, token_channel *chan);
