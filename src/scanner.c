@@ -3,7 +3,6 @@
 #include <assert.h>
 #include <ctype.h>
 #include <pthread.h>
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -13,26 +12,32 @@
 #include "assets/kmap.h"
 #include "lib/channel.h"
 
+typedef struct scanner {
+	token_channel *chan;
+	char *src;
+	char *pos; //current byte being analysed
+	char *curr; //helps process multi-char lexemes in tandem with pos
+	uint32_t line; //current line in source code; starts at 1
+	token tok; //temp workspace
+} scanner;
+
 static void* StartRoutine(void *data);
-static void scan(scanner *self);
+static void Scan(scanner *self);
 static const char *GetTokenName(token_type typ);
 static void EndRoutine(scanner *self);
-static void consume(scanner *self, token_type typ, uint32_t n);
-static void consume_ifpeek(scanner *self, char next, token_type a, token_type b);
-static char peek(scanner *self);
-static void consume_comment(scanner *self);
-static void consume_number(scanner *self);
-static void consume_string(scanner *self);
-static uint32_t synchronize(scanner *self);
-static inline void consume_invalid(scanner *self);
-static void consume_ident_kw(scanner *self);
+static void Consume(scanner *self, token_type typ, uint32_t n);
+static void ConsumeIfPeek(scanner *self, char next, token_type a, token_type b);
+static char Peek(scanner *self);
+static void ConsumeComment(scanner *self);
+static void ConsumeNumber(scanner *self);
+static void ConsumeString(scanner *self);
+static uint32_t Synchronize(scanner *self);
+static inline void ConsumeInvalid(scanner *self);
+static void ConsumeIdentOrKeyword(scanner *self);
 static bool IsLetterDigit(char ch);
 static bool IsLetter(char ch);
 static bool IsSpaceEOF(char ch);
-static void make_id_or_kw_token(scanner *self, uint32_t len);
-
-//busy-wait comm between parent and scanner thread
-static _Atomic volatile bool signal = false;
+static void MakeIdentOrKeyword(scanner *self, uint32_t len);
 
 static const char *GetTokenName(token_type typ)
 {
@@ -123,32 +128,6 @@ void TokenPrint(token tok, FILE *stream)
 	}
 }
 
-/*******************************************************************************
- * @struct scanner
- * @var scanner::chan
- * 	@brief Communication channel between scanner and main thread. See the
- * 	scanner_recv() documentation.
- * @var scanner::src
- * 	@brief Raw input source
- * @var scanner::tok
- * 	@brief Since the scanner only needs to process one token at a time, it
- * 	maintains this embedded token as its temporary workspace.
- * @var scanner::line
- * 	@brief The current line in the source code.
- * @var scanner::pos
- * 	@brief The position of the current byte being analysed by the scanner.
- * @var scanner::curr
- * 	@brief Used to help process multi-character lexemes in tandem with pos.
- ******************************************************************************/
-struct scanner {
-	token_channel *chan;
-	char *src;
-	char *pos;
-	char *curr;
-	uint32_t line;
-	token tok;
-};
-
 xerror ScannerInit(options *opt, char *ssrc, token_channel *chan)
 {
 	assert(opt);
@@ -185,17 +164,13 @@ xerror ScannerInit(options *opt, char *ssrc, token_channel *chan)
 	return XESUCCESS;
 }
 
-/*******************************************************************************
- * @fn StartRoutine
- * @brief Entry point for threads initialized via pthread_create().
- ******************************************************************************/
 static void *StartRoutine(void *data)
 {
 	assert(data);
 
 	scanner *self = (scanner *) data;
 
-	scan(self);
+	Scan(self);
 
 	EndRoutine(self);
 
@@ -204,12 +179,6 @@ static void *StartRoutine(void *data)
 	return NULL;
 }
 
-/*******************************************************************************
- * @fn EndRoutine
- * @brief Exit call for scanner thread. Send EOF token and close channel.
- * @note It is undefined behavior in release mode to call this routine on a
- * closed channel.
- ******************************************************************************/
 static void EndRoutine(scanner *self)
 {
 	assert(self);
@@ -223,16 +192,9 @@ static void EndRoutine(scanner *self)
 	free(self);
 }
 
-/*******************************************************************************
- * @fn scan
- * @brief This function initiates the actual lexical analysis once the scanner
- * and its thread are configured.
- ******************************************************************************/
-static void scan(scanner *self)
+static void Scan(scanner *self)
 {
 	assert(self);
-	assert(self->chan);
-	assert(self->chan->flags == CHANNEL_OPEN);
 
 	while (*self->pos) {
 		switch (*self->pos) {
@@ -258,113 +220,113 @@ static void scan(scanner *self)
 			break;
 
 		case '#':
-			consume_comment(self);
+			ConsumeComment(self);
 			break;
 
 		//single symbols
 		case ';':
-			consume(self, _SEMICOLON, 1);
+			Consume(self, _SEMICOLON, 1);
 			break;
 
 		case '[':
-			consume(self, _LEFTBRACKET, 1);
+			Consume(self, _LEFTBRACKET, 1);
 			break;
 
 		case ']':
-			consume(self, _RIGHTBRACKET, 1);
+			Consume(self, _RIGHTBRACKET, 1);
 			break;
 
 		case '(':
-			consume(self, _LEFTPAREN, 1);
+			Consume(self, _LEFTPAREN, 1);
 			break;
 
 		case ')':
-			consume(self, _RIGHTPAREN, 1);
+			Consume(self, _RIGHTPAREN, 1);
 			break;
 
 		case '{':
-			consume(self, _LEFTBRACE, 1);
+			Consume(self, _LEFTBRACE, 1);
 			break;
 
 		case '}':
-			consume(self, _RIGHTBRACE, 1);
+			Consume(self, _RIGHTBRACE, 1);
 			break;
 
 		case '.':
-			consume(self, _DOT, 1);
+			Consume(self, _DOT, 1);
 			break;
 
 		case '~':
-			consume(self, _TILDE, 1);
+			Consume(self, _TILDE, 1);
 			break;
 
 		case ',':
-			consume(self, _COMMA, 1);
+			Consume(self, _COMMA, 1);
 			break;
 
 		case ':':
-			consume(self, _COLON, 1);
+			Consume(self, _COLON, 1);
 			break;
 
 		case '*':
-			consume(self, _STAR, 1);
+			Consume(self, _STAR, 1);
 			break;
 
 		case '\'':
-			consume(self, _BITNOT, 1);
+			Consume(self, _BITNOT, 1);
 			break;
 
 		case '^':
-			consume(self, _BITXOR, 1);
+			Consume(self, _BITXOR, 1);
 			break;
 
 		case '+':
-			consume(self, _ADD, 1);
+			Consume(self, _ADD, 1);
 			break;
 
 		case '-':
-			consume(self, _MINUS, 1);
+			Consume(self, _MINUS, 1);
 			break;
 
 		case '/':
-			consume(self, _DIV, 1);
+			Consume(self, _DIV, 1);
 			break;
 
 		case '%':
-			consume(self, _MOD, 1);
+			Consume(self, _MOD, 1);
 			break;
 
 		//single or double symbols
 		case '=':
-			consume_ifpeek(self, '=', _EQUALEQUAL, _EQUAL);
+			ConsumeIfPeek(self, '=', _EQUALEQUAL, _EQUAL);
 			break;
 
 		case '!':
-			consume_ifpeek(self, '=', _NOTEQUAL, _NOT);
+			ConsumeIfPeek(self, '=', _NOTEQUAL, _NOT);
 			break;
 
 		case '&':
-			consume_ifpeek(self, '&', _AND, _AMPERSAND);
+			ConsumeIfPeek(self, '&', _AND, _AMPERSAND);
 			break;
 
 		case '|':
-			consume_ifpeek(self, '|', _OR, _BITOR);
+			ConsumeIfPeek(self, '|', _OR, _BITOR);
 			break;
 
 		case '<':
-			if (peek(self) == '<') {
-				consume(self, _LSHIFT, 2);
+			if (Peek(self) == '<') {
+				Consume(self, _LSHIFT, 2);
 			} else {
-				consume_ifpeek(self, '=', _LEQ, _LESS);
+				ConsumeIfPeek(self, '=', _LEQ, _LESS);
 			}
 
 			break;
 
 		case '>':
-			if (peek(self) == '>') {
-				consume(self, _RSHIFT, 2);
+			if (Peek(self) == '>') {
+				Consume(self, _RSHIFT, 2);
 			} else {
-				consume_ifpeek(self, '=', _GEQ, _GREATER);
+				ConsumeIfPeek(self, '=', _GEQ, _GREATER);
 			}
 
 			break;
@@ -389,29 +351,29 @@ static void scan(scanner *self)
 		case '8':
 			fallthrough;
 		case '9':
-			consume_number(self);
+			ConsumeNumber(self);
 			break;
 
 		case '"':
-			consume_string(self);
+			ConsumeString(self);
 			break;
 
 		//identifiers and keywords
 		default:
 			if (IsLetter(*self->pos)) {
-				consume_ident_kw(self);
+				ConsumeIdentOrKeyword(self);
 			} else {
-				consume_invalid(self);
+				ConsumeInvalid(self);
 			}
 		}
 	}
 }
 
 /*******************************************************************************
- * @fn consume_ident_kw
+ * @fn ConsumeIdentOrKeyword
  * @brief Consume the current word as either a keyword or an identifier
  ******************************************************************************/
-static void consume_ident_kw(scanner *self)
+static void ConsumeIdentOrKeyword(scanner *self)
 {
 	assert(self);
 	assert(IsLetter(*self->pos));
@@ -429,7 +391,7 @@ static void consume_ident_kw(scanner *self)
 	ptrdiff_t delta = self->curr - self->pos;
 	assert(delta >= 0);
 
-	make_id_or_kw_token(self, (uint32_t) delta);
+	MakeIdentOrKeyword(self, (uint32_t) delta);
 	(void) token_channel_send(self->chan, self->tok);
 	self->pos = self->curr;
 }
@@ -438,7 +400,7 @@ static void consume_ident_kw(scanner *self)
 //or an identifier, and construct its token. Like punctuation, we don't
 //really need the lexeme for keywords but we capture them anyways (in case
 //parser requirements change in the future or we add aliasing keywords).
-static void make_id_or_kw_token(scanner *self, uint32_t len)
+static void MakeIdentOrKeyword(scanner *self, uint32_t len)
 {
 	assert(self);
 	assert(len);
@@ -481,16 +443,16 @@ static bool IsSpaceEOF(char ch)
 }
 
 /*******************************************************************************
- * @fn consume_invalid
+ * @fn ConsumeInvalid
  * @brief Consume an invalid token and attempt to recover the scanner to a valid
  position.
  ******************************************************************************/
-static inline void consume_invalid(scanner *self)
+static inline void ConsumeInvalid(scanner *self)
 {
 	assert(self);
 
 	char *start = self->pos;
-	uint32_t n = synchronize(self);
+	uint32_t n = Synchronize(self);
 
 	self->tok = (token) {
 		.lexeme = start,
@@ -508,7 +470,7 @@ static inline void consume_invalid(scanner *self)
  * @brief Create a token for the next n characters at the current position and
  * advance the scanner to consume the lexeme.
  ******************************************************************************/
-static void consume(scanner *self, token_type typ, uint32_t n)
+static void Consume(scanner *self, token_type typ, uint32_t n)
 {
 	assert(self);
 	assert(n > 0);
@@ -528,35 +490,35 @@ static void consume(scanner *self, token_type typ, uint32_t n)
 }
 
 /*******************************************************************************
- * @fn consume_ifpeek
+ * @fn ConsumeIfPeek
  * @brief Peek the next character in the source. If it matches next, then
  * consume token a. Otherwise, consume token b.
  * @param a Token with a two-character lexeme
  * @param b Token with a one-character lexeme
  ******************************************************************************/
-static void consume_ifpeek(scanner *self, char next, token_type a, token_type b)
+static void ConsumeIfPeek(scanner *self, char next, token_type a, token_type b)
 {
 	assert(self);
 	assert(next);
 	assert(a < _TOKEN_TYPE_COUNT && a != _INVALID);
 	assert(b < _TOKEN_TYPE_COUNT && b != _INVALID);
 
-	char ch = peek(self);
+	char ch = Peek(self);
 
 	assert(ch);
 
 	if (ch == next) {
-		consume(self, a, 2);
+		Consume(self, a, 2);
 	} else {
-		consume(self, b, 1);
+		Consume(self, b, 1);
 	}
 }
 
 /*******************************************************************************
- * @fn consume_comment
+ * @fn ConsumeComment
  * @brief Throw away source characters until '\0' or '\n' is encountered.
  ******************************************************************************/
-static void consume_comment(scanner *self)
+static void ConsumeComment(scanner *self)
 {
 	assert(self);
 
@@ -568,7 +530,7 @@ static void consume_comment(scanner *self)
 }
 
 /*******************************************************************************
- * @fn consume_number
+ * @fn ConsumeNumber
  * @brief Tokenize a suspected number.
  * @details This function is a weak consumer and will stop early at the first
  * sight of a non-digit. For example, 3.14e3 will be scanned as two tokens;
@@ -576,7 +538,7 @@ static void consume_comment(scanner *self)
  * @return If the string is not a valid float or integer form then an invalid
  * token will be sent with the TOKEN_BAD_NUM flag set.
  ******************************************************************************/
-static void consume_number(scanner *self)
+static void ConsumeNumber(scanner *self)
 {
 	assert(self);
 
@@ -616,12 +578,9 @@ static void consume_number(scanner *self)
 	return;
 }
 
-/*******************************************************************************
- * @fn synchronize
- * @brief Advance scanner position to the next whitespace or EOF token.
- * @returns Total characters consumed.
- ******************************************************************************/
-static uint32_t synchronize(scanner *self)
+//advance scanner to the next whitespace or null char. return total characters
+//consumed.
+static uint32_t Synchronize(scanner *self)
 {
 	assert(self);
 
@@ -636,12 +595,12 @@ static uint32_t synchronize(scanner *self)
 }
 
 /*******************************************************************************
- * @fn consume_string
+ * @fn ConsumeString
  * @brief Tokenize a suspected string.
  * @return If the string literal is not terminated with a quote then an invalid
  * token will be sent with the TOKEN_BAD_STR flag set.
  ******************************************************************************/
-static void consume_string(scanner *self)
+static void ConsumeString(scanner *self)
 {
 	assert(self);
 
@@ -683,12 +642,7 @@ static void consume_string(scanner *self)
 	self->pos = self->curr + 1;
 }
 
-/*******************************************************************************
- * @fn peek
- * @brief Look at the next character in the source buffer but do not move to
- * its position.
- ******************************************************************************/
-static char peek(scanner *self)
+static char Peek(scanner *self)
 {
 	assert(self);
 
