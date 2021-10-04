@@ -30,13 +30,13 @@ xerror ExecUnknown(options *opt, int argc, char **argv, int total_parsed);
 xerror ExecFile(options *opt, int argc, char **argv, int argi);
 xerror ExecRepl(options *opt);
 xerror CollectInput(dynamic_string *userinput);
-bool IsShellCommand(char *src);
-void ExecShell(options *opt, char *src);
+bool IsShellCommand(string src);
+void ExecShell(options *opt, string src);
 void ShowHeader(void);
 void ShowHelp(void);
-xerror FileToString(FILE *fp, char **buf, size_t n);
+xerror StringFromFile(FILE *fp, string dest, size_t n);
 xerror GetFilesize(FILE *fp, size_t *n);
-xerror Compile(options *opt, char *source, char *fname);
+xerror Compile(options *opt, string source, string fname);
 
 int main(int argc, char **argv)
 {
@@ -108,7 +108,7 @@ xerror ExecUnknown(options *opt, int argc, char **argv, int total_parsed)
 
 void ShowHelp(void)
 {
-	const char *msg =
+	const string msg =
 		"\nProgram failed. Report an issue: "
 		"https://github.com/birendpatel/lemon/issues\n";
 
@@ -117,7 +117,7 @@ void ShowHelp(void)
 
 void ShowHeader(void)
 {
-	const char *msg =
+	const string msg =
 		"Lemon (%s) (Compiled %s %s)\n"
 		"Copyright (C) 2021 Biren Patel.\n"
 		"GNU General Public License v3.0.\n\n"
@@ -130,19 +130,19 @@ void ShowHeader(void)
 
 xerror ExecRepl(options *opt)
 {
-	cleanup(DynamicStringFree) dynamic_string userinput = {0};
-	DynamicStringInit(&userinput, KiB(1));
+	cleanup(DynamicStringFree) dynamic_string input = {0};
+	DynamicStringInit(&input, KiB(1));
 
 	ShowHeader();
 
 	while (true) {
-		xerror err = CollectInput(&userinput);
+		xerror err = CollectInput(&input);
 
 		if (err == XECLOSED) {
 			return XESUCCESS;
 		}
 
-		char *source = userinput.data;
+		string source = (ViewFromDynamicString(&input)).data;
 
 		if (IsShellCommand(source)) {
 			ExecShell(opt, source);
@@ -155,7 +155,7 @@ xerror ExecRepl(options *opt)
 			}
 		}
 
-		DynamicStringReset(&userinput);
+		DynamicStringReset(&input);
 	}
 }
 
@@ -225,8 +225,8 @@ xerror ExecFile(options *opt, int argc, char **argv, int argi)
 			goto fail;
 		}
 
-		char *buf = NULL;
-		err = FileToString(fp, &buf, len);
+		string src = StringInit(len);
+		err = StringFromFile(fp, src, len);
 
 		if (err) {
 			xerror_issue("%s: cannot copy to memory", argv[i]);
@@ -234,8 +234,8 @@ xerror ExecFile(options *opt, int argc, char **argv, int argi)
 		}
 
 		fclose(fp);
-		err = Compile(opt, buf, argv[i]);
-		free(buf);
+		err = Compile(opt, src, argv[i]);
+		StringFree(src);
 
 		if (err) {
 			xerror_issue("%s: cannot compile contents", argv[i]);
@@ -299,30 +299,21 @@ reset:
 	return xerr;
 }
 
-xerror FileToString(FILE *openfile, char **dest, size_t filesize)
+xerror StringFromFile(FILE *openfile, string dest, size_t filesize)
 {
 	assert(openfile);
 
-	char *string = NULL;
-	size_t string_size = sizeof(char) * filesize + 1;
-
-	kmalloc(string, string_size);
-
-	size_t total_read = fread(string, sizeof(char), filesize, openfile);
+	size_t total_read = fread(dest, sizeof(char), filesize, openfile);
 
 	if (total_read != filesize) {
 		xerror_issue("%s", strerror(errno));
 		return XEFILE;
 	}
 
-	string[filesize] = '\0';
-
-	*dest = string;
-
 	return XESUCCESS;
 }
 
-bool IsShellCommand(char *src)
+bool IsShellCommand(string src)
 {
 	if (src[0] == '$') {
 		return true;
@@ -331,13 +322,13 @@ bool IsShellCommand(char *src)
 	return false;
 }
 
-void ExecShell(options *opt, char *src)
+void ExecShell(options *opt, string src)
 {
 	assert(opt);
 	assert(src);
 
 	int err = 0;
-	const char *null_command = "$\n\0";
+	const string null_command = "$\n\0";
 	bool match = !strcmp(null_command, src);
 
 	if (match) {
@@ -351,7 +342,7 @@ void ExecShell(options *opt, char *src)
 	} 
 }
 
-xerror Compile(options *opt, char *src, char *fname)
+xerror Compile(options *opt, string src, string fname)
 {
 	assert(opt);
 	assert(src);
