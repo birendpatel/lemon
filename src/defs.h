@@ -1,10 +1,13 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-// Miscellaneous utilities and definitions
 
 #pragma once
 
+//------------------------------------------------------------------------------
+// versioning
+
 #define LEMON_VERSION "Alpha"
 
+//5 digit version code; e.g., 100908 is version 10.9.8 (maj.min.patch)
 #ifdef __GNUC__
 	#define GCC_VERSION_MAJ (__GNUC__ * 10000)
 	#define GCC_VERSION_MIN (__GNUC_MINOR__ * 100)
@@ -14,12 +17,23 @@
 	#define GCC_VERSION 0
 #endif
 
+//------------------------------------------------------------------------------
+//language extensions
+
 #define fallthrough __attribute__((fallthrough))
 
 #define unused __attribute__((unused))
 
-#define KiB(kilos) (1024 * kilos)
+#define cleanup(freefunc) __attribute__((__cleanup__(freefunc)))
 
-//induce a segementation violation if the allocation request failed. The Lemon
-//compiler uses a "fail fast and fail early" design philosophy.
+#define addressless register
+
+//------------------------------------------------------------------------------
+//allocation utils
+
+#define KiB(kilo) (1024 * kilo)
+
+#define MiB(mega) (1048576 * mega)
+
+//if malloc(3) fails then induce a segfault by attempting to write zero at NULL
 #define kmalloc(target, bytes) memset((target = malloc(bytes)), 0, 1)

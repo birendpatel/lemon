@@ -1,4 +1,4 @@
-// Copyright (C) 2021 Biren Patel. GNU General Public License v.3.0.
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <assert.h>
 #include <ctype.h>
@@ -41,7 +41,7 @@ static void MakeIdentOrKeyword(scanner *self, uint32_t len);
 
 static const char *GetTokenName(token_type typ)
 {
-	static const char *lookup[] = {
+	static const char *const lookup[] = {
 		[_INVALID] = "INVALID",
 		[_EOF] = "EOF",
 		[_IDENTIFIER] = "IDENTIFIER",

@@ -40,7 +40,7 @@ objects_release := $(addprefix $(RELEASE_DIR), $(objects_raw))
 # source dependencies
 #-------------------------------------------------------------------------------
 
-main_deps := defs.h xerror.h options.h vector.h nodes.h parser.h
+main_deps := xerror.h defs.h str.h options.h nodes.h parser.h
 
 xerror_deps := xerror.h CException.h
 

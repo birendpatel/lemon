@@ -19,27 +19,17 @@
 #include "parser.h"
 #include "xerror.h"
 
-#include "lib/vector.h"
+#include "lib/str.h"
 
 #if GCC_VERSION < 80300
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-//C-style template which creates a vector<char> aliased as stdin_vector.
-make_vector(char, stdin, static inline)
-
-void StdinVectorCleanup(stdin_vector *vec)
-{
-	stdin_vector_free(vec, NULL);
-}
-
-#define RAII __attribute__((__cleanup__(StdinVectorCleanup)))
-
 xerror ConfigOptions(options *opt, int argc, char **argv, int *total_parsed);
 xerror ExecUnknown(options *opt, int argc, char **argv, int total_parsed);
 xerror ExecFile(options *opt, int argc, char **argv, int argi);
 xerror ExecRepl(options *opt);
-xerror CollectInputAsString(stdin_vector *userinput);
+xerror CollectInput(dynamic_string *userinput);
 bool IsShellCommand(char *src);
 void ExecShell(options *opt, char *src);
 void ShowHeader(void);
@@ -140,13 +130,13 @@ void ShowHeader(void)
 
 xerror ExecRepl(options *opt)
 {
-	RAII stdin_vector userinput = {0};
-	stdin_vector_init(&userinput, 0, KiB(1));
+	cleanup(DynamicStringFree) dynamic_string userinput = {0};
+	DynamicStringInit(&userinput, KiB(1));
 
 	ShowHeader();
 
 	while (true) {
-		xerror err = CollectInputAsString(&userinput);
+		xerror err = CollectInput(&userinput);
 
 		if (err == XECLOSED) {
 			return XESUCCESS;
@@ -165,12 +155,12 @@ xerror ExecRepl(options *opt)
 			}
 		}
 
-		stdin_vector_reset(&userinput, NULL);
+		DynamicStringReset(&userinput);
 	}
 }
 
 //returns XECLOSED if encountered a SIGINT.
-xerror CollectInputAsString(stdin_vector *buffer)
+xerror CollectInput(dynamic_string *buffer)
 {
 	assert(buffer);
 
@@ -200,12 +190,10 @@ xerror CollectInputAsString(stdin_vector *buffer)
 			fprintf(stdout, "... ");
 		}
 
-		stdin_vector_push(buffer, (char) curr);
+		DynamicStringAppend(buffer, (char) curr);
 
 		prev = curr;
 	}
-
-	stdin_vector_push(buffer, '\0');
 
 	return err;
 }
