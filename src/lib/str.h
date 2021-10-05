@@ -28,7 +28,7 @@ static string StringFromArray(char *src, size_t len)
 
 	string dest;
 	kmalloc(dest, sizeof(char) * len + 1);
-	memcpy(dest, src, sizeof(char) * len);	
+	memcpy(dest, src, sizeof(char) * len);
 	dest[len] = '\0';
 
 	return dest;
@@ -60,11 +60,21 @@ static void StringFree(string s)
 	free(s);
 }
 
-#define STRING_TABLE_BEGIN(name) static const string const name[] = {
+//------------------------------------------------------------------------------
+//lookup table abstraction; supports at most one table per function
 
-#define STRING_TABLE_ENTRY(key, value) [key] = value,
+#define STRING_TABLE_BEGIN \
+	static const string const str_table_lookup[] = {
 
-#define STRING_TABLE_END };
+#define STRING_TABLE_ENTRY(key, value) \
+	[key] = value,
+
+#define STRING_TABLE_END \
+	}; \
+	const size_t str_table_len = sizeof(str_table_lookup) / sizeof(char*);
+
+#define STRING_TABLE_FETCH(key, default) \
+	key >= 0 && key < str_table_len ? str_table_lookup[key] : default
 
 //------------------------------------------------------------------------------
 //dynamic strings
@@ -112,7 +122,7 @@ static view ViewFromDynamicString(dynamic_string *self)
 {
 	assert(self);
 	assert(self->len != 0 && "dynamic string not initialized");
-	
+
 	view v = {
 		.data = self->data,
 		.len = self->len - 1

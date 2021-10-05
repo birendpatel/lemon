@@ -1144,6 +1144,9 @@ static test_vector rec_tests(parser *self)
 			parser_advance(self);
 			t.cond = NULL;
 			break;
+
+		default:
+			assert(0 != 0);
 		}
 
 		if (self->tok.type != _LEFTBRACE) {
@@ -1263,6 +1266,9 @@ static stmt rec_named_target(parser *self)
 		node.returnstmt = rec_assignment(self);
 		check_move(self, _SEMICOLON, "missing ';' after return");
 		break;
+	
+	default:
+		assert(0 != 0);
 	}
 
 	return node;

@@ -7,7 +7,9 @@
 
 #include "options.h"
 #include "xerror.h"
+
 #include "lib/channel.h"
+#include "lib/str.h"
 
 typedef enum token_type {
 	//markers
@@ -93,20 +95,15 @@ typedef enum token_type {
 	_TOKEN_TYPE_COUNT
 } token_type;
 
-//token.lexeme is a string view of length token.len into the input source code.
-//token.type is the enum token_type but it uses uint32_t to guarantee the
-//struct packing behavior.
 typedef struct token {
-	char *lexeme;
-	uint32_t type;
+	view lexeme;
+	token_type type;
 	uint32_t line;
-	uint32_t len;
-	uint32_t flags;
+	uint8_t flags;
 } token;
 
 //token.flags
 #define TOKEN_OKAY	0
-#define TOKEN_BAD_NUM	1 << 0 // ill-formed number literal
 #define TOKEN_BAD_STR	1 << 1 // ill-formed string literal
 
 //scanner sends tokens on this communication channel in the order that they
@@ -118,4 +115,4 @@ void TokenPrint(token tok, FILE *stream);
 
 //initialized in a new detached thread.
 //channel must be initialized prior to this call.
-xerror ScannerInit(options *opt, char *ssrc, token_channel *chan);
+xerror ScannerInit(options *opt, string src, token_channel *chan);
