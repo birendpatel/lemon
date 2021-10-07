@@ -31,14 +31,12 @@
 #include <string.h>
 
 #include "defs.h"
-#include "nodes.h"
-#include "options.h"
 #include "scanner.h"
-#include "xerror.h"
+
 #include "lib/channel.h"
 #include "lib/vector.h"
 
-make_vector(void *, mem, static inline)
+make_vector(void *, mem, static)
 
 typedef struct parser {
 	options *opt;
@@ -104,7 +102,6 @@ static expr *rec_arraylit(parser *self);
 static expr *rec_ident(parser *self, token tok);
 static expr *rec_access(parser *self, expr *prev);
 
-//parser entry point; configure parser members and launch recursive descent
 xerror parse(options *opt, char *src, char *fname, file **ast)
 {
 	assert(src);

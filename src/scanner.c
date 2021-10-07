@@ -1,8 +1,4 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-//
-// The Lemon scanner executes in a separate thread and runs concurrently with
-// the parser. The scanner generates tokens and communicates them to the parser
-// by value via a thread-safe, buffered, and blocking FIFO queue.
 
 #include <assert.h>
 #include <pthread.h>
@@ -16,8 +12,8 @@
 #include "lib/channel.h"
 
 typedef struct scanner {
-	token_channel *chan;
 	options *opt;
+	token_channel *chan;
 	char *pos; //current byte being analysed
 	char *curr; //helps process multi-char lexemes in tandem with pos
 	string src;
@@ -148,8 +144,8 @@ xerror ScannerInit(options *opt, string src, token_channel *chan)
 	scanner *scn = NULL;
 	kmalloc(scn, sizeof(scanner));
 
-	scn->chan = chan;
 	scn->opt = opt;
+	scn->chan = chan;
 	scn->pos = src;
 	scn->curr = NULL;
 	scn->src = src;

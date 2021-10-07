@@ -14,7 +14,6 @@
 #include <string.h>
 
 #include "defs.h"
-#include "nodes.h"
 #include "options.h"
 #include "parser.h"
 #include "xerror.h"
@@ -36,7 +35,7 @@ void ShowHeader(void);
 void ShowHelp(void);
 xerror StringFromFile(FILE *fp, string dest, size_t n);
 xerror GetFilesize(FILE *fp, size_t *n);
-xerror Compile(options *opt, string source, string fname);
+xerror Compile(options *opt, string source, string alias);
 
 int main(int argc, char **argv)
 {
@@ -342,7 +341,7 @@ void ExecShell(options *opt, string src)
 	} 
 }
 
-xerror Compile(options *opt, string src, string fname)
+xerror Compile(options *opt, string src, string alias)
 {
 	assert(opt);
 	assert(src);
@@ -351,8 +350,9 @@ xerror Compile(options *opt, string src, string fname)
 		fprintf(stderr, "compiler pass: echo\n");
 	}
 
-	file *ast = NULL;
-	xerror err = parse(opt, src, fname, &ast);
+	xerror err = XEUNDEFINED;
+
+	file *ast = parse(opt, &err, src, alias);
 
 	if (err) {
 		xerror_issue("cannot create abstact syntax tree");
