@@ -2,6 +2,7 @@
 
 #pragma once
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 
@@ -98,20 +99,18 @@ typedef enum token_type {
 typedef struct token {
 	view lexeme;
 	token_type type;
-	uint32_t line;
+	size_t line;
 	uint8_t flags;
 } token;
 
 //token.flags
 #define TOKEN_OKAY	0
-#define TOKEN_BAD_STR	1 << 1 // ill-formed string literal
+#define TOKEN_BAD_STR	1 << 0 // ill-formed string literal
 
 //scanner sends tokens on this communication channel in the order that they
 //are found. When lexical analysis is complete, the scanner sends a final _EOF
 //token and then closes the channel.
 make_channel(token, token, static)
-
-void TokenPrint(token tok, FILE *stream);
 
 //initialized in a new detached thread.
 //channel must be initialized prior to this call.

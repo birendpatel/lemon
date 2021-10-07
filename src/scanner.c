@@ -1,7 +1,10 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+//
+// The Lemon scanner executes in a separate thread and runs concurrently with
+// the parser. The scanner generates tokens and communicates them to the parser
+// by value via a thread-safe, buffered, and blocking FIFO queue.
 
 #include <assert.h>
-#include <ctype.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -14,17 +17,18 @@
 
 typedef struct scanner {
 	token_channel *chan;
-	char *src;
+	options *opt;
 	char *pos; //current byte being analysed
 	char *curr; //helps process multi-char lexemes in tandem with pos
-	uint32_t line; //current line in source code; starts at 1
-	token tok; //temp workspace
+	string src;
+	size_t line; 
+	token tok; 
 } scanner;
 
 static void* StartRoutine(void *data);
 static void Scan(scanner *self);
 static const string GetTokenName(token_type type);
-static void Consume(scanner *self, token_type type, uint32_t n);
+static void Consume(scanner *self, token_type type, size_t n);
 static void ConsumeIfPeek(scanner *self, char next, token_type a, token_type b);
 static void ConsumeComment(scanner *self);
 static void ConsumeNumber(scanner *self);
@@ -40,6 +44,8 @@ static bool IsLetter(char ch);
 static bool IsSpaceEOF(char ch);
 static void SendToken(scanner *self);
 static void SendEOF(scanner *self);
+static const string GetTokenName(token_type type);
+static void TokenPrint(token tok, FILE *stream);
 
 static const string GetTokenName(token_type type)
 {
@@ -112,12 +118,12 @@ static const string GetTokenName(token_type type)
 	return STRING_TABLE_FETCH(type, "LOOKUP ERROR");
 }
 
-void TokenPrint(token tok, FILE *stream)
+static void TokenPrint(token tok, FILE *stream)
 {
 	const string lexfmt = "TOKEN { line %-10d: %-20s: %.*s }\n";
 	const string nolexfmt = "TOKEN { line %-10d: %-20s }\n";
 
-	const uint32_t line = tok.line;
+	const size_t line = tok.line;
 	const string name = GetTokenName(tok.type);
 	const size_t len = tok.lexeme.len;
 	const char *data = tok.lexeme.data;
@@ -143,9 +149,10 @@ xerror ScannerInit(options *opt, string src, token_channel *chan)
 	kmalloc(scn, sizeof(scanner));
 
 	scn->chan = chan;
-	scn->src = src;
+	scn->opt = opt;
 	scn->pos = src;
 	scn->curr = NULL;
+	scn->src = src;
 	scn->line = 1;
 	scn->tok = {0};
 
@@ -339,6 +346,10 @@ static void SendToken(scanner *self)
 	assert(self);
 	assert(self->chan->flags & CHANNEL_OPEN);
 
+	if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
+		TokenPrint(self->tok, stderr);
+	}
+
 	(void) token_channel_send(self->chan, self->tok);
 }
 
@@ -419,7 +430,7 @@ static bool IsSpaceEOF(char ch)
 	return isspace(ch) || ch == '\0';
 }
 
-static void Consume(scanner *self, token_type type, uint32_t n)
+static void Consume(scanner *self, token_type type, size_t n)
 {
 	assert(self);
 	assert(n > 0);
@@ -514,7 +525,7 @@ static void ConsumeNumber(scanner *self)
 	assert(self);
 
 	bool seen_dot = false;
-	uint32_t guess = _LITERALINT;
+	token_type guess = _LITERALINT;
 	ptrdiff_t delta = 0;
 	self->curr = self->pos + 1;
 
