@@ -18,6 +18,7 @@
 #pragma once
 
 #include "../extern/cexception/CException.h"
+#include "lib/str.h"
 
 //xerror is guaranteed to always alias int for glibc and backwards compatibility
 typedef int xerror;
@@ -75,6 +76,10 @@ const char *XerrorDescription(const xerror err);
 
 //exceptions
 #define XXPARSE ((CEXCEPTION_T) 1) // cannot parse the current token
+
+//display an error message to stderr in red font; does not log to xerror buffer
+//if line is > 0 then the message is prefixed with "line #:"
+void XerrorUser(const int line, const string msg, ...); 
 
 //colours provided by @gon1332 at stackoverflow.com/questions/2616906/
 #ifdef COLOURS

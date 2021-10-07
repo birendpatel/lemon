@@ -117,6 +117,8 @@ typedef struct token {
 //token and then closes the channel.
 make_channel(token, token, static)
 
-//initialized in a new detached thread.
-//channel must be initialized prior to this call.
+//initialized in a new detached thread. The channel must be initialized prior 
+//to this call.
+//
+//returns XESUCCESS or XETHREAD
 xerror ScannerInit(options *opt, string src, token_channel *chan);

@@ -30,8 +30,9 @@ typedef struct decl decl;
 typedef struct stmt stmt;
 typedef struct expr expr;
 
-//ASTs are created on heap. If err == XENOMEM then the returned pointer is NULL.
-file *SyntaxTreeInit(options *opt, xerror *err, string src, string alias);
+//ASTs are created on heap. On error the returned pointer is NULL. Any compiler
+//errors that occured during parsing are logged to the xerror buffer.
+file *SyntaxTreeInit(options *opt, string src, string alias);
 
 //file pointer will be set to NULL on return
 void SyntaxTreeFree(file *ast);
@@ -45,7 +46,7 @@ typedef struct member {
 
 make_vector(member, member, static)
 
-//<parameter list> 
+//<parameter list>
 typedef struct param {
 	char *name;
 	type *typ;
@@ -54,7 +55,7 @@ typedef struct param {
 
 make_vector(param, param, static)
 
-//<case statement> 
+//<case statement>
 typedef struct test {
 	expr *cond; //NULL for default case
 	stmt *pass; //block statement

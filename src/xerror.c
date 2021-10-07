@@ -147,3 +147,29 @@ void XerrorLog
 
 	va_end(args);
 }
+
+void XerrorUser(const int line, const string msg, ...)
+{
+	assert(line >= 0);
+	assert(msg);
+
+	va_list args;
+	va_start(args, msg);
+
+	//Note, the ANSI_RED macro does not reset the colour after it is
+ 	//applied. This allows the input msg to also be coloured red. RED()
+ 	//cannot be applied directly to the input msg because the macro relies
+        //on string concatenation.
+	if (line) {
+                fprintf(stderr, ANSI_RED "(line %d) ", line);
+        } else {
+                fprintf(stderr, ANSI_RED " \b");
+        }
+
+        vfprintf(stderr, msg, args);
+
+        //this final RED() causes the colours to reset after the statement
+        fprintf(stderr, RED("\n"));
+
+        va_end(args);
+}

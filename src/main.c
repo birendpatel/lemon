@@ -129,7 +129,7 @@ void ShowHeader(void)
 
 xerror ExecRepl(options *opt)
 {
-	cleanup(DynamicStringFree) dynamic_string input = {0};
+	RAII(DynamicStringFree) dynamic_string input = {0};
 	DynamicStringInit(&input, KiB(1));
 
 	ShowHeader();

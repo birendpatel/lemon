@@ -17,8 +17,8 @@ typedef struct scanner {
 	char *pos; //current byte being analysed
 	char *curr; //helps process multi-char lexemes in tandem with pos
 	string src;
-	size_t line; 
-	token tok; 
+	size_t line;
+	token tok;
 } scanner;
 
 static void* StartRoutine(void *data);
@@ -157,7 +157,7 @@ xerror ScannerInit(options *opt, string src, token_channel *chan)
 
 	if (err) {
 		xerror_issue("cannot create thread: pthread error: %d", err);
-		return XETHREAD;	
+		return XETHREAD;
 	}
 
 	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
@@ -325,7 +325,7 @@ static void Scan(scanner *self)
 
 		case '_':
 			ConsumeIdentOrKeyword(self);
-		
+
 		default:
 			ConsumeInvalid(self, TOKEN_OKAY);
 		}
@@ -370,7 +370,7 @@ static void ConsumeIdentOrKeyword(scanner *self)
 {
 	assert(self);
 	assert(IsLetter(*self->pos));
-	
+
 	const size_t word_length = GetIdentOrKeywordLength(self);
 
 	const kv_pair *kv = kmap_lookup(self->pos, word_length);
@@ -386,7 +386,7 @@ static void ConsumeIdentOrKeyword(scanner *self)
 	};
 
 	SendToken(self);
-	
+
 	self->pos = self->curr;
 }
 

@@ -1,69 +1,62 @@
 //Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-//The recursive descent may encounter two types of errors: compiler errors and
-//user errors. Compiler errors are treated in the same fashion as the rest of
-//the program; Log the issue via xerror and propogate the error code up the 
-//call chain.
+// Recursive descent parser. The implementation matches 1:1 with the grammar.
 //
-//User errors are very different. They are not logged via xerror. They do not
-//cause the parser to terminate. They do not propogate error codes. Instead,
-//they throw exceptions. Whenever an exception is caught, the parser will
-//synchronize to a new sequence point within the token stream. Sequence points
-//are, generally speaking, any tokens which identify or hint at the start of a
-//new statement or declaration.
+// The parser may encounter two types of errors: internal compiler errors and
+// user errors. Compiler errors are treated in the same fashion as the rest of
+// the program; Log the issue via xerror and propogate the error code up the
+// call chain.
 //
-//The only serious limitation to setjmp/longjmp exception handling is that
-//dynamic memory allocations made within a try-block are not released when an
-//exception occurs. For this reason, the parser contains a vector<void*> used
-//to track and release all memory allocations that were requested since the
-//last successful sequence point. The parser cannot walk the erroneous subtree
-//in post-order to release the allocations because sometimes an exception is
-//thrown before a parent and child are connected. This results in a dangling
-//pointer. So, every kmalloc call must be coupled to an immediate vector push.
+// The user errors are different. They are not logged via xerror. They do not
+// cause the parser to terminate. They do not propogate error codes. Instead,
+// they throw exceptions. Whenever an exception is caught, the parser will
+// synchronize to a new sequence point within the token stream. Sequence points
+// are, generally speaking, any tokens which identify or hint at the start of a
+// new statement or declaration. See Synchronize() for details.
+//
+// The only serious limitation to setjmp/longjmp exception handling is that
+// dynamic memory allocations made within a try-block are not released when an
+// exception occurs. For this reason, the parser contains a vector<void*> used
+// to track and release all memory allocations that were requested since the
+// last successful sequence point. The parser cannot walk the erroneous subtree
+// in post-order to release the allocations because sometimes an exception is
+// thrown before a parent and child are linked; this results in a dangling
+// pointer. So, every kmalloc call must be coupled to an immediate vector push.
 
 #include <assert.h>
 #include <limits.h>
 #include <stdarg.h>
-#include <stdbool.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "defs.h"
-#include "scanner.h"
 
 #include "lib/channel.h"
 #include "lib/vector.h"
 
-make_vector(void *, mem, static)
-
-typedef struct parser {
-	options *opt;
-	token_channel *chan;
-	mem_vector mempool;
-	token tok;
-	size_t errors;
-} parser;
+typedef struct parser parser;
 
 //parser utils
-static xerror parser_init(parser *self, options *opt, char *src);
-static xerror parser_free(parser *self);
-static void _usererror(const uint32_t line, const char *msg, ...);
+static parser *ParserInit(options *opt, string src);
+static void ParserFree(parser **self);
+static void Mark(parser *self, void *region);
+static void *AllocateAndMark(parser *self, size_t bytes);
+static void CollectGarbage(parser *self, bool flag);
+static string StringFromLexeme(parser *self);
 static void parser_advance(parser *self);
 static void synchronize(parser *self);
-static void lexcpy(parser *self, char **dest, char *src, uint32_t n);
 static void _check(parser *self, token_type type, char *msg, bool A, bool Z);
 static intmax_t extract_arrnum(parser *self);
 
 //node management
-static file *file_init(char *fname);
-static expr *expr_init(parser *self, exprtag tag);
-static stmt *stmt_init(parser *self, stmt src);
-static decl *decl_init(parser *self, decl src);
+static file *FileInit(string alias);
+static expr *ExprInit(parser *self, exprtag tag);
+static stmt *CopyStmtToHeap(parser *self, stmt src);
+static decl *CopyDeclToHeap(parser *self, decl src);
 
 //declarations
-static file *rec_parse(parser *self, char *fname);
+static file *RecursiveDescent(parser *self, string alias);
 static fiat rec_fiat(parser *self);
 static decl rec_struct(parser *self);
 static member_vector rec_members(parser *self);
@@ -102,165 +95,166 @@ static expr *rec_arraylit(parser *self);
 static expr *rec_ident(parser *self, token tok);
 static expr *rec_access(parser *self, expr *prev);
 
-xerror parse(options *opt, char *src, char *fname, file **ast)
+//the lemon source code always uses 'self' as a psuedo-OOP receiver, so the
+//xerror API can be simplified with a guaranteed access mechanism for the line
+#define usererror(msg, ...) XerrorUser(self->tok.line, msg, ##__VA_ARGS__)
+
+make_vector(void *, mem, static)
+
+struct parser {
+	options *opt;
+	token_channel *chan;
+	mem_vector garbage;
+	token tok;
+	size_t errors;
+};
+
+file *SyntaxTreeInit(options *opt, string src, string alias)
 {
-	assert(src);
 	assert(opt);
+	assert(src);
+	assert(alias);
 
-	parser prs = {0};
-	xerror err = parser_init(&prs, opt, src);
+	RAII(ParserFree) parser *prs = parser_init(opt, src);
 
-	if (err) {
-		xerror_issue("cannot initialize parser");
-		return err;
+	if (!prs) {
+		xerror_issue("cannot init parser");
+		return NULL;
 	}
 
-	*ast = rec_parse(&prs, fname);
+	file *syntax_tree = RecursiveDescent(prs, alias);
 
-	if (prs.errors > 1) {
-		_usererror(0, "\n%d syntax errors found.", prs.errors);
-	} else if (prs.errors == 1) {
-		_usererror(0, "\n1 syntax error found.");
-	}
+	ParserFree(prs);
 
-	err = parser_free(&prs);
-
-	if (err) {
-		xerror_issue("cannot free parser");
-		return err;
-	}
-
-	return XESUCCESS;
+	return syntax_tree;
 }
 
 //------------------------------------------------------------------------------
 // parser management
 
-static xerror parser_init(parser *self, options *opt, char *src)
+static parser *ParserInit(options *opt, string src)
 {
 	assert(opt);
 	assert(src);
 
-	kmalloc(self->chan, sizeof(token_channel));
-	token_channel_init(self->chan, KiB(1));
+	parser *prs = NULL;
+	kmalloc(prs, sizeof(parser));
 
-	xerror err = ScannerInit(opt, src, self->chan);
+	kmalloc(prs->chan, sizeof(token_channel));
+	token_channel_init(prs->chan, KiB(1));
+
+	xerror err = ScannerInit(opt, src, prs->chan);
 
 	if (err) {
-		xerror_issue("cannot initialize scanner");
-		return err;
+		xerror_issue("cannot init scanner: %s", XerrorDescription(err));
+		free(prs);
+		return NULL;
 	}
 
-	mem_vector_init(&self->mempool, 0, 8);
+	const size_t garbage_capacity = 8; //heuristic
+	mem_vector_init(&prs->garbage, 0, garbage_capacity);
 
-	self->opt = opt;
-	self->tok = (token) { .type = _INVALID };
-	self->errors = 0;
+	prs->opt = opt;
+	prs->tok = (token) { .type = _INVALID };
+	prs->errors = 0;
+
+	return prs;
+}
+
+//intended for use with gcc cleanup
+static void ParserFree(parser **self)
+{
+	assert(self);
+
+	parser *prs = *self;
+
+	if (!prs) {
+		return;
+	}
+
+	(void) token_channel_free(prs->chan, NULL);
+
+	free(prs->chan);
+
+	mem_vector_free(&prs->garbage, NULL);
+
+	free(prs);
 
 	return XESUCCESS;
 }
 
-/*******************************************************************************
- * @fn parser_free
- * @brief Shutdown the tokenizer and release the parser (doesn't contain AST).
- ******************************************************************************/
-static xerror parser_free(parser *self)
+static void Mark(parser *self, void *region)
+{
+	mem_vector_push(&self->garbage, region);
+}
+
+static void *AllocateAndMark(parser *self, size_t bytes)
 {
 	assert(self);
 
-	xerror err = token_channel_free(self->chan, NULL);
+	void *region = kmalloc(dest, bytes);
 
-	if (err) {
-		xerror_issue("cannot free channel");
-		return err;
+	Mark(self, region);
+
+	return region;
+}
+
+static void CollectGarbage(parser *self, bool flag)
+{
+	void (*freefunc)(void *) = NULL;
+
+	if (flag) {
+		freefunc = free;
 	}
 
-	free(self->chan);
-
-	mem_vector_free(&self->mempool, NULL);
-
-	return XESUCCESS;
+	mem_vector_reset(&self->garbage, freefunc);
 }
 
 //------------------------------------------------------------------------------
 //node management
 
-/*******************************************************************************
- * @fn file_init
- * @brief Initialize the fiat vector and add an import tag.
- * @remark The fiat vector needs an initial capacity, but if it is too small we
- * will dip into kernel mode too often. The magic number 128 is a heuristic.
- * For many REPL programs, it is large enough to never trigger a vector resize.
- ******************************************************************************/
-static file *file_init(char *fname)
+static file *FileInit(string alias)
 {
 	file *ast = NULL;
 
 	kmalloc(ast, sizeof(file));
 
-	ast->name = fname;
+	ast->alias = alias;
 
-	fiat_vector_init(&ast->fiats, 0, 128);
+	const size_t heuristic_capacity = 128;
+	fiat_vector_init(&ast->fiats, 0, heuristic_capacity);
 
 	return ast;
 }
 
-/*******************************************************************************
- * @fn expr_init
- * @brief Create an expression node on heap and add the pointer to the mempool.
- ******************************************************************************/
-static expr *expr_init(parser *self, exprtag tag)
+static expr *ExprInit(parser *self, exprtag tag)
 {
 	assert(self);
 	assert(tag >= NODE_ASSIGNMENT && tag <= NODE_IDENT);
 
-	expr *new = NULL;
-
-	kmalloc(new, sizeof(expr));
-
-	mem_vector_push(&self->mempool, new);
+	expr *new = AllocateAndMark(self, sizeof(expr));
 
 	new->tag = tag;
 
 	return new;
 }
 
-/*******************************************************************************
- * @fn decl_init
- * @brief Create a decl node on heap and copy the contents of the input decl
- * node to the new heap node. The new heap pointer is added to the parser
- * mempool.
- ******************************************************************************/
-static decl *decl_init(parser *self, decl src)
+static decl *CopyDeclToHeap(parser *self, decl src)
 {
 	assert(self);
 
-	decl *new = NULL;
-
-	kmalloc(new, sizeof(decl));
-
-	mem_vector_push(&self->mempool, new);
+	decl *new = AllocateAndMark(self, sizeof(decl);
 
 	memcpy(new, &src, sizeof(decl));
 
 	return new;
 }
 
-/*******************************************************************************
- * @fn stmtcpy
- * @brief Create a statment node on heap and copy the contents of the input
- * statement node to the new heap node. The new heap pointer is added to the
- * parser mempool.
- ******************************************************************************/
-static stmt *stmt_init(parser *self, stmt src)
+static stmt *CopyStmtToHeap(parser *self, stmt src)
 {
 	assert(self);
 
-	stmt *new = NULL;
-
-	kmalloc(new, sizeof(stmt));
-
-	mem_vector_push(&self->mempool, new);
+	stmt *new = AllocateAndMark(self, sizeof(stmt));
 
 	memcpy(new, &src, sizeof(stmt));
 
@@ -270,64 +264,15 @@ static stmt *stmt_init(parser *self, stmt src)
 //------------------------------------------------------------------------------
 //helper functions
 
-/*******************************************************************************
- * @fn _usererror
- * @brief Send a formatted user error to stderr.
- * @param line If 0 then do not display line header.
- * @remark Use the usererror macro where possible.
- ******************************************************************************/
-static void _usererror(const uint32_t line, const char *msg, ...)
+static string StringFromLexeme(parser *self)
 {
-	assert(msg);
+	assert(self);
+	
+	string new = StringFromView(self->tok.lexeme);
 
-	va_list args;
-	va_start(args, msg);
+	Mark(self, new);
 
-	//Note, the ANSI_RED macro does not reset the colour after it is
-	//applied. This allows the input msg to also be coloured red. RED()
-	//cannot be applied directly to the input msg because the macro relies
-	//on string concatenation.
-	if (line) {
-		fprintf(stderr, ANSI_RED "(line %d) ", line);
-	} else {
-		fprintf(stderr, ANSI_RED " \b");
-	}
-
-	vfprintf(stderr, msg, args);
-
-	//this final RED() causes the colours to reset after the statement
-	fprintf(stderr, RED("\n"));
-
-	va_end(args);
-}
-
-/*******************************************************************************
- * @def usererror
- * @brief Wrapper over _usererror.
- * @remark Since the Lemon source code uses 'self' everywhere as a hacky OOP
- * receiver, we can guarantee that the source code line is always accessed as
- * self->tok.line.
- ******************************************************************************/
-#define usererror(msg, ...) _usererror(self->tok.line, msg, ##__VA_ARGS__)
-
-/*******************************************************************************
- * @fn lexcpy
- * @brief Copy a src lexeme of length n to the dest pointer and reformat it as
- * a valid C string.
- * @remark The dest pointer is added to the parser mempool
- ******************************************************************************/
-static void lexcpy(parser *self, char **dest, char *src, uint32_t n)
-{
-	assert(src);
-	assert(n);
-
-	kmalloc(*dest, sizeof(char) * n + 1);
-
-	mem_vector_push(&self->mempool, *dest);
-
-	memcpy(*dest, src, sizeof(char) * n);
-
-	(*dest)[n] = '\0';
+	return new;
 }
 
 /*******************************************************************************
@@ -343,9 +288,8 @@ static intmax_t extract_arrnum(parser *self)
 
 	long long int candidate = 0;
 	char *end = NULL;
-	char *tmp = NULL;
-
-	lexcpy(self, &tmp, self->tok.lexeme, self->tok.len);
+	
+	char *tmp = StringFromLexeme(self);
 
 	candidate = strtoll(tmp, &end, 10);
 
@@ -419,10 +363,6 @@ static void parser_advance(parser *self)
 		//This is relegated to an assertion as a tradeoff to improve
 		//readability and simplicity of the descent algorithm.
 		assert(0 != 0 && "attempted to read past EOF");
-	}
-
-	if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
-		TokenPrint(self->tok, stderr);
 	}
 
 	if (self->tok.type == _INVALID) {
@@ -499,20 +439,15 @@ exit_loop:
 }
 
 //------------------------------------------------------------------------------
-//recursive descent algorithm
+//parsing algorithm
 
-/*******************************************************************************
- * @fn rec_parse
- * @brief Recursive descent entry point; configure a root file node, load the
- * first token into the parser, and descend!
- * @return The returned root file node is erroneous if the errors member is
- * greater than zero.
- ******************************************************************************/
-static file *rec_parse(parser *self, char *fname)
+//always returns a file node pointing to a valid region of memory, but the tree
+//itself is ill-formed if self.errors > 0 on return.
+static file *RecursiveDescent(parser *self, string alias)
 {
 	assert(self);
 
-	file *ast = file_init(fname);
+	file *ast = FileInit(alias);
 
 	parser_advance(self);
 
@@ -529,28 +464,22 @@ static file *rec_parse(parser *self, char *fname)
 	return ast;
 }
 
-/*******************************************************************************
- * @fn rec_fiat
- * @brief Dispatch to decl or stmt handler and then wrap the return node. Catch
- * any parser errors and synchronize before continuing.
- *
- * @remark The fiat node doesnt need be qualified with the volatile keyword. The
- * CException library dictates if you change a stack variable in the try block
- * and require its updated values after an exception is thrown, the stack var
- * must be volatile. In this situation, any updates made to the fiat node in the
- * try block are unimportant. All we care is that the catch block overwrites the
- * tag. The union contents are unimportant.
- *
- * @return If the returned fiat node has a tag equal to NODE_INVALID, then one
- * or more syntax errors occured and the syntax tree rooted at the node is ill
- * formed.
- ******************************************************************************/
+//remark on unity exceptions: the fiat node doesn't need to be qualified with
+//volatile. The CException library dictates that stack variables must be marked
+//volatile if the updated value of the variable is required after an exception
+//is thrown. In this situation, any updates made to the fiat node are not
+//relevant since all information we need is within the garbage vector. Only
+//the tag overwrite is necessary.
+//
+//if the returned node tag is NODE_INVALID, then one or more syntax errors have
+//occured and the tree rooted at the returned node is ill-formed.
 static fiat rec_fiat(parser *self)
 {
 	assert(self);
 
 	CEXCEPTION_T exception;
-	fiat node = { .tag = NODE_INVALID };
+	fiat node = {0};
+	bool gc_flag = false;
 
 	Try {
 		switch (self->tok.type) {
@@ -574,13 +503,13 @@ static fiat rec_fiat(parser *self)
 			node.statement = rec_stmt(self);
 			break;
 		}
-
-		mem_vector_reset(&self->mempool, NULL);
 	} Catch (exception) {
 		synchronize(self);
 		node.tag = NODE_INVALID;
-		mem_vector_reset(&self->mempool, free);
+		gc_flag = true;
 	}
+
+	CollectGarbage(gc_flag);
 
 	return node;
 }
@@ -617,7 +546,7 @@ static decl rec_struct(parser *self)
 		Throw(XXPARSE);
 	}
 
-	lexcpy(self, &node.udt.name, self->tok.lexeme, self->tok.len);
+	node.udt.name = StringFromLexeme(self);
 
 	move_check_move(self, _LEFTBRACE, "expected '{' after name");
 
@@ -646,7 +575,7 @@ static member_vector rec_members(parser *self)
 
 	//vector<member> stores members directly, not their pointers, so the
 	//parser mempool only needs to track the single vector data pointer.
-	mem_vector_push(&self->mempool, vec.data);
+	mem_vector_push(&self->garbage, vec.data);
 
 	member attr = {
 		.name = NULL,
@@ -665,7 +594,7 @@ static member_vector rec_members(parser *self)
 			Throw(XXPARSE);
 		}
 
-		lexcpy(self, &attr.name, self->tok.lexeme, self->tok.len);
+		attr.name = StringFromLexeme(self);
 
 		move_check_move(self, _COLON, "expected ':' after name");
 
@@ -716,7 +645,7 @@ decl rec_func(parser *self)
 		Throw(XXPARSE);
 	}
 
-	lexcpy(self, &node.function.name, self->tok.lexeme, self->tok.len);
+	node.function.name = StringFromLexeme(self);
 
 	//parameter list
 	move_check_move(self, _LEFTPAREN, "missing '(' after function name");
@@ -751,7 +680,7 @@ decl rec_func(parser *self)
 
 	//body
 	check(self, _LEFTBRACE, "missing body in function declaration");
-	node.function.block = stmt_init(self, rec_block(self));
+	node.function.block = CopyStmtToHeap(self, rec_block(self));
 
 	return node;
 }
@@ -772,7 +701,7 @@ static param_vector rec_params(parser *self)
 
 	//vector<param> stores params directly instead of pointers to params,
 	//so the mempool only needs to track the vector data pointer.
-	mem_vector_push(&self->mempool, vec.data);
+	mem_vector_push(&self->garbage, vec.data);
 
 	param attr  = {
 		.name = NULL,
@@ -796,7 +725,7 @@ static param_vector rec_params(parser *self)
 			Throw(XXPARSE);
 		}
 
-		lexcpy(self, &attr.name, self->tok.lexeme, self->tok.len);
+		attr.name = StringFromLexeme(self);
 
 		move_check_move(self, _COLON, "expected ':' after name");
 
@@ -849,7 +778,7 @@ static decl rec_var(parser *self)
 		Throw(XXPARSE);
 	}
 
-	lexcpy(self, &node.variable.name, self->tok.lexeme, self->tok.len);
+	node.variable.name = StringFromLexeme(self);
 
 	move_check_move(self, _COLON, "expected ':' before type");
 
@@ -882,12 +811,12 @@ type *rec_type(parser *self)
 
 	type *node = NULL;
 	kmalloc(node, sizeof(type));
-	mem_vector_push(&self->mempool, node);
+	mem_vector_push(&self->garbage, node);
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
 		node->tag = NODE_BASE;
-		lexcpy(self, &node->base, self->tok.lexeme, self->tok.len);
+		node->base = StringFromLexeme(self);
 		parser_advance(self);
 		break;
 
@@ -1004,7 +933,7 @@ static stmt rec_block(parser *self)
 
 	fiat_vector_init(&node.block.fiats, 0, 4);
 
-	parser_advance(self); //move off left brace 
+	parser_advance(self); //move off left brace
 
 	while (self->tok.type != _RIGHTBRACE) {
 		fiat_vector_push(&node.block.fiats, rec_fiat(self));
@@ -1035,7 +964,7 @@ static stmt rec_forloop(parser *self)
 	//initial condition
 	if (self->tok.type == _LET) {
 		node.forloop.tag = FOR_DECL;
-		node.forloop.shortvar = decl_init(self, rec_var(self));
+		node.forloop.shortvar = CopyDeclToHeap(self, rec_var(self));
 		//rec_var consumes the terminating semicolon
 	} else {
 		node.forloop.tag = FOR_INIT;
@@ -1049,7 +978,7 @@ static stmt rec_forloop(parser *self)
 	node.forloop.post = rec_assignment(self);
 	check_move(self, _RIGHTPAREN, "missing ')' after post expression");
 
-	node.forloop.block = stmt_init(self, rec_block(self));
+	node.forloop.block = CopyStmtToHeap(self, rec_block(self));
 
 	return node;
 }
@@ -1075,7 +1004,7 @@ static stmt rec_whileloop(parser *self)
 	check_move(self, _RIGHTPAREN, "expected ')' after while condition");
 
 	if (self->tok.type == _LEFTBRACE) {
-		node.whileloop.block = stmt_init(self, rec_block(self));
+		node.whileloop.block = CopyStmtToHeap(self, rec_block(self));
 	} else {
 		usererror("expected block statement after while loop");
 		Throw(XXPARSE);
@@ -1086,7 +1015,7 @@ static stmt rec_whileloop(parser *self)
 
 /*******************************************************************************
  * @fn rec_switch
- * @brief <switch statement> ::= "switch" "(" <expression> ")" "{" 
+ * @brief <switch statement> ::= "switch" "(" <expression> ")" "{"
  * <case statement>* "}"
  * The token currently held by the parser should be the _SWITCH keyword.
  ******************************************************************************/
@@ -1151,7 +1080,7 @@ static test_vector rec_tests(parser *self)
 			Throw(XXPARSE);
 		}
 
-		t.pass = stmt_init(self, rec_block(self));
+		t.pass = CopyStmtToHeap(self, rec_block(self));
 		test_vector_push(&vec, t);
 		memset(&t, 0, sizeof(test));
 	}
@@ -1178,7 +1107,7 @@ static stmt rec_branch(parser *self)
 	move_check_move(self, _LEFTPAREN, "missing '(' after 'if'");
 
 	if (self->tok.type == _LET) {
-		node.branch.shortvar = decl_init(self, rec_var(self));
+		node.branch.shortvar = CopyDeclToHeap(self, rec_var(self));
 		//rec_var consumes terminating semicolon
 	} else {
 		node.branch.shortvar = NULL;
@@ -1190,7 +1119,7 @@ static stmt rec_branch(parser *self)
 
 	//if branch
 	if (self->tok.type == _LEFTBRACE) {
-		node.branch.pass = stmt_init(self, rec_block(self));
+		node.branch.pass = CopyStmtToHeap(self, rec_block(self));
 	} else {
 		usererror("expected block statement after if condition");
 		Throw(XXPARSE);
@@ -1206,13 +1135,13 @@ static stmt rec_branch(parser *self)
 
 	switch (self->tok.type) {
 	case _IF:
-		node.branch.fail = stmt_init(self, rec_branch(self));
+		node.branch.fail = CopyStmtToHeap(self, rec_branch(self));
 		break;
 
 	case _LEFTBRACE:
-		node.branch.fail = stmt_init(self, rec_block(self));
+		node.branch.fail = CopyStmtToHeap(self, rec_block(self));
 		break;
-	
+
 	default:
 		usererror("expected 'else if' or 'else {...}' after block");
 		Throw(XXPARSE);
@@ -1238,14 +1167,14 @@ static stmt rec_named_target(parser *self)
 	case _GOTO:
 		node.tag = NODE_GOTOLABEL;
 		move_check(self, _IDENTIFIER, "missing goto target");
-		lexcpy(self, &node.gotolabel, self->tok.lexeme, self->tok.len);
+		node.gotolabel = StringFromLexeme(self);
 		move_check_move(self, _SEMICOLON, "missing ';' after goto");
 		break;
 
 	case _IMPORT:
 		node.tag = NODE_IMPORT;
 		move_check(self, _IDENTIFIER, "missing import name");
-		lexcpy(self, &node.import, self->tok.lexeme, self->tok.len);
+		node.import = StringFromlexeme(self);
 		move_check_move(self, _SEMICOLON, "missing ';' after import");
 		break;
 
@@ -1263,7 +1192,7 @@ static stmt rec_named_target(parser *self)
 		node.returnstmt = rec_assignment(self);
 		check_move(self, _SEMICOLON, "missing ';' after return");
 		break;
-	
+
 	default:
 		assert(0 != 0);
 	}
@@ -1279,7 +1208,7 @@ static stmt rec_named_target(parser *self)
 static stmt rec_anonymous_target(parser *self)
 {
 	assert(self);
-	
+
 	stmt node = {
 		.line = self->tok.line
 	};
@@ -1289,7 +1218,7 @@ static stmt rec_anonymous_target(parser *self)
 		node.tag = NODE_BREAKSTMT;
 		move_check_move(self, _SEMICOLON, "missing ';' after break");
 		break;
-	
+
 	case _CONTINUE:
 		node.tag = NODE_CONTINUESTMT;
 		move_check_move(self, _SEMICOLON, "missing ';' after continue");
@@ -1327,11 +1256,11 @@ static stmt rec_label(parser *self)
 
 	move_check(self, _IDENTIFIER, "label name is not an identifier");
 
-	lexcpy(self, &node.label.name, self->tok.lexeme, self->tok.len);
+	node.label.name = StringFromLexeme(self);
 
 	move_check_move(self, _COLON, "missing ':' after label name");
 
-	node.label.target = stmt_init(self, rec_stmt(self));
+	node.label.target = CopyStmtToHeap(self, rec_stmt(self));
 
 	return node;
 }
@@ -1373,7 +1302,7 @@ static expr *rec_assignment(parser *self)
 
 	if (self->tok.type == _EQUAL) {
 		expr *tmp = node;
-		node = expr_init(self, NODE_ASSIGNMENT);
+		node = ExprInit(self, NODE_ASSIGNMENT);
 		node->assignment.lvalue = tmp;
 		node->line = self->tok.line;
 
@@ -1397,7 +1326,7 @@ static expr *rec_logicalor(parser *self)
 
 	while (self->tok.type == _OR) {
 		tmp = node;
-		node = expr_init(self, NODE_BINARY);
+		node = ExprInit(self, NODE_BINARY);
 
 		node->binary.left = tmp;
 		node->binary.operator = _OR;
@@ -1422,7 +1351,7 @@ static expr *rec_logicaland(parser *self)
 
 	while (self->tok.type == _AND) {
 		expr *tmp = node;
-		node = expr_init(self, NODE_BINARY);
+		node = ExprInit(self, NODE_BINARY);
 
 		node->binary.left = tmp;
 		node->binary.operator = _AND;
@@ -1465,7 +1394,7 @@ static expr *rec_equality(parser *self)
 
 		case _NOTEQUAL:
 			tmp = node;
-			node = expr_init(self, NODE_BINARY);
+			node = ExprInit(self, NODE_BINARY);
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
@@ -1508,7 +1437,7 @@ static expr *rec_term(parser *self)
 
 		case _BITXOR:
 			tmp = node;
-			node = expr_init(self, NODE_BINARY);
+			node = ExprInit(self, NODE_BINARY);
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
@@ -1557,7 +1486,7 @@ static expr *rec_factor(parser *self)
 
 		case _AMPERSAND:
 			tmp = node;
-			node = expr_init(self, NODE_BINARY);
+			node = ExprInit(self, NODE_BINARY);
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
@@ -1578,7 +1507,7 @@ exit_loop:
 
 /*******************************************************************************
  * @fn rec_unary
- * @brief <unary> ::= ("-" | "+" | "'" | "!" | "*" | "&" | <cast>) <unary> 
+ * @brief <unary> ::= ("-" | "+" | "'" | "!" | "*" | "&" | <cast>) <unary>
  * | <primary>
  ******************************************************************************/
 static expr *rec_unary(parser *self)
@@ -1604,7 +1533,7 @@ static expr *rec_unary(parser *self)
 		fallthrough;
 
 	case _AMPERSAND:
-		node = expr_init(self, NODE_UNARY);
+		node = ExprInit(self, NODE_UNARY);
 		node->unary.operator = self->tok.type;
 		node->line = self->tok.line;
 		parser_advance(self);
@@ -1612,7 +1541,7 @@ static expr *rec_unary(parser *self)
 		break;
 
 	case _COLON:
-		node = expr_init(self, NODE_CAST);
+		node = ExprInit(self, NODE_CAST);
 		node->line = self->tok.line;
 		parser_advance(self);
 		node->cast.casttype = rec_type(self);
@@ -1668,9 +1597,9 @@ static expr *rec_primary(parser *self)
 		fallthrough;
 
 	case _FALSE:
-		node = expr_init(self, NODE_LIT);
+		node = ExprInit(self, NODE_LIT);
 		node->line = self->tok.line;
-		lexcpy(self, &node->lit.rep, self->tok.lexeme, self->tok.len);
+		node->lit.rep = StringFromLexeme(self);
 		node->lit.littype = self->tok.type;
 		parser_advance(self);
 		break;
@@ -1702,19 +1631,19 @@ static expr *rec_access(parser *self, expr *prev)
 
 	switch (self->tok.type) {
 	case _DOT:
-		node = expr_init(self, NODE_SELECTOR);
+		node = ExprInit(self, NODE_SELECTOR);
 		node->line = self->tok.line;
-		
+
 		move_check(self, _IDENTIFIER, "missing attribute after '.'");
-		
+
 		node->selector.name = prev;
 		node->selector.attr = rec_ident(self, self->tok);
-		
+
 		parser_advance(self);
 		break;
 
 	case _LEFTPAREN:
-		node = expr_init(self, NODE_CALL);
+		node = ExprInit(self, NODE_CALL);
 		node->line = self->tok.line;
 
 		node->call.name = prev;
@@ -1723,7 +1652,7 @@ static expr *rec_access(parser *self, expr *prev)
 		break;
 
 	case _LEFTBRACKET:
-		node = expr_init(self, NODE_INDEX);
+		node = ExprInit(self, NODE_INDEX);
 		node->line = self->tok.line;
 
 		parser_advance(self);
@@ -1773,9 +1702,9 @@ static expr *rec_ident(parser *self, token tok)
 {
 	assert(self);
 
-	expr *node = expr_init(self, NODE_IDENT);
+	expr *node = ExprInit(self, NODE_IDENT);
 	node->line = tok.line;
-	lexcpy(self, &node->ident.name, tok.lexeme, tok.len);
+	node->ident.name = StringFromLexeme(self);
 
 	return node;
 }
@@ -1792,15 +1721,18 @@ static expr *rec_rvar(parser *self, token prev)
 	assert(self);
 	assert(self->tok.type == _TILDE);
 
-	expr *node = expr_init(self, NODE_RVARLIT);
-	
+	expr *node = ExprInit(self, NODE_RVARLIT);
+
 	node->line = prev.line;
 
-	lexcpy(self, &node->rvarlit.dist, prev.lexeme, prev.len);
+	token tmp = self->tok;
+	self->tok = prev;
+	node->rvarlit.dist = StringFromLexeme(self);
+	self->tok = tmp;
 
 	parser_advance(self);
 
-	node->rvarlit.args = rec_args(self); 
+	node->rvarlit.args = rec_args(self);
 
 	return node;
 }
@@ -1854,7 +1786,7 @@ static expr *rec_arraylit(parser *self)
 	static char *closeerr = "missing ']' after tagged index";
 	static char *eqerr = "missing '=' after tagged index";
 
-	expr *node = expr_init(self, NODE_ARRAYLIT);
+	expr *node = ExprInit(self, NODE_ARRAYLIT);
 
 	node->line = self->tok.line;
 	idx_vector_init(&node->arraylit.indicies, 0, 4);
@@ -1872,7 +1804,7 @@ static expr *rec_arraylit(parser *self)
 
 			intmax_t idx = extract_arrnum(self);
 			idx_vector_push(&node->arraylit.indicies, idx);
-			
+
 			move_check_move(self, _RIGHTBRACKET, closeerr);
 			check_move(self, _EQUAL, eqerr);
 		} else {

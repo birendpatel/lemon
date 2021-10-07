@@ -24,7 +24,7 @@
 
 #define unused __attribute__((unused))
 
-#define cleanup(freefunc) __attribute__((__cleanup__(freefunc)))
+#define RAII(freefunc) __attribute__((__cleanup__(freefunc)))
 
 #define addressless register
 
