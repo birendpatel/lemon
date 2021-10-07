@@ -7,8 +7,8 @@
 // The documentation in this header makes references to the Lemon language
 // specification and the EBNF grammar located at ../langspec.txt. As a general
 // guideline, the grammar metasyntax operators '+' and '*' are typically
-// implemented as vectors. The '|' operator is implemented via unions. The '?'
-// operator is generally represented as a boolean true or non-null pointer.
+// implemented as vectors. The '|' operator is implemented via tagged unions.
+// The '?' operator is often represented as a boolean true or non-null pointer.
 
 #pragma once
 
@@ -23,17 +23,17 @@
 #include "lib/vector.h"
 
 //AST nodes
-typedef struct file file;
+typedef struct file file; //root
 typedef struct fiat fiat;
 typedef struct type type;
 typedef struct decl decl;
 typedef struct stmt stmt;
 typedef struct expr expr;
 
-//ASTs are created on heap.
+//ASTs are created on heap. If err == XENOMEM then the returned pointer is NULL.
 file *SyntaxTreeInit(options *opt, xerror *err, string src, string alias);
 
-///file pointer will be set to NULL on return
+//file pointer will be set to NULL on return
 void SyntaxTreeFree(file *ast);
 
 //<member list>
@@ -67,7 +67,8 @@ make_vector(intmax_t, idx, static)
 
 make_vector(expr *, expr, static)
 
-//some vector implementations must be postponed until sizeof(T) is known.
+//some vectors need to be forward declared for node references, but the
+//implementations must be postponed until sizeof(T) is available.
 alias_vector(fiat)
 declare_vector(fiat, fiat)
 
@@ -132,7 +133,7 @@ struct decl {
 		} variable;
 	};
 
-	uint32_t line;
+	size_t line;
 };
 
 api_vector(decl, decl, static)
@@ -208,7 +209,7 @@ struct stmt {
 		} label;
 	};
 
-	uint32_t line;
+	size_t line;
 };
 
 api_vector(stmt, stmt, static)
@@ -292,7 +293,7 @@ struct expr {
 		} ident;
 	};
 
-	uint32_t line;
+	size_t line;
 };
 
 typedef enum fiattag {
@@ -317,8 +318,7 @@ impl_vector_get(fiat, fiat, static)
 impl_vector_set(fiat, fiat, static)
 impl_vector_reset(fiat, fiat, static)
 
-//AST root node
 struct file {
-	char *name;
+	char *alias;
 	fiat_vector fiats;
 };
