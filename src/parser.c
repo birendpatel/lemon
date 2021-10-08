@@ -67,7 +67,7 @@ static stmt RecForLoop(parser *self);
 static stmt RecWhileLoop(parser *self);
 static stmt RecBranch(parser *self);
 static stmt RecSwitch(parser *self);
-static test_vector rec_tests(parser *self);
+static test_vector RecTests(parser *self);
 
 //expressions
 static expr *RecAssignment(parser *self);
@@ -78,12 +78,12 @@ static expr *RecTerm(parser *self);
 static expr *RecFactor(parser *self);
 static expr *RecUnary(parser *self);
 static expr *RecPrimary(parser *self);
-static expr *rec_rvar_or_ident(parser *self);
-static expr *rec_rvar(parser *self, token prev);
-static expr_vector rec_args(parser *self);
-static expr *rec_arraylit(parser *self);
-static expr *rec_arraylit(parser *self);
-static expr *rec_ident(parser *self, token tok);
+static expr *RecRvarOrIdentifier(parser *self);
+static expr *RecRvar(parser *self, token prev);
+static expr_vector RecArguments(parser *self);
+static expr *RecArrayLiteral(parser *self);
+static expr *RecArrayLiteral(parser *self);
+static expr *RecIdentifier(parser *self);
 static expr *RecAccess(parser *self, expr *prev);
 
 file *SyntaxTreeInit(options *opt, string src, string alias)
@@ -945,7 +945,7 @@ static stmt RecSwitch(parser *self)
 
 	check_move(self, _LEFTBRACE, "missing '{' to open switch body");
 
-	node.switchstmt.tests = rec_tests(self);
+	node.switchstmt.tests = RecTests(self);
 
 	check_move(self, _RIGHTBRACE, "missing '}' to close switch body");
 
@@ -953,7 +953,7 @@ static stmt RecSwitch(parser *self)
 }
 
 //<case statement>* within <switch statement> rule
-static test_vector rec_tests(parser *self)
+static test_vector RecTests(parser *self)
 {
 	assert(self);
 
@@ -1435,11 +1435,11 @@ static expr *RecPrimary(parser *self)
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
-		node = rec_rvar_or_ident(self);
+		node = RecRvarOrIdentifier(self);
 		break;
 
 	case _LEFTBRACKET:
-		node = rec_arraylit(self);
+		node = RecArrayLiteral(self);
 		break;
 
 	case _LITERALINT:
@@ -1506,7 +1506,7 @@ static expr *RecAccess(parser *self, expr *prev)
 		move_check(self, _IDENTIFIER, "missing attribute after '.'");
 
 		node->selector.name = prev;
-		node->selector.attr = rec_ident(self, self->tok);
+		node->selector.attr = RecIdentifier(self, self->tok);
 
 		GetNextValidToken(self);
 		break;
@@ -1516,7 +1516,7 @@ static expr *RecAccess(parser *self, expr *prev)
 		node->line = self->tok.line;
 
 		node->call.name = prev;
-		node->call.args = rec_args(self);
+		node->call.args = RecArguments(self);
 
 		break;
 
@@ -1541,131 +1541,118 @@ static expr *RecAccess(parser *self, expr *prev)
 	return RecAccess(self, node);
 }
 
-/*******************************************************************************
- * @fn rec_rvar_or_ident
- * @brief Distinguish a leading identifier as a simple identifier node or as a
- * complex rvar literal.
- * @return Always returns a valid node. May throw a parse exception.
- ******************************************************************************/
-static expr *rec_rvar_or_ident(parser *self)
+static expr *RecRvarOrIdentifier(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _IDENTIFIER);
 
-	token tmp = self->tok;
+	expr *node = NULL;
+	token prev = self->tok;
 
 	GetNextValidToken(self);
 
 	if (self->tok.type == _TILDE) {
-		return rec_rvar(self, tmp);
+		self->tok = prev;
+		node = RecRvar(self);
 	} else {
-		return rec_ident(self, tmp);
+		token tmp = self->tok;
+		self->tok = prev;
+		node = RecIdentifier(self);
+		self->tok = tmp;
 	}
+
+	return node;
 }
 
-/*******************************************************************************
- * @fn rec_ident
- * @brief Simple identifier nodes. Creates an identifier from the token input
- * rather than from the parser.
- ******************************************************************************/
-static expr *rec_ident(parser *self, token tok)
+static expr *RecIdentifier(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _IDENTIFIER);
 
 	expr *node = ExprInit(self, NODE_IDENT);
-	node->line = tok.line;
+	node->line = self->tok.line;
 	node->ident.name = StringFromLexeme(self);
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_rvar
- * @brief Create a random variable literal expression node. The current token
- * held by the parser must be the tilde.
- * @param prev The leading identifier representing the random distribution
- * @return Always returns a valid node. May throw a parse exception.
- ******************************************************************************/
-static expr *rec_rvar(parser *self, token prev)
+//lookahead might strip the tilde from the token channel
+static expr *RecRvar(parser *self, bool seen_tilde)
 {
 	assert(self);
-	assert(self->tok.type == _TILDE);
+	assert(self->tok.type == _IDENTIFIER);
 
 	expr *node = ExprInit(self, NODE_RVARLIT);
 
-	node->line = prev.line;
+	node->line = self->tok.line;
+	node->rvarlit.dist = StringFromlexeme(self);
 
-	token tmp = self->tok;
-	self->tok = prev;
-	node->rvarlit.dist = StringFromLexeme(self);
-	self->tok = tmp;
+	if (!seen_tilde) {
+		move_check(self, _TILDE, "missing '~' after distribution");
+	}
 
 	GetNextValidToken(self);
 
-	node->rvarlit.args = rec_args(self);
+	node->rvarlit.args = RecArguments(self);
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_args
- * @brief Process an argument list into an expr_vector. The current token held
- * in the parser must be a _LEFTPAREN.
- * @return On return the node is always valid and the right parenthesis will
- * have been consumed by the parser. A parse exception may be thrown.
- * @remark Vector capacity is set heuristically.
- ******************************************************************************/
-static expr_vector rec_args(parser *self)
+static expr_vector RecArguments(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _LEFTPAREN);
 
 	expr_vector vec = {0};
-	expr_vector_init(&vec, 0, 4);
+	const size_t vec_capacity = 4;
+	expr_vector_init(&vec, 0, vec_capacity);
+	Mark(self, vec.data);
 
-	GetNextValidToken(self); //move off left parenthesis
+	GetNextValidToken(self); 
 
 	while (self->tok.type != _RIGHTPAREN) {
 		if (vec.len > 0) {
-			check_move(self, _COMMA, "expected ',' after arg");
+			check_move(self, _COMMA, "missing ',' after arg");
 		}
 
 		expr_vector_push(&vec, RecAssignment(self));
 	}
 
-	GetNextValidToken(self); //move off right parenthesis
+	GetNextValidToken(self);
 
 	return vec;
 }
 
-/*******************************************************************************
- * @fn rec_arraylit
- * @brief Process an array literal into an expression node. The current token
- * held by the parser must be a _LEFTBRACKET.
- * @return Always returns a valid node. May throw a parse exception. Every
- * value in the values vector has an associated value in the indicies vector
- * at the same vector index. When the associated value in the indicies vector
- * is -1, then the value in the values vector does not have a tagged index.
- ******************************************************************************/
-static expr *rec_arraylit(parser *self)
+//for each key-value pair in the array literal the key is kept in an idx_vector
+//and the value is kept in an expr_vector at the same index. If a value in the
+//array literal is not tagged with a key, then the associated value in the
+//idx_vector is -1.
+static expr *RecArrayLiteral(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _LEFTBRACKET);
 
-	static char *tagerr = "tagged array index must be an integer";
-	static char *closeerr = "missing ']' after tagged index";
-	static char *eqerr = "missing '=' after tagged index";
+	static string tagerr = "tagged array index must be an integer";
+	static string closeerr = "missing ']' after tagged index";
+	static string eqerr = "missing '=' after tagged index";
 
 	expr *node = ExprInit(self, NODE_ARRAYLIT);
 
 	node->line = self->tok.line;
-	idx_vector_init(&node->arraylit.indicies, 0, 4);
-	expr_vector_init(&node->arraylit.values, 0, 4);
 
-	GetNextValidToken(self); //move off left bracket
+	const size_t idx_vec_capacity = 4;
+	idx_vector_init(&node->arraylit.indicies, 0, idx_vec_capacity);
+	Mark(self, node->arraylit.indicies.data);
+	
+	const size_t expr_vec_capacity = 4;
+	expr_vector_init(&node->arraylit.values, 0, expr_vec_capacity);
+	Mark(self, node->arraylit.values.data);
+
+	GetNextValidToken(self); 
 
 	while (self->tok.type != _RIGHTBRACKET) {
 		if (node->arraylit.values.len > 0) {
-			check_move(self, _COMMA, "expected ',' after value");
+			check_move(self, _COMMA, "missing ',' after value");
 		}
 
 		if (self->tok.type == _LEFTBRACKET) {
@@ -1683,7 +1670,7 @@ static expr *rec_arraylit(parser *self)
 		expr_vector_push(&node->arraylit.values, RecAssignment(self));
 	}
 
-	GetNextValidToken(self); //move off right bracket
+	GetNextValidToken(self);
 
 	assert(node->arraylit.indicies.len == node->arraylit.values.len);
 
