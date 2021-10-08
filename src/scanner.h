@@ -64,36 +64,32 @@ typedef enum token_type {
 	_DIV,		// /
 	_MOD,		// %
 
-	//control flow
-	_FOR,
-	_WHILE,
+	//sequence point keywords
+	_STRUCT,
+	_FUNC,
+	_LET,
+	_RETURN,
 	_BREAK,
 	_CONTINUE,
+	_GOTO,
+	_IMPORT,
+	_FOR,
+	_WHILE,
 	_IF,
-	_ELSE,
 	_SWITCH,
+	
+	//regular keywords
+	_ELSE,
 	_CASE,
 	_DEFAULT,
 	_FALLTHROUGH,
-	_GOTO,
 	_LABEL,
-
-	//assignment
-	_LET,
 	_MUT,
 	_NULL,
 	_TRUE,
 	_FALSE,
-
-	//composition
-	_STRUCT,
-	_IMPORT,
-
-	//procedures
-	_FUNC,
 	_PRIV,
 	_PUB,
-	_RETURN,
 	_SELF,
 	_VOID,
 

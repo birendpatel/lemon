@@ -1,27 +1,18 @@
-//Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// Recursive descent parser. The implementation matches 1:1 with the grammar.
+// Recursive descent parser. Two types of errors may be encountered: compiler
+// errors and user errors. Compiler errors are treated as usual; Log the issue
+// and propogate the error code.
 //
-// The parser may encounter two types of errors: internal compiler errors and
-// user errors. Compiler errors are treated in the same fashion as the rest of
-// the program; Log the issue via xerror and propogate the error code up the
-// call chain.
+// User errors are not logged, they don't propoage error codes, and they do not
+// cause the parser to terminate. Instead, they throw exceptions which trigger
+// the parser to synchronize to a new sequence point within the token stream.
 //
-// The user errors are different. They are not logged via xerror. They do not
-// cause the parser to terminate. They do not propogate error codes. Instead,
-// they throw exceptions. Whenever an exception is caught, the parser will
-// synchronize to a new sequence point within the token stream. Sequence points
-// are, generally speaking, any tokens which identify or hint at the start of a
-// new statement or declaration. See Synchronize() for details.
-//
-// The only serious limitation to setjmp/longjmp exception handling is that
-// dynamic memory allocations made within a try-block are not released when an
-// exception occurs. For this reason, the parser contains a vector<void*> used
-// to track and release all memory allocations that were requested since the
-// last successful sequence point. The parser cannot walk the erroneous subtree
-// in post-order to release the allocations because sometimes an exception is
-// thrown before a parent and child are linked; this results in a dangling
-// pointer. So, every kmalloc call must be coupled to an immediate vector push.
+// The setjmp/longjmp exception handler does not release the dynamic memory
+// allocations made within a try-block when an exception occurs. The parser
+// contains a vector<void*> used to track all memory allocations requested since
+// the last successful sequence point. Garbage collection is triggered after
+// synchronisation.
 
 #include <assert.h>
 #include <limits.h>
@@ -44,12 +35,12 @@ static void Mark(parser *self, void *region);
 static void *AllocateAndMark(parser *self, size_t bytes);
 static void CollectGarbage(parser *self, bool flag);
 static string StringFromLexeme(parser *self);
-static void parser_advance(parser *self);
-static void synchronize(parser *self);
-static void _check(parser *self, token_type type, char *msg, bool A, bool Z);
-static intmax_t extract_arrnum(parser *self);
-
-//node management
+static void GetNextToken(parser *self);
+static void GetNextValidToken(parser *self);
+static void ReportInvalidToken(parser *self);
+static size_t Synchronize(parser *self);
+static void CheckToken(parser *self, token_type type, char *msg, bool, bool);
+static intmax_t ExtractArrayIndex(parser *self);
 static file *FileInit(string alias);
 static expr *ExprInit(parser *self, exprtag tag);
 static stmt *CopyStmtToHeap(parser *self, stmt src);
@@ -95,20 +86,6 @@ static expr *rec_arraylit(parser *self);
 static expr *rec_ident(parser *self, token tok);
 static expr *rec_access(parser *self, expr *prev);
 
-//the lemon source code always uses 'self' as a psuedo-OOP receiver, so the
-//xerror API can be simplified with a guaranteed access mechanism for the line
-#define usererror(msg, ...) XerrorUser(self->tok.line, msg, ##__VA_ARGS__)
-
-make_vector(void *, mem, static)
-
-struct parser {
-	options *opt;
-	token_channel *chan;
-	mem_vector garbage;
-	token tok;
-	size_t errors;
-};
-
 file *SyntaxTreeInit(options *opt, string src, string alias)
 {
 	assert(opt);
@@ -124,13 +101,27 @@ file *SyntaxTreeInit(options *opt, string src, string alias)
 
 	file *syntax_tree = RecursiveDescent(prs, alias);
 
-	ParserFree(prs);
-
 	return syntax_tree;
+}
+
+void SyntaxTreeFree(file *ast)
+{
+	free(ast);
+	//TODO
 }
 
 //------------------------------------------------------------------------------
 // parser management
+
+make_vector(void *, ptr, static)
+
+struct parser {
+	options *opt;
+	token_channel *chan;
+	ptr_vector garbage;
+	token tok;
+	size_t errors;
+};
 
 static parser *ParserInit(options *opt, string src)
 {
@@ -151,8 +142,8 @@ static parser *ParserInit(options *opt, string src)
 		return NULL;
 	}
 
-	const size_t garbage_capacity = 8; //heuristic
-	mem_vector_init(&prs->garbage, 0, garbage_capacity);
+	const size_t garbage_capacity = 32;
+	ptr_vector_init(&prs->garbage, 0, garbage_capacity);
 
 	prs->opt = opt;
 	prs->tok = (token) { .type = _INVALID };
@@ -176,38 +167,11 @@ static void ParserFree(parser **self)
 
 	free(prs->chan);
 
-	mem_vector_free(&prs->garbage, NULL);
+	ptr_vector_free(&prs->garbage, NULL);
 
 	free(prs);
 
 	return XESUCCESS;
-}
-
-static void Mark(parser *self, void *region)
-{
-	mem_vector_push(&self->garbage, region);
-}
-
-static void *AllocateAndMark(parser *self, size_t bytes)
-{
-	assert(self);
-
-	void *region = kmalloc(dest, bytes);
-
-	Mark(self, region);
-
-	return region;
-}
-
-static void CollectGarbage(parser *self, bool flag)
-{
-	void (*freefunc)(void *) = NULL;
-
-	if (flag) {
-		freefunc = free;
-	}
-
-	mem_vector_reset(&self->garbage, freefunc);
 }
 
 //------------------------------------------------------------------------------
@@ -221,8 +185,8 @@ static file *FileInit(string alias)
 
 	ast->alias = alias;
 
-	const size_t heuristic_capacity = 128;
-	fiat_vector_init(&ast->fiats, 0, heuristic_capacity);
+	const size_t fiat_capacity = 64;
+	fiat_vector_init(&ast->fiats, 0, fiat_capacity);
 
 	return ast;
 }
@@ -264,10 +228,41 @@ static stmt *CopyStmtToHeap(parser *self, stmt src)
 //------------------------------------------------------------------------------
 //helper functions
 
+static void Mark(parser *self, void *region)
+{
+	ptr_vector_push(&self->garbage, region);
+}
+
+static void *AllocateAndMark(parser *self, size_t bytes)
+{
+	assert(self);
+
+	void *region = kmalloc(dest, bytes);
+
+	Mark(self, region);
+
+	return region;
+}
+
+static void CollectGarbage(parser *self, bool flag)
+{
+	void (*freefunc)(void *) = NULL;
+
+	if (flag) {
+		freefunc = free;
+	}
+
+	ptr_vector_reset(&self->garbage, freefunc);
+}
+
+//OOP in Lemon always uses 'self' as a convention, so the xerror API can be
+//simplified with a guaranteed access mechanism for the token line number
+#define usererror(msg, ...) XerrorUser(self->tok.line, msg, ##__VA_ARGS__)
+
 static string StringFromLexeme(parser *self)
 {
 	assert(self);
-	
+
 	string new = StringFromView(self->tok.lexeme);
 
 	Mark(self, new);
@@ -275,20 +270,15 @@ static string StringFromLexeme(parser *self)
 	return new;
 }
 
-/*******************************************************************************
- * @fn extract_arrnum
- * @brief Extract a number from the non-null terminated lexeme held in the
- * current parser token.
- * @return If the number is not a simple nonnegitive integer less than LLONG_MAX
- * then a parse exception is thrown. Else, an intmax representation is given.
- ******************************************************************************/
-static intmax_t extract_arrnum(parser *self)
+//if the extracted index is not a simple nonnegative integer less than LLONG_MAX
+//then a parser exception ins thrown.
+static intmax_t ExtractArrayIndex(parser *self)
 {
 	assert(self);
 
 	long long int candidate = 0;
 	char *end = NULL;
-	
+
 	char *tmp = StringFromLexeme(self);
 
 	candidate = strtoll(tmp, &end, 10);
@@ -306,20 +296,21 @@ static intmax_t extract_arrnum(parser *self)
 	return (intmax_t) candidate;
 }
 
-/*******************************************************************************
- * @fn _check
- * @brief Advance to the next token if A is true. Check the token against the
- * input type and throw XEPARSE if it doesn't match. Advance again on a
- * successful match if Z is true.
- * @remark Use the check, move_check, check_move, and move_check_move macros.
- ******************************************************************************/
-static void  _check(parser *self, token_type type, char *msg, bool A, bool Z)
+static void CheckToken
+(
+	parser *self,
+	token_type type,
+	string msg,
+	bool move_before,
+	bool move_after
+)
 {
 	assert(self);
+	assert(type >= _INVALID && type < _TOKEN_TYPE_COUNT);
 	assert(msg);
 
-	if (A) {
-		parser_advance(self);
+	if (move_before) {
+		GetNextValidToken(self);
 	}
 
 	if (self->tok.type != type) {
@@ -327,115 +318,102 @@ static void  _check(parser *self, token_type type, char *msg, bool A, bool Z)
 		Throw(XXPARSE);
 	}
 
-	if (Z) {
-		parser_advance(self);
+	if (move_after) {
+		GetNextValidToken(self);
 	}
 }
 
-//don't move to a new token, check the current one, and don't move afterwards
-#define check(self, type, msg) _check(self, type, msg, false, false)
+#define check(self, type, msg) \
+	CheckToken(self, type, msg, false, false)
 
-//move to a new token, check it, but don't move again
-#define move_check(self, type, msg) _check(self, type, msg, true, false)
+#define move_check(self, type, msg) \
+	CheckToken(self, type, msg, true, false)
 
-//check the current token, move on success
-#define check_move(self, type, msg) _check(self, type, msg, false, true)
+#define check_move(self, type, msg) \
+	CheckToken(self, type, msg, false, true)
 
-//move to a new token, check it, move again on success
-#define move_check_move(self, type, msg) _check(self, type, msg,  true, true)
+#define move_check_move(self, type, msg) \
+	CheckToken(self, type, msg,  true, true)
 
-/*******************************************************************************
- * @fn parser_advance
- * @brief Receive a token from the scanner channel.
- * @details If the token is invalid, this function will synchronize to a new
- * sequence point before it returns.
- ******************************************************************************/
-static void parser_advance(parser *self)
+static void GetNextToken(parser *self)
 {
 	assert(self);
 
-	if (token_channel_recv(self->chan, &self->tok)) {
-		//reading past EOF is an off-by-one bug in the second-to-last
-		//function in the call stack. Very easy fix: backtrace on gdb
-		//to locate the function. At least one call to parser_advance()
-		//in its body is occuring too early.
-		//
-		//This is relegated to an assertion as a tradeoff to improve
-		//readability and simplicity of the descent algorithm.
-		assert(0 != 0 && "attempted to read past EOF");
-	}
+	xerror err = token_channel_recv(self->chan, &self->tok);
+
+	//channel status is relegated to an assertion as a tradeoff to improve
+	//readability and simplicity of the recursive descent implementation.
+	//
+	//reading past EOF is an off-by-one bug in the second-to-last function
+	//in the call stack. The function identified by a backtrace has at
+	//least one call to GetNextValidToken in its body which occurs too early.
+	assert(!err && "attempted to read past EOF");
+}
+
+static void GetNextValidToken(parser *self)
+{
+	assert(self);
+
+	GetNextToken(self);
 
 	if (self->tok.type == _INVALID) {
-		synchronize(self);
+		(void) Synchronize(self);
 	}
 }
 
-/*******************************************************************************
- * @fn synchronize
- * @brief If the current token held by the parser is not a sequence point, then
- * throw it away. Receive new tokens from the scanner channel until a sequence
- * point is found.
- * @return This function guarantees on return that the token held by the parser
- * is a sequence point.
- ******************************************************************************/
-static void synchronize(parser *self)
+static void ReportInvalidToken(parser *self)
 {
-	static const char *fmt = "invalid syntax: %.*s";
+	assert(self);
+	assert(self->tok.type == _INVALID);
+
+	char *msg = self->tok.lexeme.data;
+	size_t msg_len = self->tok.lexeme.len;
+
+	switch (self->tok.flags) {
+	case TOKEN_OKAY:
+		usererror("invalid syntax: %.*s", msg_len, msg);
+		break;
+
+	case TOKEN_BAD_STR:
+		usererror("unterminated string literal");
+		break;
+
+	default:
+		assert(0 == 0 && "token flag combination is not valid");
+	}
+
+	self->errors++;
+}
+
+static size_t Synchronize(parser *self)
+{
+	size_t tokens_skipped = 0;
 
 	do {
 		switch(self->tok.type) {
+		case _EOF:
+			fallthrough;
 
-		//sequence points
-		case _STRUCT:
-			fallthrough;
-		case _FUNC:
-			fallthrough;
-		case _LET:
-			fallthrough;
-		case _RETURN:
-			fallthrough;
-		case _BREAK:
-			fallthrough;
-		case _CONTINUE:
-			fallthrough;
-		case _GOTO:
-			fallthrough;
-		case _IMPORT:
-			fallthrough;
 		case _LEFTBRACE:
 			fallthrough;
-		case _FOR:
-			fallthrough;
-		case _WHILE:
-			fallthrough;
-		case _IF:
-			fallthrough;
-		case _SWITCH:
-			fallthrough;
-		case _EOF:
-			goto exit_loop;
 
-		//non-sequence points
+		case _STRUCT ... _SWITCH:
+			goto found_sequence_point;
+
 		case _INVALID:
-			usererror(fmt, self->tok.len, self->tok.lexeme);
-			self->errors++;
+			ReportInvalidToken(self);
 			fallthrough;
+
 		default:
 			break;
 		}
 
-		//draw another token and try again
-		if (token_channel_recv(self->chan, &self->tok)) {
-			assert(0 != 0 && "attempted to read past EOF");
-		}
-
-		if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
-			TokenPrint(self->tok, stderr);
-		}
+		GetNextToken(self);
+		tokens_skipped++;
 	} while (true);
 
-exit_loop:
-	return;
+found_sequence_point:
+	return tokens_skipped;
 }
 
 //------------------------------------------------------------------------------
@@ -449,7 +427,7 @@ static file *RecursiveDescent(parser *self, string alias)
 
 	file *ast = FileInit(alias);
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	while (self->tok.type != _EOF) {
 		fiat node = rec_fiat(self);
@@ -504,7 +482,7 @@ static fiat rec_fiat(parser *self)
 			break;
 		}
 	} Catch (exception) {
-		synchronize(self);
+		(void) Synchronize(self);
 		node.tag = NODE_INVALID;
 		gc_flag = true;
 	}
@@ -534,11 +512,11 @@ static decl rec_struct(parser *self)
 		.line = self->tok.line
 	};
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	if (self->tok.type == _PUB) {
 		node.udt.public = true;
-		parser_advance(self);
+		GetNextValidToken(self);
 	}
 
 	if (self->tok.type != _IDENTIFIER) {
@@ -575,7 +553,7 @@ static member_vector rec_members(parser *self)
 
 	//vector<member> stores members directly, not their pointers, so the
 	//parser mempool only needs to track the single vector data pointer.
-	mem_vector_push(&self->garbage, vec.data);
+	ptr_vector_push(&self->garbage, vec.data);
 
 	member attr = {
 		.name = NULL,
@@ -586,7 +564,7 @@ static member_vector rec_members(parser *self)
 	while (self->tok.type != _RIGHTBRACE) {
 		if (self->tok.type == _PUB) {
 			attr.public = true;
-			parser_advance(self);
+			GetNextValidToken(self);
 		}
 
 		if (self->tok.type != _IDENTIFIER) {
@@ -633,11 +611,11 @@ decl rec_func(parser *self)
 		.line = self->tok.line
 	};
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	if (self->tok.type == _PUB) {
 		node.function.public = true;
-		parser_advance(self);
+		GetNextValidToken(self);
 	}
 
 	if (self->tok.type != _IDENTIFIER) {
@@ -651,7 +629,7 @@ decl rec_func(parser *self)
 	move_check_move(self, _LEFTPAREN, "missing '(' after function name");
 
 	if (self->tok.type == _VOID) {
-		parser_advance(self);
+		GetNextValidToken(self);
 	} else {
 		node.function.params = rec_params(self);
 
@@ -667,14 +645,14 @@ decl rec_func(parser *self)
 	check_move(self, _RETURN, "missing 'return' after parameters");
 
 	if (self->tok.type == _VOID) {
-		parser_advance(self);
+		GetNextValidToken(self);
 	} else {
 		node.function.ret = rec_type(self);
 	}
 
 	//receiver
 	if (self->tok.type == _FOR) {
-		parser_advance(self);
+		GetNextValidToken(self);
 		node.function.recv = rec_type(self);
 	}
 
@@ -701,7 +679,7 @@ static param_vector rec_params(parser *self)
 
 	//vector<param> stores params directly instead of pointers to params,
 	//so the mempool only needs to track the vector data pointer.
-	mem_vector_push(&self->garbage, vec.data);
+	ptr_vector_push(&self->garbage, vec.data);
 
 	param attr  = {
 		.name = NULL,
@@ -717,7 +695,7 @@ static param_vector rec_params(parser *self)
 
 		if (self->tok.type == _MUT) {
 			attr.mutable = true;
-			parser_advance(self);
+			GetNextValidToken(self);
 		}
 
 		if (self->tok.type != _IDENTIFIER) {
@@ -761,16 +739,16 @@ static decl rec_var(parser *self)
 		.line = self->tok.line
 	};
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	if (self->tok.type == _PUB) {
 		node.variable.public = true;
-		parser_advance(self);
+		GetNextValidToken(self);
 	}
 
 	if (self->tok.type == _MUT) {
 		node.variable.mutable = true;
-		parser_advance(self);
+		GetNextValidToken(self);
 	}
 
 	if (self->tok.type != _IDENTIFIER) {
@@ -809,20 +787,18 @@ type *rec_type(parser *self)
 {
 	assert(self);
 
-	type *node = NULL;
-	kmalloc(node, sizeof(type));
-	mem_vector_push(&self->garbage, node);
+	type *node = AllocateAndMark(self, sizeof(type));
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
 		node->tag = NODE_BASE;
 		node->base = StringFromLexeme(self);
-		parser_advance(self);
+		GetNextValidToken(self);
 		break;
 
 	case _STAR:
 		node->tag = NODE_POINTER;
-		parser_advance(self);
+		GetNextValidToken(self);
 		node->pointer = rec_type(self);
 		break;
 
@@ -831,7 +807,7 @@ type *rec_type(parser *self)
 
 		//array length should not be zero, but this check is
 		//relegated to the context sensitive analyser.
-		node->array.len = extract_arrnum(self);
+		node->array.len = ExtractArrayIndex(self);
 
 		move_check_move(self, _RIGHTBRACKET, "expected ']'");
 		node->array.base = rec_type(self);
@@ -933,13 +909,13 @@ static stmt rec_block(parser *self)
 
 	fiat_vector_init(&node.block.fiats, 0, 4);
 
-	parser_advance(self); //move off left brace
+	GetNextValidToken(self); //move off left brace
 
 	while (self->tok.type != _RIGHTBRACE) {
 		fiat_vector_push(&node.block.fiats, rec_fiat(self));
 	}
 
-	parser_advance(self); //move off right brace
+	GetNextValidToken(self); //move off right brace
 
 	return node;
 }
@@ -1062,12 +1038,12 @@ static test_vector rec_tests(parser *self)
 	while (self->tok.type == _CASE || self->tok.type == _DEFAULT) {
 		switch (self->tok.type) {
 		case _CASE:
-			parser_advance(self);
+			GetNextValidToken(self);
 			t.cond = rec_assignment(self);
 			break;
 
 		case _DEFAULT:
-			parser_advance(self);
+			GetNextValidToken(self);
 			t.cond = NULL;
 			break;
 
@@ -1131,7 +1107,7 @@ static stmt rec_branch(parser *self)
 		return node;
 	}
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	switch (self->tok.type) {
 	case _IF:
@@ -1180,12 +1156,12 @@ static stmt rec_named_target(parser *self)
 
 	case _RETURN:
 		node.tag = NODE_RETURNSTMT;
-		parser_advance(self);
+		GetNextValidToken(self);
 
 		//func returns nothing
 		if (self->tok.type == _SEMICOLON) {
 			node.returnstmt = NULL;
-			parser_advance(self);
+			GetNextValidToken(self);
 			break;
 		}
 
@@ -1306,7 +1282,7 @@ static expr *rec_assignment(parser *self)
 		node->assignment.lvalue = tmp;
 		node->line = self->tok.line;
 
-		parser_advance(self);
+		GetNextValidToken(self);
 		node->assignment.rvalue = rec_logicalor(self);
 	}
 
@@ -1332,7 +1308,7 @@ static expr *rec_logicalor(parser *self)
 		node->binary.operator = _OR;
 		node->line = self->tok.line;
 
-		parser_advance(self);
+		GetNextValidToken(self);
 		node->binary.right = rec_logicaland(self);
 	}
 
@@ -1357,7 +1333,7 @@ static expr *rec_logicaland(parser *self)
 		node->binary.operator = _AND;
 		node->line = self->tok.line;
 
-		parser_advance(self);
+		GetNextValidToken(self);
 		node->binary.right = rec_equality(self);
 	}
 
@@ -1400,7 +1376,7 @@ static expr *rec_equality(parser *self)
 			node->binary.operator = self->tok.type;
 			node->line = self->tok.line;
 
-			parser_advance(self);
+			GetNextValidToken(self);
 			node->binary.right = rec_term(self);
 			break;
 
@@ -1443,7 +1419,7 @@ static expr *rec_term(parser *self)
 			node->binary.operator = self->tok.type;
 			node->line = self->tok.line;
 
-			parser_advance(self);
+			GetNextValidToken(self);
 			node->binary.right = rec_factor(self);
 			break;
 
@@ -1492,7 +1468,7 @@ static expr *rec_factor(parser *self)
 			node->binary.operator = self->tok.type;
 			node->line = self->tok.line;
 
-			parser_advance(self);
+			GetNextValidToken(self);
 			node->binary.right = rec_unary(self);
 			break;
 
@@ -1536,14 +1512,14 @@ static expr *rec_unary(parser *self)
 		node = ExprInit(self, NODE_UNARY);
 		node->unary.operator = self->tok.type;
 		node->line = self->tok.line;
-		parser_advance(self);
+		GetNextValidToken(self);
 		node->unary.operand = rec_unary(self);
 		break;
 
 	case _COLON:
 		node = ExprInit(self, NODE_CAST);
 		node->line = self->tok.line;
-		parser_advance(self);
+		GetNextValidToken(self);
 		node->cast.casttype = rec_type(self);
 		check_move(self, _COLON, "expected ':' after type casting");
 		node->cast.operand = rec_unary(self);
@@ -1601,11 +1577,11 @@ static expr *rec_primary(parser *self)
 		node->line = self->tok.line;
 		node->lit.rep = StringFromLexeme(self);
 		node->lit.littype = self->tok.type;
-		parser_advance(self);
+		GetNextValidToken(self);
 		break;
 
 	case _LEFTPAREN:
-		parser_advance(self);
+		GetNextValidToken(self);
 		node = rec_assignment(self);
 		check_move(self, _RIGHTPAREN, "expected ')' after grouping");
 		break;
@@ -1639,7 +1615,7 @@ static expr *rec_access(parser *self, expr *prev)
 		node->selector.name = prev;
 		node->selector.attr = rec_ident(self, self->tok);
 
-		parser_advance(self);
+		GetNextValidToken(self);
 		break;
 
 	case _LEFTPAREN:
@@ -1655,7 +1631,7 @@ static expr *rec_access(parser *self, expr *prev)
 		node = ExprInit(self, NODE_INDEX);
 		node->line = self->tok.line;
 
-		parser_advance(self);
+		GetNextValidToken(self);
 
 		node->index.name = prev;
 		node->index.key = rec_assignment(self);
@@ -1684,7 +1660,7 @@ static expr *rec_rvar_or_ident(parser *self)
 
 	token tmp = self->tok;
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	if (self->tok.type == _TILDE) {
 		return rec_rvar(self, tmp);
@@ -1730,7 +1706,7 @@ static expr *rec_rvar(parser *self, token prev)
 	node->rvarlit.dist = StringFromLexeme(self);
 	self->tok = tmp;
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	node->rvarlit.args = rec_args(self);
 
@@ -1753,7 +1729,7 @@ static expr_vector rec_args(parser *self)
 	expr_vector vec = {0};
 	expr_vector_init(&vec, 0, 4);
 
-	parser_advance(self); //move off left parenthesis
+	GetNextValidToken(self); //move off left parenthesis
 
 	while (self->tok.type != _RIGHTPAREN) {
 		if (vec.len > 0) {
@@ -1763,7 +1739,7 @@ static expr_vector rec_args(parser *self)
 		expr_vector_push(&vec, rec_assignment(self));
 	}
 
-	parser_advance(self); //move off right parenthesis
+	GetNextValidToken(self); //move off right parenthesis
 
 	return vec;
 }
@@ -1792,7 +1768,7 @@ static expr *rec_arraylit(parser *self)
 	idx_vector_init(&node->arraylit.indicies, 0, 4);
 	expr_vector_init(&node->arraylit.values, 0, 4);
 
-	parser_advance(self); //move off left bracket
+	GetNextValidToken(self); //move off left bracket
 
 	while (self->tok.type != _RIGHTBRACKET) {
 		if (node->arraylit.values.len > 0) {
@@ -1802,7 +1778,7 @@ static expr *rec_arraylit(parser *self)
 		if (self->tok.type == _LEFTBRACKET) {
 			move_check(self, _LITERALINT, tagerr);
 
-			intmax_t idx = extract_arrnum(self);
+			intmax_t idx = ExtractArrayIndex(self);
 			idx_vector_push(&node->arraylit.indicies, idx);
 
 			move_check_move(self, _RIGHTBRACKET, closeerr);
@@ -1814,7 +1790,7 @@ static expr *rec_arraylit(parser *self)
 		expr_vector_push(&node->arraylit.values, rec_assignment(self));
 	}
 
-	parser_advance(self); //move off right bracket
+	GetNextValidToken(self); //move off right bracket
 
 	assert(node->arraylit.indicies.len == node->arraylit.values.len);
 
