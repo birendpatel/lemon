@@ -85,7 +85,8 @@ typedef enum typetag {
 	NODE_ARRAY,
 } typetag;
 
-//<type> grammar rule. Composite types are implemented as a linked list.
+//<type> grammar rule. Composite types are implemented as a singly linked
+//list. The tail of the list represents the inner-most base type.
 struct type {
 	typetag tag;
 	union {

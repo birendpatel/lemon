@@ -48,29 +48,29 @@ static decl *CopyDeclToHeap(parser *self, decl src);
 
 //declarations
 static file *RecursiveDescent(parser *self, string alias);
-static fiat rec_fiat(parser *self);
-static decl rec_struct(parser *self);
-static member_vector rec_members(parser *self);
-decl rec_func(parser *self);
-static param_vector rec_params(parser *self);
-type *rec_type(parser *self);
-static decl rec_var(parser *self);
+static fiat RecFiat(parser *self);
+static decl RecStruct(parser *self);
+static member_vector RecParseMembers(parser *self);
+decl RecFunction(parser *self);
+static param_vector RecParseParameters(parser *self);
+type *RecType(parser *self);
+static decl RecVariable(parser *self);
 
 //statements
-static stmt rec_stmt(parser *self);
-static stmt rec_exprstmt(parser *self);
-static stmt rec_block(parser *self);
-static stmt rec_label(parser *self);
-static stmt rec_anonymous_target(parser *self);
-static stmt rec_named_target(parser *self);
-static stmt rec_forloop(parser *self);
-static stmt rec_whileloop(parser *self);
-static stmt rec_branch(parser *self);
-static stmt rec_switch(parser *self);
+static stmt RecStmt(parser *self);
+static stmt RecExprStmt(parser *self);
+static stmt RecBlock(parser *self);
+static stmt RecLabel(parser *self);
+static stmt RecAnonymousTarget(parser *self);
+static stmt RecNamedTarget(parser *self);
+static stmt RecForLoop(parser *self);
+static stmt RecWhileLoop(parser *self);
+static stmt RecBranch(parser *self);
+static stmt RecSwitch(parser *self);
 static test_vector rec_tests(parser *self);
 
 //expressions
-static expr *rec_assignment(parser *self);
+static expr *RecAssignment(parser *self);
 static expr *rec_logicalor(parser *self);
 static expr *rec_logicaland(parser *self);
 static expr *rec_equality(parser *self);
@@ -179,16 +179,16 @@ static void ParserFree(parser **self)
 
 static file *FileInit(string alias)
 {
-	file *ast = NULL;
+	file *syntax_tree = NULL;
 
-	kmalloc(ast, sizeof(file));
+	kmalloc(syntax_tree, sizeof(file));
 
-	ast->alias = alias;
+	syntax-tree->alias = alias;
 
 	const size_t fiat_capacity = 64;
-	fiat_vector_init(&ast->fiats, 0, fiat_capacity);
+	fiat_vector_init(&syntax_tree->fiats, 0, fiat_capacity);
 
-	return ast;
+	return syntax_tree;
 }
 
 static expr *ExprInit(parser *self, exprtag tag)
@@ -341,12 +341,15 @@ static void GetNextToken(parser *self)
 
 	xerror err = token_channel_recv(self->chan, &self->tok);
 
+	//TODO: parser was refactored to use exceptions; this assertion can
+	//be removed and replaced with Throw()
+
 	//channel status is relegated to an assertion as a tradeoff to improve
 	//readability and simplicity of the recursive descent implementation.
 	//
-	//reading past EOF is an off-by-one bug in the second-to-last function
-	//in the call stack. The function identified by a backtrace has at
-	//least one call to GetNextValidToken in its body which occurs too early.
+	//reading past EOF is a simple off-by-one bug. The final call to
+	//GetNextToken before the assertion triggered is occuring too early.
+	//The call stack backtrace will quickly locate the problem.
 	assert(!err && "attempted to read past EOF");
 }
 
@@ -425,21 +428,21 @@ static file *RecursiveDescent(parser *self, string alias)
 {
 	assert(self);
 
-	file *ast = FileInit(alias);
+	file *syntax_tree = FileInit(alias);
 
 	GetNextValidToken(self);
 
 	while (self->tok.type != _EOF) {
-		fiat node = rec_fiat(self);
+		fiat node = RecFiat(self);
 
 		if (node.tag == NODE_INVALID) {
 			self->errors++;
 		} else {
-			fiat_vector_push(&ast->fiats, node);
+			fiat_vector_push(&syntax_tree->fiats, node);
 		}
 	}
 
-	return ast;
+	return syntax_tree;
 }
 
 //remark on unity exceptions: the fiat node doesn't need to be qualified with
@@ -448,10 +451,7 @@ static file *RecursiveDescent(parser *self, string alias)
 //is thrown. In this situation, any updates made to the fiat node are not
 //relevant since all information we need is within the garbage vector. Only
 //the tag overwrite is necessary.
-//
-//if the returned node tag is NODE_INVALID, then one or more syntax errors have
-//occured and the tree rooted at the returned node is ill-formed.
-static fiat rec_fiat(parser *self)
+static fiat RecFiat(parser *self)
 {
 	assert(self);
 
@@ -463,22 +463,22 @@ static fiat rec_fiat(parser *self)
 		switch (self->tok.type) {
 		case _STRUCT:
 			node.tag = NODE_DECL;
-			node.declaration = rec_struct(self);
+			node.declaration = RecStruct(self);
 			break;
 
 		case _FUNC:
 			node.tag = NODE_DECL;
-			node.declaration= rec_func(self);
+			node.declaration = RecFunction(self);
 			break;
 
 		case _LET:
 			node.tag = NODE_DECL;
-			node.declaration = rec_var(self);
+			node.declaration = RecVariable(self);
 			break;
 
 		default:
 			node.tag = NODE_STMT;
-			node.statement = rec_stmt(self);
+			node.statement = RecStmt(self);
 			break;
 		}
 	} Catch (exception) {
@@ -492,15 +492,11 @@ static fiat rec_fiat(parser *self)
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_struct
- * @brief Implementation of the <struct declaration> production.
- * @param self The token held by the parser on invocation must be _STRUCT.
- * @decl The returned UDT node is always valid. A parse exception may be thrown.
- ******************************************************************************/
-static decl rec_struct(parser *self)
+//<struct declaration>
+static decl RecStruct(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _STRUCT);
 
 	decl node = {
 		.tag = NODE_UDT,
@@ -519,41 +515,31 @@ static decl rec_struct(parser *self)
 		GetNextValidToken(self);
 	}
 
-	if (self->tok.type != _IDENTIFIER) {
-		usererror("missing struct name");
-		Throw(XXPARSE);
-	}
+	check(self, _IDENTIFIER, "missing struct name after 'struct' keyword");
 
 	node.udt.name = StringFromLexeme(self);
 
-	move_check_move(self, _LEFTBRACE, "expected '{' after name");
+	move_check_move(self, _LEFTBRACE, "missing '{' after struct name");
 
-	node.udt.members = rec_members(self);
+	node.udt.members = RecParseMembers(self);
 
-	check_move(self, _RIGHTBRACE, "expected '}' after members");
+	check_move(self, _RIGHTBRACE, "missing '}' after struct members");
 
-	check_move(self, _SEMICOLON, "expected ';' after struct");
+	check_move(self, _SEMICOLON, "missing ';' after struct declaration");
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_members
- * @brief Process each scope:name:type triplet within a struct declaration.
- * @return Vector of valid member nodes. A parse exception may be thrown.
- * @remark The member capacity uses the magic number 4 as a heuristic. We assume
- * most structs are generally quite small.
- ******************************************************************************/
-static member_vector rec_members(parser *self)
+//<member list>
+//throws error if no members found
+static member_vector RecParseMembers(parser *self)
 {
 	assert(self);
 
 	member_vector vec = {0};
-	member_vector_init(&vec, 0, 4);
-
-	//vector<member> stores members directly, not their pointers, so the
-	//parser mempool only needs to track the single vector data pointer.
-	ptr_vector_push(&self->garbage, vec.data);
+	const size_t vec_capacity = 4;
+	member_vector_init(&vec, 0, vec_capacity);
+	Mark(self, vec.data);
 
 	member attr = {
 		.name = NULL,
@@ -567,36 +553,34 @@ static member_vector rec_members(parser *self)
 			GetNextValidToken(self);
 		}
 
-		if (self->tok.type != _IDENTIFIER) {
-			usererror("expected member name");
-			Throw(XXPARSE);
-		}
+		check(self, _IDENTIFIER, "missing struct member name");
 
 		attr.name = StringFromLexeme(self);
 
-		move_check_move(self, _COLON, "expected ':' after name");
+		move_check_move(self, _COLON, "missing ':' after name");
 
-		attr.typ = rec_type(self);
+		attr.typ = RecType(self);
 
-		check_move(self, _SEMICOLON, "expected ';' after type");
+		check_move(self, _SEMICOLON, "missing ';' after type");
 
 		member_vector_push(&vec, attr);
 
 		memset(&attr, 0, sizeof(member));
 	}
 
+	if (vec.len == 0) {
+		usererror("cannot declare an empty struct");
+		Throw(XXPARSE);
+	}
+
 	return vec;
 }
 
-/*******************************************************************************
- * @fn rec_func
- * @brief Create a function declaration node.
- * @param self The token held by the parser on invocation must be _FUNC.
- * @return Function node is always valid. A parse exception may be thrown.
- ******************************************************************************/
-decl rec_func(parser *self)
+//<function declaration>
+decl RecFunction(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _FUNC);
 
 	decl node = {
 		.tag = NODE_FUNCTION,
@@ -618,10 +602,7 @@ decl rec_func(parser *self)
 		GetNextValidToken(self);
 	}
 
-	if (self->tok.type != _IDENTIFIER) {
-		usererror("missing function name");
-		Throw(XXPARSE);
-	}
+	check(self, _IDENTIFIER, "missing function name in declaration");
 
 	node.function.name = StringFromLexeme(self);
 
@@ -631,12 +612,7 @@ decl rec_func(parser *self)
 	if (self->tok.type == _VOID) {
 		GetNextValidToken(self);
 	} else {
-		node.function.params = rec_params(self);
-
-		if (node.function.params.len == 0) {
-			usererror("empty parameter list must state 'void'");
-			Throw(XXPARSE);
-		}
+		node.function.params = RecParseParameters(self);
 	}
 
 	check_move(self, _RIGHTPAREN, "missing ')' after parameters");
@@ -647,39 +623,32 @@ decl rec_func(parser *self)
 	if (self->tok.type == _VOID) {
 		GetNextValidToken(self);
 	} else {
-		node.function.ret = rec_type(self);
+		node.function.ret = RecType(self);
 	}
 
 	//receiver
 	if (self->tok.type == _FOR) {
 		GetNextValidToken(self);
-		node.function.recv = rec_type(self);
+		node.function.recv = RecType(self);
 	}
 
 	//body
-	check(self, _LEFTBRACE, "missing body in function declaration");
-	node.function.block = CopyStmtToHeap(self, rec_block(self));
+	check(self, _LEFTBRACE, "cannot declare function without a body");
+	node.function.block = CopyStmtToHeap(self, RecBlock(self));
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_params
- * @brief Process each mutability:name:type triplet within a param declaration.
- * @return Vector of valid param nodes. A parse exception may be thrown.
- * @remark The param capacity uses the magic number 4 as a heuristic. We assume
- * most param lists are generally quite small.
- ******************************************************************************/
-static param_vector rec_params(parser *self)
+//<parameter list>
+//throws error if no parameters found
+static param_vector RecParseParameters(parser *self)
 {
 	assert(self);
 
 	param_vector vec = {0};
-	param_vector_init(&vec, 0, 4);
-
-	//vector<param> stores params directly instead of pointers to params,
-	//so the mempool only needs to track the vector data pointer.
-	ptr_vector_push(&self->garbage, vec.data);
+	const size_t vec_capacity = 4;
+	param_vector_init(&vec, 0, vec_capacity);
+	Mark(self, vec.data);
 
 	param attr  = {
 		.name = NULL,
@@ -689,8 +658,7 @@ static param_vector rec_params(parser *self)
 
 	while (self->tok.type != _RIGHTPAREN) {
 		if (vec.len > 0) {
-			check_move(self, _COMMA,
-					"parameters must be comma separated");
+			check_move(self, _COMMA, "missing ',' after parameter");
 		}
 
 		if (self->tok.type == _MUT) {
@@ -698,34 +666,33 @@ static param_vector rec_params(parser *self)
 			GetNextValidToken(self);
 		}
 
-		if (self->tok.type != _IDENTIFIER) {
-			usererror("expected parameter name");
-			Throw(XXPARSE);
-		}
+		check(self, _IDENTIFIER, "missing function parameter name");
 
 		attr.name = StringFromLexeme(self);
 
-		move_check_move(self, _COLON, "expected ':' after name");
+		move_check_move(self, _COLON, "missing ':' after name");
 
-		attr.typ = rec_type(self);
+		attr.typ = RecType(self);
 
 		param_vector_push(&vec, attr);
 
 		memset(&attr, 0, sizeof(param));
 	}
 
+	if (vec.len == 0) {
+		usererror("a function declaration without parameters must be"
+			  "marked explicitly with 'void'");
+		Throw(XXPARSE);
+	}
+
 	return vec;
 }
 
-/*******************************************************************************
- * @fn rec_var
- * @brief Create a variable declaration node.
- * @param self The token held by the parser on invocation must be _VAR.
- * @return The return node is always valid. A parse exception may be thrown.
- ******************************************************************************/
-static decl rec_var(parser *self)
+//<variable declaration>
+static decl RecVariable(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _LET);
 
 	decl node = {
 		.tag = NODE_VARIABLE,
@@ -751,39 +718,27 @@ static decl rec_var(parser *self)
 		GetNextValidToken(self);
 	}
 
-	if (self->tok.type != _IDENTIFIER) {
-		usererror("expected lvalue in variable declaration");
-		Throw(XXPARSE);
-	}
+	check(self, _IDENTIFIER, "missing variable name in declaration");
 
 	node.variable.name = StringFromLexeme(self);
 
-	move_check_move(self, _COLON, "expected ':' before type");
+	move_check_move(self, _COLON, "missing ':' before type");
 
-	node.variable.vartype = rec_type(self);
+	node.variable.vartype = RecType(self);
 
-	check_move(self, _EQUAL, "declaration must have an initializer");
+	check_move(self, _EQUAL, "declared variables must be initialized");
 
-	if (self->tok.type == _SEMICOLON) {
-		usererror("missing rvalue in variable declaration");
-		Throw(XXPARSE);
-	}
+	check(self, _SEMICOLON, "missing value after '=' in declaration");
 
-	node.variable.value = rec_assignment(self);
+	node.variable.value = RecAssignment(self);
 
 	check_move(self, _SEMICOLON, "missing ';' after declaration");
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_type
- * @brief Create a linked list of nodes representing a type
- * @return A singly linked list of nodes where the head represented the outer-
- * most composite type and the tail is the inner-most base type. A parse
- * exception may be thrown.
- ******************************************************************************/
-type *rec_type(parser *self)
+//<type>
+type *RecType(parser *self)
 {
 	assert(self);
 
@@ -799,23 +754,18 @@ type *rec_type(parser *self)
 	case _STAR:
 		node->tag = NODE_POINTER;
 		GetNextValidToken(self);
-		node->pointer = rec_type(self);
+		node->pointer = RecType(self);
 		break;
 
 	case _LEFTBRACKET:
-		move_check(self, _LITERALINT, "expected array size");
-
-		//array length should not be zero, but this check is
-		//relegated to the context sensitive analyser.
+		move_check(self, _LITERALINT, "missing array size");
 		node->array.len = ExtractArrayIndex(self);
-
-		move_check_move(self, _RIGHTBRACKET, "expected ']'");
-		node->array.base = rec_type(self);
+		move_check_move(self, _RIGHTBRACKET, "missing ']'");
+		node->array.base = RecType(self);
 		break;
 
 	default:
-		usererror("expected type but none found");
-
+		usererror("missing a data type");
 		Throw(XXPARSE);
 		break;
 	}
@@ -823,12 +773,8 @@ type *rec_type(parser *self)
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_stmt
- * @brief Jump table for statement handlers.
- * @return Always returns a valid node. May throw a parse exception.
- ******************************************************************************/
-static stmt rec_stmt(parser *self)
+//<statement>; jump table
+static stmt RecStmt(parser *self)
 {
 	assert(self);
 
@@ -836,23 +782,23 @@ static stmt rec_stmt(parser *self)
 
 	switch(self->tok.type) {
 	case _LEFTBRACE:
-		node = rec_block(self);
+		node = RecBlock(self);
 		break;
 
 	case _FOR:
-		node = rec_forloop(self);
+		node = RecForLoop(self);
 		break;
 
 	case _WHILE:
-		node = rec_whileloop(self);
+		node = RecWhileLoop(self);
 		break;
 
 	case _SWITCH:
-		node = rec_switch(self);
+		node = RecSwitch(self);
 		break;
 
 	case _IF:
-		node = rec_branch(self);
+		node = RecBranch(self);
 		break;
 
 	case _RETURN:
@@ -862,7 +808,7 @@ static stmt rec_stmt(parser *self)
 		fallthrough;
 
 	case _IMPORT:
-		node = rec_named_target(self);
+		node = RecNamedTarget(self);
 		break;
 
 	case _BREAK:
@@ -872,29 +818,23 @@ static stmt rec_stmt(parser *self)
 		fallthrough;
 
 	case _FALLTHROUGH:
-		node = rec_anonymous_target(self);
+		node = RecAnonymousTarget(self);
 		break;
 
 	case _LABEL:
-		node = rec_label(self);
+		node = RecLabel(self);
 		break;
 
 	default:
-		node = rec_exprstmt(self);
+		node = RecExprStmt(self);
 		break;
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_block
- * @brief <block statement> ::= "{" <fiat>* "}" . The current token held in the
- * parser must be a _LEFTBRACE token.
- * @return Always returns a valid block node. May throw a parse exception. At
- * return the parser will have consumed the terminating right brace.
- ******************************************************************************/
-static stmt rec_block(parser *self)
+//<block statement>
+static stmt RecBlock(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _LEFTBRACE);
@@ -907,28 +847,26 @@ static stmt rec_block(parser *self)
 		.line = self->tok.line
 	};
 
-	fiat_vector_init(&node.block.fiats, 0, 4);
+	const size_t vec_capacity = 4;
+	fiat_vector_init(&node.block.fiats, 0, vec_capacity);
+	Mark(self, node.block.fiats.data);
 
-	GetNextValidToken(self); //move off left brace
+	GetNextValidToken(self);
 
 	while (self->tok.type != _RIGHTBRACE) {
-		fiat_vector_push(&node.block.fiats, rec_fiat(self));
+		fiat_vector_push(&node.block.fiats, RecFiat(self));
 	}
 
-	GetNextValidToken(self); //move off right brace
+	GetNextValidToken(self);
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_forloop
- * @brief <for statement> ::= "for" "(" (<short declaration> | <expression>) ";"
- * <expression> ";" <expression> ")" <block statement> . The token held
- * in the parser should be the _FOR keyword.
- ******************************************************************************/
-static stmt rec_forloop(parser *self)
+//<for statement>
+static stmt RecForLoop(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _FOR);
 
 	stmt node = {
 		.tag = NODE_FORLOOP,
@@ -940,64 +878,57 @@ static stmt rec_forloop(parser *self)
 	//initial condition
 	if (self->tok.type == _LET) {
 		node.forloop.tag = FOR_DECL;
-		node.forloop.shortvar = CopyDeclToHeap(self, rec_var(self));
-		//rec_var consumes the terminating semicolon
+		node.forloop.shortvar = CopyDeclToHeap(self, RecVariable(self));
+		//RecVariable consumes the terminating semicolon
 	} else {
 		node.forloop.tag = FOR_INIT;
-		node.forloop.init = rec_assignment(self);
+		node.forloop.init = RecAssignment(self);
 		check_move(self, _SEMICOLON, "missing ';' after init");
 	}
 
-	node.forloop.cond = rec_assignment(self);
+	node.forloop.cond = RecAssignment(self);
 	check_move(self, _SEMICOLON, "missing ';' after condition");
 
-	node.forloop.post = rec_assignment(self);
+	node.forloop.post = RecAssignment(self);
 	check_move(self, _RIGHTPAREN, "missing ')' after post expression");
 
-	node.forloop.block = CopyStmtToHeap(self, rec_block(self));
+	node.forloop.block = CopyStmtToHeap(self, RecBlock(self));
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_whileloop
- * @brief <while statement> ::= "while" "(" <expression> ")" <block statement> .
- * The current token in the parser should be the _WHILE keyword.
- ******************************************************************************/
-static stmt rec_whileloop(parser *self)
+//<while statement>
+static stmt RecWhileLoop(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _WHILE);
 
 	stmt node = {
 		.tag = NODE_WHILELOOP,
 		.line = self->tok.line
 	};
 
-	move_check_move(self, _LEFTPAREN, "expected '(' after 'while'");
+	move_check_move(self, _LEFTPAREN, "missing'(' after 'while'");
 
-	node.whileloop.cond = rec_assignment(self);
+	node.whileloop.cond = RecAssignment(self);
 
-	check_move(self, _RIGHTPAREN, "expected ')' after while condition");
+	check_move(self, _RIGHTPAREN, "missing ')' after while condition");
 
 	if (self->tok.type == _LEFTBRACE) {
-		node.whileloop.block = CopyStmtToHeap(self, rec_block(self));
+		node.whileloop.block = CopyStmtToHeap(self, RecBlock(self));
 	} else {
-		usererror("expected block statement after while loop");
+		usererror("missing block statement after while loop");
 		Throw(XXPARSE);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_switch
- * @brief <switch statement> ::= "switch" "(" <expression> ")" "{"
- * <case statement>* "}"
- * The token currently held by the parser should be the _SWITCH keyword.
- ******************************************************************************/
-static stmt rec_switch(parser *self)
+//<switch statement>
+static stmt RecSwitch(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _SWITCH);
 
 	stmt node = {
 		.tag = NODE_SWITCHSTMT,
@@ -1006,7 +937,7 @@ static stmt rec_switch(parser *self)
 
 	move_check_move(self, _LEFTPAREN, "missing '(' after 'switch'");
 
-	node.switchstmt.controller = rec_assignment(self);
+	node.switchstmt.controller = RecAssignment(self);
 
 	check_move(self, _RIGHTPAREN, "missing ')' after switch condition");
 
@@ -1019,16 +950,15 @@ static stmt rec_switch(parser *self)
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_tests
- * @brief <case statement> ::= ("case" <expression> | "default") <block stmt>
- ******************************************************************************/
+//<case statement>* within <switch statement>
 static test_vector rec_tests(parser *self)
 {
 	assert(self);
 
 	test_vector vec = {0};
-	test_vector_init(&vec, 0, 4);
+	const size_t vec_capacity = 4;
+	test_vector_init(&vec, 0, vec_capacity);
+	Mark(self, vec.data);
 
 	test t = {
 		.cond = NULL,
@@ -1039,7 +969,7 @@ static test_vector rec_tests(parser *self)
 		switch (self->tok.type) {
 		case _CASE:
 			GetNextValidToken(self);
-			t.cond = rec_assignment(self);
+			t.cond = RecAssignment(self);
 			break;
 
 		case _DEFAULT:
@@ -1052,52 +982,53 @@ static test_vector rec_tests(parser *self)
 		}
 
 		if (self->tok.type != _LEFTBRACE) {
-			usererror("switch cases must use block statements");
+			usererror("switch cases must be block statements");
 			Throw(XXPARSE);
 		}
 
-		t.pass = CopyStmtToHeap(self, rec_block(self));
+		t.pass = CopyStmtToHeap(self, RecBlock(self));
 		test_vector_push(&vec, t);
 		memset(&t, 0, sizeof(test));
+	}
+
+	if (vec.len == 0) {
+		usererror("switch statement cannot be empty");
+		Throw(XXPARSE);
 	}
 
 	return vec;
 }
 
-/*******************************************************************************
- * @fn rec_branch
- * @brief <branch statement> ::=  "if" "(" <short declaration>? <expression> ")"
- * <block statement> ("else" (<branch statement> | <block statement>))? . The
- * current token in the parser should be the _IF keyword.
- ******************************************************************************/
-static stmt rec_branch(parser *self)
+//<branch statement>
+static stmt RecBranch(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _IF);
 
 	stmt node = {
 		.tag = NODE_BRANCH,
 		.line = self->tok.line
 	};
 
-	//condition test
+	//condition
 	move_check_move(self, _LEFTPAREN, "missing '(' after 'if'");
 
 	if (self->tok.type == _LET) {
-		node.branch.shortvar = CopyDeclToHeap(self, rec_var(self));
-		//rec_var consumes terminating semicolon
+		node.branch.shortvar = CopyDeclToHeap(self, RecVariable(self));
+		//RecVariable consumes terminating semicolon
 	} else {
 		node.branch.shortvar = NULL;
 	}
 
-	node.branch.cond = rec_assignment(self);
+	node.branch.cond = RecAssignment(self);
 
 	check_move(self, _RIGHTPAREN, "missing ')' after if condition");
 
 	//if branch
 	if (self->tok.type == _LEFTBRACE) {
-		node.branch.pass = CopyStmtToHeap(self, rec_block(self));
+		node.branch.pass = CopyStmtToHeap(self, RecBlock(self));
 	} else {
-		usererror("expected block statement after if condition");
+		usererror("missing block statement after if condition");
 		Throw(XXPARSE);
 	}
 
@@ -1111,11 +1042,11 @@ static stmt rec_branch(parser *self)
 
 	switch (self->tok.type) {
 	case _IF:
-		node.branch.fail = CopyStmtToHeap(self, rec_branch(self));
+		node.branch.fail = CopyStmtToHeap(self, RecBranch(self));
 		break;
 
 	case _LEFTBRACE:
-		node.branch.fail = CopyStmtToHeap(self, rec_block(self));
+		node.branch.fail = CopyStmtToHeap(self, RecBlock(self));
 		break;
 
 	default:
@@ -1126,14 +1057,12 @@ static stmt rec_branch(parser *self)
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_named_target
- * @brief goto, import, and return statments. The current token in the parser
- * should be the leading token of the statement.
- ******************************************************************************/
-static stmt rec_named_target(parser *self)
+static stmt RecNamedTarget(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _GOTO ||
+	       self->tok.type == _IMPORT ||
+	       self->tok.type == _RETURN);
 
 	stmt node = {
 		.line = self->tok.line
@@ -1158,14 +1087,13 @@ static stmt rec_named_target(parser *self)
 		node.tag = NODE_RETURNSTMT;
 		GetNextValidToken(self);
 
-		//func returns nothing
 		if (self->tok.type == _SEMICOLON) {
 			node.returnstmt = NULL;
 			GetNextValidToken(self);
 			break;
 		}
 
-		node.returnstmt = rec_assignment(self);
+		node.returnstmt = RecAssignment(self);
 		check_move(self, _SEMICOLON, "missing ';' after return");
 		break;
 
@@ -1176,14 +1104,12 @@ static stmt rec_named_target(parser *self)
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_anonymous_target
- * @brief break, continue, and fallthrough statements. The current token in the
- * parser should be the leading token of the statement.
- ******************************************************************************/
-static stmt rec_anonymous_target(parser *self)
+static stmt RecAnonymousTarget(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _BREAK ||
+	       self->tok.type == _CONTINUE ||
+	       self->tok.type == _FALLTHROUGH);
 
 	stmt node = {
 		.line = self->tok.line
@@ -1206,20 +1132,17 @@ static stmt rec_anonymous_target(parser *self)
 		break;
 
 	default:
-		assert(0 != 0 && "func called on non-anonymous token");
+		assert(0 != 0); 
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_label
- * @brief <label statement> ::= "label" IDENTIFIER ":" <statement> . The current
- * token in the parser must be the _LABEL keyword.
- ******************************************************************************/
-static stmt rec_label(parser *self)
+//<label statement>
+static stmt RecLabel(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _LABEL);
 
 	stmt node = {
 		.tag = NODE_LABEL,
@@ -1230,25 +1153,20 @@ static stmt rec_label(parser *self)
 		.line = self->tok.line
 	};
 
-	move_check(self, _IDENTIFIER, "label name is not an identifier");
+	move_check(self, _IDENTIFIER, "label name must be an identifier");
 
 	node.label.name = StringFromLexeme(self);
 
 	move_check_move(self, _COLON, "missing ':' after label name");
 
-	node.label.target = CopyStmtToHeap(self, rec_stmt(self));
+	node.label.target = CopyStmtToHeap(self, RecStmt(self));
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_exprstmt
- * @brief Create an expression statement node.
- * @param self The token held by the parser on invocation must be the first
- * token of the expression.
- * @return Always returns a valid node. May throw a parse exception.
- ******************************************************************************/
-static stmt rec_exprstmt(parser *self)
+//<expression statement>; the token held by the parser on invocation must be the
+//first token of the expression.
+static stmt RecExprStmt(parser *self)
 {
 	assert(self);
 
@@ -1258,19 +1176,15 @@ static stmt rec_exprstmt(parser *self)
 		.line = self->tok.line
 	};
 
-	node.exprstmt = rec_assignment(self);
+	node.exprstmt = RecAssignment(self);
 
 	check_move(self, _SEMICOLON, "missing ';' after expression");
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_assignment
- * @brief <assignment> ::= <logical or> ("=" <assignment>)?
- * @remark Note that Lemon does not allow chained assignments.
- ******************************************************************************/
-static expr *rec_assignment(parser *self)
+//<assignment>; note that lemon does not allow chained assignments
+static expr *RecAssignment(parser *self)
 {
 	assert(self);
 
@@ -1520,7 +1434,7 @@ static expr *rec_unary(parser *self)
 		node = ExprInit(self, NODE_CAST);
 		node->line = self->tok.line;
 		GetNextValidToken(self);
-		node->cast.casttype = rec_type(self);
+		node->cast.casttype = RecType(self);
 		check_move(self, _COLON, "expected ':' after type casting");
 		node->cast.operand = rec_unary(self);
 		break;
@@ -1582,7 +1496,7 @@ static expr *rec_primary(parser *self)
 
 	case _LEFTPAREN:
 		GetNextValidToken(self);
-		node = rec_assignment(self);
+		node = RecAssignment(self);
 		check_move(self, _RIGHTPAREN, "expected ')' after grouping");
 		break;
 
@@ -1634,7 +1548,7 @@ static expr *rec_access(parser *self, expr *prev)
 		GetNextValidToken(self);
 
 		node->index.name = prev;
-		node->index.key = rec_assignment(self);
+		node->index.key = RecAssignment(self);
 
 		check_move(self, _RIGHTBRACKET, "missing ']' after index");
 
@@ -1736,7 +1650,7 @@ static expr_vector rec_args(parser *self)
 			check_move(self, _COMMA, "expected ',' after arg");
 		}
 
-		expr_vector_push(&vec, rec_assignment(self));
+		expr_vector_push(&vec, RecAssignment(self));
 	}
 
 	GetNextValidToken(self); //move off right parenthesis
@@ -1787,7 +1701,7 @@ static expr *rec_arraylit(parser *self)
 			idx_vector_push(&node->arraylit.indicies, -1);
 		}
 
-		expr_vector_push(&node->arraylit.values, rec_assignment(self));
+		expr_vector_push(&node->arraylit.values, RecAssignment(self));
 	}
 
 	GetNextValidToken(self); //move off right bracket
