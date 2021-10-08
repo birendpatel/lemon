@@ -299,7 +299,7 @@ struct expr {
 };
 
 typedef enum fiattag {
-	NODE_INVALID,
+	NODE_INVALID, //ill-formed tree
 	NODE_DECL,
 	NODE_STMT,
 } fiattag;

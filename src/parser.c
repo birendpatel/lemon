@@ -71,20 +71,20 @@ static test_vector rec_tests(parser *self);
 
 //expressions
 static expr *RecAssignment(parser *self);
-static expr *rec_logicalor(parser *self);
-static expr *rec_logicaland(parser *self);
-static expr *rec_equality(parser *self);
-static expr *rec_term(parser *self);
-static expr *rec_factor(parser *self);
-static expr *rec_unary(parser *self);
-static expr *rec_primary(parser *self);
+static expr *RecLogicalOr(parser *self);
+static expr *RecLogicalAnd(parser *self);
+static expr *RecEquality(parser *self);
+static expr *RecTerm(parser *self);
+static expr *RecFactor(parser *self);
+static expr *RecUnary(parser *self);
+static expr *RecPrimary(parser *self);
 static expr *rec_rvar_or_ident(parser *self);
 static expr *rec_rvar(parser *self, token prev);
 static expr_vector rec_args(parser *self);
 static expr *rec_arraylit(parser *self);
 static expr *rec_arraylit(parser *self);
 static expr *rec_ident(parser *self, token tok);
-static expr *rec_access(parser *self, expr *prev);
+static expr *RecAccess(parser *self, expr *prev);
 
 file *SyntaxTreeInit(options *opt, string src, string alias)
 {
@@ -422,8 +422,9 @@ found_sequence_point:
 //------------------------------------------------------------------------------
 //parsing algorithm
 
-//always returns a file node pointing to a valid region of memory, but the tree
-//itself is ill-formed if self.errors > 0 on return.
+//RecursiveDescent is guaranteed to return a file node that points to a valid
+//region of memory. But, if self.errors > 0 on return, then the tree is not
+//a complete and accurate representation of the input source code.
 static file *RecursiveDescent(parser *self, string alias)
 {
 	assert(self);
@@ -445,12 +446,11 @@ static file *RecursiveDescent(parser *self, string alias)
 	return syntax_tree;
 }
 
-//remark on unity exceptions: the fiat node doesn't need to be qualified with
-//volatile. The CException library dictates that stack variables must be marked
-//volatile if the updated value of the variable is required after an exception
-//is thrown. In this situation, any updates made to the fiat node are not
-//relevant since all information we need is within the garbage vector. Only
-//the tag overwrite is necessary.
+//RecFiat will set the union tag on the returned node to NODE_INVALID if it
+//encounters a user error.
+//
+//all exceptions that may be thrown during recursive descent are guaranteed
+//to be caught and successfully handled by RecFiat.
 static fiat RecFiat(parser *self)
 {
 	assert(self);
@@ -492,7 +492,12 @@ static fiat RecFiat(parser *self)
 	return node;
 }
 
-//<struct declaration>
+//------------------------------------------------------------------------------
+//declarations
+
+//<type declaration>; the lemon compiler uses 'struct' as an alias for the
+//'type' rule in the lemon grammar because the word 'type' makes it difficult
+//to avoid name collisions.
 static decl RecStruct(parser *self)
 {
 	assert(self);
@@ -576,7 +581,6 @@ static member_vector RecParseMembers(parser *self)
 	return vec;
 }
 
-//<function declaration>
 decl RecFunction(parser *self)
 {
 	assert(self);
@@ -688,7 +692,6 @@ static param_vector RecParseParameters(parser *self)
 	return vec;
 }
 
-//<variable declaration>
 static decl RecVariable(parser *self)
 {
 	assert(self);
@@ -737,7 +740,7 @@ static decl RecVariable(parser *self)
 	return node;
 }
 
-//<type>
+//guaranteed to be a singly linked list with a non-null head
 type *RecType(parser *self)
 {
 	assert(self);
@@ -773,7 +776,10 @@ type *RecType(parser *self)
 	return node;
 }
 
-//<statement>; jump table
+//------------------------------------------------------------------------------
+//statements
+
+//master jump table
 static stmt RecStmt(parser *self)
 {
 	assert(self);
@@ -833,7 +839,6 @@ static stmt RecStmt(parser *self)
 	return node;
 }
 
-//<block statement>
 static stmt RecBlock(parser *self)
 {
 	assert(self);
@@ -862,7 +867,6 @@ static stmt RecBlock(parser *self)
 	return node;
 }
 
-//<for statement>
 static stmt RecForLoop(parser *self)
 {
 	assert(self);
@@ -897,7 +901,6 @@ static stmt RecForLoop(parser *self)
 	return node;
 }
 
-//<while statement>
 static stmt RecWhileLoop(parser *self)
 {
 	assert(self);
@@ -924,7 +927,6 @@ static stmt RecWhileLoop(parser *self)
 	return node;
 }
 
-//<switch statement>
 static stmt RecSwitch(parser *self)
 {
 	assert(self);
@@ -950,7 +952,7 @@ static stmt RecSwitch(parser *self)
 	return node;
 }
 
-//<case statement>* within <switch statement>
+//<case statement>* within <switch statement> rule
 static test_vector rec_tests(parser *self)
 {
 	assert(self);
@@ -999,7 +1001,6 @@ static test_vector rec_tests(parser *self)
 	return vec;
 }
 
-//<branch statement>
 static stmt RecBranch(parser *self)
 {
 	assert(self);
@@ -1138,7 +1139,6 @@ static stmt RecAnonymousTarget(parser *self)
 	return node;
 }
 
-//<label statement>
 static stmt RecLabel(parser *self)
 {
 	assert(self);
@@ -1164,8 +1164,6 @@ static stmt RecLabel(parser *self)
 	return node;
 }
 
-//<expression statement>; the token held by the parser on invocation must be the
-//first token of the expression.
 static stmt RecExprStmt(parser *self)
 {
 	assert(self);
@@ -1183,12 +1181,14 @@ static stmt RecExprStmt(parser *self)
 	return node;
 }
 
-//<assignment>; note that lemon does not allow chained assignments
+//------------------------------------------------------------------------------
+//expressions
+
 static expr *RecAssignment(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_logicalor(self);
+	expr *node = RecLogicalOr(self);
 
 	if (self->tok.type == _EQUAL) {
 		expr *tmp = node;
@@ -1197,21 +1197,17 @@ static expr *RecAssignment(parser *self)
 		node->line = self->tok.line;
 
 		GetNextValidToken(self);
-		node->assignment.rvalue = rec_logicalor(self);
+		node->assignment.rvalue = RecLogicalOr(self);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_logicalor
- * @brief <logical or> ::= <logical and> ("||" <logical and>)*
- ******************************************************************************/
-static expr *rec_logicalor(parser *self)
+static expr *RecLogicalOr(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_logicaland(self);
+	expr *node = RecLogicalAnd(self);
 	expr *tmp = NULL;
 
 	while (self->tok.type == _OR) {
@@ -1223,21 +1219,17 @@ static expr *rec_logicalor(parser *self)
 		node->line = self->tok.line;
 
 		GetNextValidToken(self);
-		node->binary.right = rec_logicaland(self);
+		node->binary.right = RecLogicalAnd(self);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_logicaland
- * @brief <logical and> ::= <equality> ("&&" <equality>)*
- ******************************************************************************/
-static expr *rec_logicaland(parser *self)
+static expr *RecLogicalAnd(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_equality(self);
+	expr *node = RecEquality(self);
 
 	while (self->tok.type == _AND) {
 		expr *tmp = node;
@@ -1248,21 +1240,17 @@ static expr *rec_logicaland(parser *self)
 		node->line = self->tok.line;
 
 		GetNextValidToken(self);
-		node->binary.right = rec_equality(self);
+		node->binary.right = RecEquality(self);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn equality
- * @brief <equality> ::= <term> ((">"|"<"|">="|"<="|"=="|"!=") <term>)*
- ******************************************************************************/
-static expr *rec_equality(parser *self)
+static expr *RecEquality(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_term(self);
+	expr *node = RecTerm(self);
 	expr *tmp = NULL;
 
 	while (true) {
@@ -1291,7 +1279,7 @@ static expr *rec_equality(parser *self)
 			node->line = self->tok.line;
 
 			GetNextValidToken(self);
-			node->binary.right = rec_term(self);
+			node->binary.right = RecTerm(self);
 			break;
 
 		default:
@@ -1303,15 +1291,11 @@ exit_loop:
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_term
- * @brief249 <term> ::= <factor> (("+" | "-" | "|" | "^") <factor>)*
- ******************************************************************************/
-static expr *rec_term(parser *self)
+static expr *RecTerm(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_factor(self);
+	expr *node = RecFactor(self);
 	expr *tmp = NULL;
 
 	while (true) {
@@ -1334,7 +1318,7 @@ static expr *rec_term(parser *self)
 			node->line = self->tok.line;
 
 			GetNextValidToken(self);
-			node->binary.right = rec_factor(self);
+			node->binary.right = RecFactor(self);
 			break;
 
 		default:
@@ -1346,15 +1330,11 @@ exit_loop:
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_factor
- * @brief <factor> ::= <unary> (("*"|"/"|"%"|">>"|"<<"|"&") <unary>)*
- ******************************************************************************/
-static expr *rec_factor(parser *self)
+static expr *RecFactor(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_unary(self);
+	expr *node = RecUnary(self);
 	expr *tmp = NULL;
 
 	while (true) {
@@ -1383,7 +1363,7 @@ static expr *rec_factor(parser *self)
 			node->line = self->tok.line;
 
 			GetNextValidToken(self);
-			node->binary.right = rec_unary(self);
+			node->binary.right = RecUnary(self);
 			break;
 
 		default:
@@ -1395,12 +1375,7 @@ exit_loop:
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_unary
- * @brief <unary> ::= ("-" | "+" | "'" | "!" | "*" | "&" | <cast>) <unary>
- * | <primary>
- ******************************************************************************/
-static expr *rec_unary(parser *self)
+static expr *RecUnary(parser *self)
 {
 	assert(self);
 
@@ -1427,7 +1402,7 @@ static expr *rec_unary(parser *self)
 		node->unary.operator = self->tok.type;
 		node->line = self->tok.line;
 		GetNextValidToken(self);
-		node->unary.operand = rec_unary(self);
+		node->unary.operand = RecUnary(self);
 		break;
 
 	case _COLON:
@@ -1435,28 +1410,27 @@ static expr *rec_unary(parser *self)
 		node->line = self->tok.line;
 		GetNextValidToken(self);
 		node->cast.casttype = RecType(self);
-		check_move(self, _COLON, "expected ':' after type casting");
-		node->cast.operand = rec_unary(self);
+		check_move(self, _COLON, "missing ':' after type cast");
+		node->cast.operand = RecUnary(self);
 		break;
 
 	default:
-		node = rec_primary(self);
+		node = RecPrimary(self);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_primary
- * @brief <primary> ::= <atom> (<call> | <selector> | <index>)*
- * @remark <atom> production is expanded and implemented in rec_primary while
- * optional calls, selectors, and indicies are implemented in rec_access.
- ******************************************************************************/
-static expr *rec_primary(parser *self)
+//the <atom> grammar rule is expanded and implemented within RecPrimary while
+//the optional call, selector, and index rules are relegated to RecAccess.
+static expr *RecPrimary(parser *self)
 {
 	assert(self);
 
-	static const char *errfmt = "expression is ill-formed at '%.*s'";
+	static const string fmt = "expression is ill-formed at '%.*s'";
+	char *msg = self->tok.lexeme.data;
+	size_t len = self->tok.lexeme.len;
+
 	expr *node = NULL;
 
 	switch (self->tok.type) {
@@ -1497,22 +1471,27 @@ static expr *rec_primary(parser *self)
 	case _LEFTPAREN:
 		GetNextValidToken(self);
 		node = RecAssignment(self);
-		check_move(self, _RIGHTPAREN, "expected ')' after grouping");
+		check_move(self, _RIGHTPAREN, "missing ')' after grouping");
 		break;
 
 	default:
-		usererror(errfmt, self->tok.len, self->tok.lexeme);
+		usererror(errfmt, len, msg);
 		Throw(XXPARSE);
 	}
 
-	return rec_access(self, node);
+	return RecAccess(self, node);
 }
 
-/*******************************************************************************
- * @fn rec_access
- * @brief <call> | <selector> | <index>
- ******************************************************************************/
-static expr *rec_access(parser *self, expr *prev)
+//RecAccess recursively wraps the previous expression within another expression
+//tree. The previous expression always binds tighter than the expression it is
+//wrapped in, and this is enforced by a post-order traversal.
+//
+//example: x.y.z wraps the atom node x in a selector node for y. the selector
+//node for y is again wrapped in another selector node for z.
+//
+//example: foo().bar wraps the atom node foo in a call node. The call node is
+//wrapped again in a selector node for bar.
+static expr *RecAccess(parser *self, expr *prev)
 {
 	assert(self);
 	assert(prev);
@@ -1559,7 +1538,7 @@ static expr *rec_access(parser *self, expr *prev)
 		return prev;
 	}
 
-	return rec_access(self, node);
+	return RecAccess(self, node);
 }
 
 /*******************************************************************************
