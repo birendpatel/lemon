@@ -62,6 +62,7 @@ static void StringFree(string s)
 	}
 }
 
+//use with gcc cleanup
 static void StringPtrFree(string *sptr)
 {
 	if (sptr && *sptr) {

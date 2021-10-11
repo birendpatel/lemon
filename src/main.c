@@ -349,8 +349,6 @@ xerror Compile(options *opt, string src, string alias)
 		fprintf(stderr, "compiler pass: echo\n");
 	}
 
-	xerror err = XEUNDEFINED;
-
 	file *ast = SyntaxTreeInit(opt, src, alias);
 
 	if (!ast) {
@@ -368,5 +366,7 @@ xerror Compile(options *opt, string src, string alias)
 		SyntaxTreeFree(ast);
 		return XEPARSE;
 	}
+
+	return XESUCCESS;
 }
 
