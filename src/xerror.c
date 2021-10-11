@@ -40,24 +40,27 @@ static const char *GetLevelName(const int level)
 
 const char *XerrorDescription(const xerror err)
 {
-	static const char *lookup[] = {
-		[XESUCCESS]   = "function terminated successfully",
-		[XENOMEM]     = "dynamic allocation failed",
-		[XEOPTION]    = "options parsing failed",
-		[XEFULL]      = "data structure is at capacity",
-		[XEFILE]      = "IO failure",
-		[XEBUSY]      = "thread waiting on condition",
-		[XECLOSED]    = "communication channel is closed",
-		[XETHREAD]    = "multithreading failure",
-		[XESHELL]     = "shell error",
-		[XEUNDEFINED] = "unspecified error"
-	};
+	assert(err >= 0);
 
-	if (err >= XESUCCESS && err <= XEUNDEFINED) {
-		return lookup[err];
-	}
+	const size_t code = (size_t) err;
+	
+	STRING_TABLE_BEGIN
+	
+	STRING_TABLE_ENTRY(XESUCCESS, "function terminated successfully")
+	STRING_TABLE_ENTRY(XENOMEM, "dynamic allocation failed")
+	STRING_TABLE_ENTRY(XEOPTION, "options parsing failed")
+	STRING_TABLE_ENTRY(XEFULL, "data structure is at capacity")
+	STRING_TABLE_ENTRY(XEFILE, "IO failure")
+	STRING_TABLE_ENTRY(XEBUSY, "thread is waiting on a condition")
+	STRING_TABLE_ENTRY(XECLOSED, "communication channel is closed")
+	STRING_TABLE_ENTRY(XETHREAD, "multithreading failure")
+	STRING_TABLE_ENTRY(XESHELL, "shell error")
+	STRING_TABLE_ENTRY(XEPARSE, "parsing to AST failed")
+	STRING_TABLE_ENTRY(XEUNDEFINED, "unspecified error")
+	
+	STRING_TABLE_END
 
-	return "no error description available";
+	return STRING_TABLE_FETCH(code, "no error description available");
 }
 
 static void FlushBuffer(bool need_mutex)

@@ -35,6 +35,7 @@ void ShowHeader(void);
 void ShowHelp(void);
 xerror StringFromFile(FILE *fp, string dest, size_t n);
 xerror GetFilesize(FILE *fp, size_t *n);
+void FileCloseAuto(FILE **fptr);
 xerror Compile(options *opt, string source, string alias);
 
 int main(int argc, char **argv)
@@ -74,7 +75,7 @@ xerror ConfigOptions(options *opt, int argc, char **argv, int *total_parsed)
 	*opt = OptionsInit();
 
 	xerror err = OptionsParse(opt, argc, argv, total_parsed);
-	
+
 	bool state_flag = opt->diagnostic & DIAGNOSTIC_OPT;
 
 	if (!err && state_flag) {
@@ -129,6 +130,7 @@ void ShowHeader(void)
 
 xerror ExecRepl(options *opt)
 {
+	int fatal_errors = ~(XESUCCESS | XEPARSE);
 	RAII(DynamicStringFree) dynamic_string input = {0};
 	DynamicStringInit(&input, KiB(1));
 
@@ -148,7 +150,7 @@ xerror ExecRepl(options *opt)
 		} else {
 			err = Compile(opt, source, NULL);
 
-			if (err) {
+			if (err & fatal_errors) {
 				xerror_issue("cannot compile from repl");
 				return err;
 			}
@@ -197,6 +199,13 @@ xerror CollectInput(dynamic_string *buffer)
 	return err;
 }
 
+void FileCloseAuto(FILE **fptr)
+{
+	if (fptr && *fptr) {
+		fclose(*fptr);
+	}
+}
+
 xerror ExecFile(options *opt, int argc, char **argv, int argi)
 {
 	assert(opt);
@@ -205,15 +214,14 @@ xerror ExecFile(options *opt, int argc, char **argv, int argi)
 	assert(argi < argc);
 
 	xerror err = XEUNDEFINED;
-	FILE *fp = NULL;
 
 	for (int i = argi; i < argc; i++) {
-		fp = fopen(argv[i], "r");
+		RAII(FileCloseAuto) FILE *fp = fopen(argv[i], "r");
 
 		if (!fp) {
 			xerror_issue("%s: %s", argv[i], strerror(errno));
 			err = XEFILE;
-			goto fail;
+			return err;
 		}
 
 		size_t len = 0;
@@ -221,35 +229,26 @@ xerror ExecFile(options *opt, int argc, char **argv, int argi)
 
 		if (err) {
 			xerror_issue("%s: cannot get bytecount", argv[i]);
-			goto fail;
+			return err;
 		}
 
-		string src = StringInit(len);
+		RAII(StringPtrFree) string src = StringInit(len);
 		err = StringFromFile(fp, src, len);
 
 		if (err) {
 			xerror_issue("%s: cannot copy to memory", argv[i]);
-			goto fail;
+			return err;
 		}
 
-		fclose(fp);
 		err = Compile(opt, src, argv[i]);
-		StringFree(src);
 
 		if (err) {
 			xerror_issue("%s: cannot compile contents", argv[i]);
-			goto fail;
+			return err;
 		}
 	}
 
 	return XESUCCESS;
-
-fail:
-	if (fp) {
-		fclose(fp);
-	}
-
-	return err;
 }
 
 //this function moves the file position indicator but will move it back to the
@@ -338,7 +337,7 @@ void ExecShell(options *opt, string src)
 
 	if (err == -1) {
 		perror(NULL);
-	} 
+	}
 }
 
 xerror Compile(options *opt, string src, string alias)
@@ -354,12 +353,20 @@ xerror Compile(options *opt, string src, string alias)
 
 	file *ast = SyntaxTreeInit(opt, src, alias);
 
-	if (err) {
+	if (!ast) {
 		xerror_issue("cannot create abstact syntax tree");
+		return XEPARSE;
 	}
 
-	SyntaxTreeFree(ast);
+	if (ast->errors) {
+		if (ast->errors > 1) {
+			XerrorUser(0, "%zu syntax errors found\n", ast->errors);
+		} else {
+			XerrorUser(0, "1 syntax error found\n");
+		}
 
-	return err;
+		SyntaxTreeFree(ast);
+		return XEPARSE;
+	}
 }
 

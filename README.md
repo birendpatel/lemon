@@ -25,8 +25,6 @@ To install Lemon, you need a POSIX compliant system or POSIX comptability layer 
 
 By default, Lemon will be installed in the `/usr/local/bin` directory. You can change this path by using the `INSTALL_PATH` makefile variable.
 
-The Lemon compiler can highlight user errors and warnings in a variety of colours.If your terminal supports colour output, you can install Lemon with `sudo make install CFLAGS+=-DCOLOURS`.
-
 # License
 
 This project is licensed under the GNU General Public License v3.0. You may find a copy of this license in this project's root directory.

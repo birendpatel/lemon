@@ -323,4 +323,5 @@ impl_vector_reset(fiat, fiat, static)
 struct file {
 	string alias;
 	fiat_vector fiats;
+	size_t errors;
 };

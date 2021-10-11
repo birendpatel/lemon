@@ -4,8 +4,9 @@
 
 CC = gcc
 
-CFLAGS = -std=gnu17 -Wall -Wextra -Werror 
+CFLAGS = -std=gnu17 -Wall -Wextra -Werror
 CFLAGS += -Wdouble-promotion -Wconversion -Wcast-qual -Wnull-dereference
+CFLAGS += -DCOLOURS
 
 # disable unused function warnings so that they don't interfere with C-style
 # templating for vectors, channels, and maps.

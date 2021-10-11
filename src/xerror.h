@@ -67,7 +67,8 @@ void XerrorFlush(void);
 #define XECLOSED      6 //communication channel is closed
 #define XETHREAD      7 //multithreading issue has occured
 #define XESHELL	      8 //shell error
-#define XEUNDEFINED   9 //unspecified error
+#define XEPARSE	      9 //parsing to AST failed
+#define XEUNDEFINED  10 //unspecified error
 
 //code map for lib/channel.h
 #define CHANNEL_ESUCCESS XESUCCESS

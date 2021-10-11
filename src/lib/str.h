@@ -57,7 +57,16 @@ static string StringInit(size_t len)
 
 static void StringFree(string s)
 {
-	free(s);
+	if (s) {
+		free(s);
+	}
+}
+
+static void StringPtrFree(string *sptr)
+{
+	if (sptr && *sptr) {
+		free(*sptr);
+	}
 }
 
 //------------------------------------------------------------------------------
@@ -74,7 +83,7 @@ static void StringFree(string s)
 	const size_t str_table_len = sizeof(str_table_lookup) / sizeof(char*);
 
 #define STRING_TABLE_FETCH(key, default) \
-	key >= 0 && key < str_table_len ? str_table_lookup[key] : default
+	key < str_table_len ? str_table_lookup[key] : default
 
 //------------------------------------------------------------------------------
 //dynamic strings

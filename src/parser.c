@@ -182,6 +182,7 @@ static file *FileInit(string alias)
 	kmalloc(syntax_tree, sizeof(file));
 
 	syntax_tree->alias = alias;
+	syntax_tree->errors = 0;
 
 	const size_t fiat_capacity = 64;
 	fiat_vector_init(&syntax_tree->fiats, 0, fiat_capacity);
@@ -429,7 +430,7 @@ found_sequence_point:
 //parsing algorithm
 
 //RecursiveDescent is guaranteed to return a file node that points to a valid
-//region of memory. But, if self.errors > 0 on return, then the tree is not
+//region of memory. But, if file.errors > 0 on return, then the tree is not
 //a complete and accurate representation of the input source code.
 static file *RecursiveDescent(parser *self, string alias)
 {
@@ -448,6 +449,8 @@ static file *RecursiveDescent(parser *self, string alias)
 			fiat_vector_push(&syntax_tree->fiats, node);
 		}
 	}
+
+	syntax_tree->errors = self->errors;
 
 	return syntax_tree;
 }
@@ -688,8 +691,7 @@ static param_vector RecParseParameters(parser *self)
 	}
 
 	if (vec.len == 0) {
-		usererror("a function declaration without parameters must be"
-			  "marked explicitly with 'void'");
+		usererror("empty parameter list; did you mean 'void'?");
 		Throw(XXPARSE);
 	}
 
