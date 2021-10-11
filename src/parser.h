@@ -1,4 +1,3 @@
-//TODO char to string
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
 // The parser API provides functionality for creating, manipulating, and
@@ -40,7 +39,7 @@ void SyntaxTreeFree(file *ast);
 
 //<member list>
 typedef struct member {
-	char *name;
+	string name;
 	type *typ;
 	bool public;
 } member;
@@ -49,7 +48,7 @@ make_vector(member, member, static)
 
 //<parameter list>
 typedef struct param {
-	char *name;
+	string name;
 	type *typ;
 	bool mutable;
 } param;
@@ -91,7 +90,7 @@ typedef enum typetag {
 struct type {
 	typetag tag;
 	union {
-		char *base;
+		string base;
 		type *pointer;
 
 		struct {
@@ -113,13 +112,13 @@ struct decl {
 	decltag tag;
 	union {
 		struct {
-			char *name;
+			string name;
 			member_vector members;
 			bool public;
 		} udt;
 
 		struct {
-			char *name;
+			string name;
 			type *ret;
 			type *recv;
 			stmt *block;
@@ -128,7 +127,7 @@ struct decl {
 		} function;
 
 		struct {
-			char *name;
+			string name;
 			type *vartype;
 			expr *value;
 			bool mutable;
@@ -168,8 +167,8 @@ struct stmt {
 	union {
 		expr *exprstmt;
 		expr *returnstmt; //NULL if function returns void
-		char *gotolabel;
-		char *import;
+		string gotolabel;
+		string import;
 
 		struct {
 			fiat_vector fiats;
@@ -207,7 +206,7 @@ struct stmt {
 		} switchstmt;
 
 		struct {
-			char *name;
+			string name;
 			stmt *target;
 		} label;
 	};
@@ -282,17 +281,17 @@ struct expr {
 		} arraylit;
 
 		struct {
-			char *dist;
+			string dist;
 			expr_vector args;
 		} rvarlit;
 
 		struct {
-			char *rep;
+			string rep;
 			token_type littype;
 		} lit;
 
 		struct {
-			char *name;
+			string name;
 		} ident;
 	};
 
@@ -322,6 +321,6 @@ impl_vector_set(fiat, fiat, static)
 impl_vector_reset(fiat, fiat, static)
 
 struct file {
-	char *alias;
+	string alias;
 	fiat_vector fiats;
 };
