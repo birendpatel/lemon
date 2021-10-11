@@ -6,7 +6,6 @@ CC = gcc
 
 CFLAGS = -std=gnu17 -Wall -Wextra -Werror -Wpedantic -Wnull-dereference
 CFLAGS += -Wdouble-promotion -Wconversion -Wcast-qual
-CFLAGS += -march=native
 
 # disable unused function warnings so that they don't interfere with C-style
 # templating for vectors, channels, and maps.
@@ -40,17 +39,18 @@ objects_release := $(addprefix $(RELEASE_DIR), $(objects_raw))
 # source dependencies
 #-------------------------------------------------------------------------------
 
-main_deps := xerror.h defs.h str.h options.h nodes.h parser.h
+main_deps := defs.h options.h parser.h xerror.h str.h
 
-xerror_deps := xerror.h CException.h
+xerror_deps := CException.h str.h xerror.h
 
-options_deps := xerror.h options.h
+options_deps := xerror.h defs.h options.h
 
-scanner_deps := xerror.h scanner.h defs.h kmap.h channel.h options.h
+scanner_deps := options.h xerror.h channel.h str.h scanner.h defs.h kmap.h
 
-parser_deps := xerror.h parser.h channel.h scanner.h nodes.h defs.h options.h
+parser_deps := options.h scanner.h xerror.h str.h vector.h parser.h defs.h \
+	channel.h
 
-kmap_deps := kmap.h scanner.h
+kmap_deps := scanner.h kmap.h
 
 cexception_deps := CException.c
 
@@ -101,7 +101,7 @@ $(DEBUG_DIR)cexception.o : CException.c $(cexception_deps)
 
 .PHONY: release release_deps
 
-release: CFLAGS += -O3
+release: CFLAGS += -O3 -march=native
 release: release_deps $(RELEASE_DIR)lemon
 	@echo "\nBuild finished successfully."
 	@echo "Lemon was compiled in release mode."
