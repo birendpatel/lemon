@@ -111,10 +111,10 @@ typedef struct token {
 //scanner sends tokens on this communication channel in the order that they
 //are found. When lexical analysis is complete, the scanner sends a final _EOF
 //token and then closes the channel.
-make_channel(token, token, static)
+make_channel(token, Token, static)
 
 //initialized in a new detached thread. The channel must be initialized prior 
 //to this call.
 //
 //returns XESUCCESS or XETHREAD
-xerror ScannerInit(options *opt, string src, token_channel *chan);
+xerror ScannerInit(options *opt, string src, Token_channel *chan);

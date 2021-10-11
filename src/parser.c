@@ -117,7 +117,7 @@ make_vector(void *, ptr, static)
 
 struct parser {
 	options *opt;
-	token_channel *chan;
+	Token_channel *chan;
 	ptr_vector garbage;
 	token tok;
 	size_t errors;
@@ -131,8 +131,8 @@ static parser *ParserInit(options *opt, string src)
 	parser *prs = NULL;
 	kmalloc(prs, sizeof(parser));
 
-	kmalloc(prs->chan, sizeof(token_channel));
-	token_channel_init(prs->chan, KiB(1));
+	kmalloc(prs->chan, sizeof(Token_channel));
+	TokenChannelInit(prs->chan, KiB(1));
 
 	xerror err = ScannerInit(opt, src, prs->chan);
 
@@ -163,7 +163,7 @@ static void ParserFree(parser **self)
 		return;
 	}
 
-	(void) token_channel_free(prs->chan, NULL);
+	(void) TokenChannelFree(prs->chan, NULL);
 
 	free(prs->chan);
 
@@ -345,7 +345,7 @@ static void GetNextToken(parser *self)
 {
 	assert(self);
 
-	xerror err = token_channel_recv(self->chan, &self->tok);
+	xerror err = TokenChannelRecv(self->chan, &self->tok);
 
 	//TODO: parser was refactored to use exceptions; this assertion can
 	//be removed and replaced with Throw()

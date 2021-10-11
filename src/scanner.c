@@ -15,7 +15,7 @@
 
 typedef struct scanner {
 	options *opt;
-	token_channel *chan;
+	Token_channel *chan;
 	char *pos; //current byte being analysed
 	char *curr; //helps process multi-char lexemes in tandem with pos
 	string src;
@@ -137,7 +137,7 @@ static void TokenPrint(token tok, FILE *stream)
 	}
 }
 
-xerror ScannerInit(options *opt, string src, token_channel *chan)
+xerror ScannerInit(options *opt, string src, Token_channel *chan)
 {
 	assert(opt);
 	assert(src);
@@ -340,7 +340,7 @@ static void Scan(scanner *self)
 
 exit:
 	SendEOF(self);
-	token_channel_close(self->chan);
+	TokenChannelClose(self->chan);
 	return;
 }
 
@@ -353,7 +353,7 @@ static void SendToken(scanner *self)
 		TokenPrint(self->tok, stderr);
 	}
 
-	(void) token_channel_send(self->chan, self->tok);
+	(void) TokenChannelSend(self->chan, self->tok);
 }
 
 static void SendEOF(scanner *self)

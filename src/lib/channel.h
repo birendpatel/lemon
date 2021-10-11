@@ -88,11 +88,11 @@ struct pfix##_channel {							       \
 //prototypes
 //cls is the storage class and an optional inline directive
 #define api_channel(T, pfix, cls)					       \
-cls void pfix##_channel_init(pfix##_channel *self, const size_t n);	       \
-cls int pfix##_channel_free(pfix##_channel *self, void (*cfree) (T));	       \
-cls void pfix##_channel_close(pfix##_channel *self);			       \
-cls int pfix##_channel_send(pfix##_channel *self, const T datum);	       \
-cls int pfix##_channel_recv(pfix##_channel *self, T *datum);
+cls void pfix##ChannelInit(pfix##_channel *self, const size_t n);	       \
+cls int pfix##ChannelFree(pfix##_channel *self, void (*cfree) (T));	       \
+cls void pfix##ChannelClose(pfix##_channel *self);			       \
+cls int pfix##ChannelSend(pfix##_channel *self, const T datum);	       \
+cls int pfix##ChannelRecv(pfix##_channel *self, T *datum);
 
 /*******************************************************************************
  * @def impl_channel_init
@@ -100,7 +100,7 @@ cls int pfix##_channel_recv(pfix##_channel *self, T *datum);
  * @details This function must be invoked before any other channel functions.
  ******************************************************************************/
 #define impl_channel_init(T, pfix, cls)					       \
-cls void pfix##_channel_init(pfix##_channel *self, const size_t n)	       \
+cls void pfix##ChannelInit(pfix##_channel *self, const size_t n)	       \
 {									       \
 	assert(self);							       \
 	assert(n);							       \
@@ -131,7 +131,7 @@ cls void pfix##_channel_init(pfix##_channel *self, const size_t n)	       \
  * returned and the CHANNEL_CLOSED flag is set.
  ******************************************************************************/
 #define impl_channel_free(T, pfix, cls)					       \
-cls int pfix##_channel_free(pfix##_channel *self, void (*cfree) (T))	       \
+cls int pfix##ChannelFree(pfix##_channel *self, void (*cfree) (T))	       \
 {									       \
 	assert(self);							       \
 									       \
@@ -180,7 +180,7 @@ unlock:									       \
  * receive data from producers. This does not imply that the channel is empty.
  ******************************************************************************/
 #define impl_channel_close(T, pfix, cls)				       \
-cls void pfix##_channel_close(pfix##_channel *self)			       \
+cls void pfix##ChannelClose(pfix##_channel *self)			       \
 {									       \
 	assert(self);							       \
 									       \
@@ -199,7 +199,7 @@ cls void pfix##_channel_close(pfix##_channel *self)			       \
  * @details Thread will suspend without timeout if the channel is full.
  ******************************************************************************/
 #define impl_channel_send(T, pfix, cls)					       \
-cls int pfix##_channel_send(pfix##_channel *self, const T datum)	       \
+cls int pfix##ChannelSend(pfix##_channel *self, const T datum)	       \
 {									       \
 	assert(self);							       \
 									       \
@@ -239,7 +239,7 @@ unlock:									       \
  * @details Thread will suspend without timeout if the channel is empty.
  ******************************************************************************/
 #define impl_channel_recv(T, pfix, cls)					       \
-cls int pfix##_channel_recv(pfix##_channel *self, T *datum)		       \
+cls int pfix##ChannelRecv(pfix##_channel *self, T *datum)		       \
 {									       \
 	assert(self);						               \
 	assert(datum);							       \
