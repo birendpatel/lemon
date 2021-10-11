@@ -352,11 +352,13 @@ xerror Compile(options *opt, string src, string alias)
 
 	xerror err = XEUNDEFINED;
 
-	file *ast = parse(opt, &err, src, alias);
+	file *ast = SyntaxTreeInit(opt, src, alias);
 
 	if (err) {
 		xerror_issue("cannot create abstact syntax tree");
 	}
+
+	SyntaxTreeFree(ast);
 
 	return err;
 }
