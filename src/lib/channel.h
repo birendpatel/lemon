@@ -3,6 +3,40 @@
 // Multi-producer multi-consumer thread-safe FIFO blocking queue with a fixed
 // buffer length. Channels are implemented via C-style templates. This header 
 // requires a POSIX compliant system or a POSIX compatibility layer.
+//
+// Example:
+//
+// make_channel(void *, Pointer, static inline)
+// 
+// /* Thread A */
+// int main(void) {
+// 	int *data = malloc(sizeof(int));
+// 	*data = 0;
+//
+// 	Pointer_channel chan = {0};
+//
+// 	PointerChannelInit(&chan, 128);
+//
+// 	PointerChannelSend(&chan, data);
+//
+// 	PointerChannelFree(&chan, NULL);
+// }
+//
+// /* Thread B; Assuming provided channel is the one initialized by Thread A */
+// void get(Pointer_channel *chan) {
+// 	...
+// 	int *data = NULL;
+//
+// 	PointerChannelRecv(chan, &data);
+//
+// 	/* *data == 0 */
+// 	...
+// }
+//
+// /* a single translation unit can contain multiple channels. The pfix argument
+// to make_channel() ensures a unique naming scheme. */
+// make_channel(int, Error, static) //Error_channel, ErrorChannelInit
+// make channel(pthread_t, Thread, extern) //Thread_channel, ThreadChannelInit
 
 #pragma once
 
@@ -13,9 +47,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-//send trace messages to the stderr channel if the macro CHANNEL_TRACE_STDERR
-//is defined. Thread IDs are provided but they may collide beucase the opaque
-//pthread_t struct is transformed portably to a numeric value.
+//tracing provides thread IDs but two different threads may have an ID collision
+//because the pthread_t transformation is not an injective function.
 #ifdef CHANNEL_TRACE_STDERR
 	#include <stdio.h>
 	#define TID ((void *) pthread_self())
@@ -25,8 +58,7 @@
 	#define CHANNEL_TRACE(msg) do {} while (0)
 #endif
 
-//channel functions return integer error codes. These codes must be defined
-//by the end user.
+//channel functions may return any integer error code s.t. INT_MIN < x < INT_MAX
 #ifndef CHANNEL_ESUCCESS
 	#error "channel.h requires user to implement CHANNEL_ESUCCESS int code"
 #endif
@@ -44,20 +76,17 @@
 //induce segfault if stdlib malloc fails
 #define kmalloc(target, bytes) memset((target = malloc(bytes)), 0, 1)
 
-//typedef and forward declaration
 #define alias_channel(pfix)						       \
 typedef struct pfix##_channel pfix##_channel;
 
-//declares a channel struct with a pfixed tag and elements of type T.
-//
 //the producer or consumer wishing to perform an action on the channel must
 //first acquire the top-level mutex.
 //
-//senders wait on the condition variable cond_full if the queue is at capacity.
-//consumers wait on th econdition variable cond_empty is the queue is empty.
+//senders wait on cond_full if the queue.len == queue.cap and consumer wait on 
+//cond_empty if queue.len == 0.
 //
-//data is a queue buffer with cap capacity. The total elements currently in the
-//queue is len. data[head] is the first element to be dequeued, data[tail] is
+//data is the internal buffer with maximum capacity queue.cap and current size
+//queue.len. data[head] is the first element to be dequeued, data[tail] is
 //the last element to be dequeued.
 #define declare_channel(T, pfix)					       \
 struct pfix##_channel {							       \
@@ -82,7 +111,7 @@ struct pfix##_channel {							       \
 cls void pfix##ChannelInit(pfix##_channel *self, const size_t n);	       \
 cls int pfix##ChannelFree(pfix##_channel *self, void (*cfree) (T));	       \
 cls void pfix##ChannelClose(pfix##_channel *self);			       \
-cls int pfix##ChannelSend(pfix##_channel *self, const T datum);	       \
+cls int pfix##ChannelSend(pfix##_channel *self, const T datum);	               \
 cls int pfix##ChannelRecv(pfix##_channel *self, T *datum);
 
 //must be invoked before any other channel function
