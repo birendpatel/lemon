@@ -35,8 +35,14 @@
 	#define VECTOR_TRACE(msg) do { } while (0)
 #endif
 
-//kmalloc
-#define kmalloc(target, bytes) memset((target = malloc(bytes)), 0, 1)
+#define kmalloc(target, bytes)                                                 \
+        do {                                                                   \
+                target = malloc(bytes);                                        \
+                                                                               \
+                if (!target) {                                                 \
+                        abort();                                               \
+                }                                                              \
+        } while (0)
 
 //typedef and forward declaration
 #define alias_vector(pfix)					               \

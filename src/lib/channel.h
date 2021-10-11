@@ -73,8 +73,14 @@
 	#error "channel.h requires user to implement CHANNEL_ECLOSED int code"
 #endif
 
-//induce segfault if stdlib malloc fails
-#define kmalloc(target, bytes) memset((target = malloc(bytes)), 0, 1)
+#define kmalloc(target, bytes)                                                 \
+        do {                                                                   \
+                target = malloc(bytes);                                        \
+                                                                               \
+                if (!target) {                                                 \
+                        abort();                                               \
+                }                                                              \
+	} while (0)
 
 #define alias_channel(pfix)						       \
 typedef struct pfix##_channel pfix##_channel;

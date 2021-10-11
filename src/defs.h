@@ -35,5 +35,11 @@
 
 #define MiB(mega) (1048576 * mega)
 
-//if malloc(3) fails then induce a segfault by attempting to write zero at NULL
-#define kmalloc(target, bytes) memset((target = malloc(bytes)), 0, 1)
+#define kmalloc(target, bytes)						       \
+	do {								       \
+		target = malloc(bytes);					       \
+									       \
+		if (!target) {						       \
+			abort();					       \
+		}							       \
+	} while (0)
