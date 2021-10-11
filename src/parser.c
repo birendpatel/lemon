@@ -244,6 +244,12 @@ static void *AllocateAndMark(parser *self, size_t bytes)
 	return region;
 }
 
+#define alloc_mark_vector(vec_init, recv, len, cap)                            \
+	do {								       \
+		vec_init(&recv, len, cap);				       \
+		Mark(self, recv.data);					       \
+	}
+
 static void CollectGarbage(parser *self, bool flag)
 {
 	void (*freefunc)(void *) = NULL;
@@ -543,8 +549,7 @@ static member_vector RecParseMembers(parser *self)
 
 	member_vector vec = {0};
 	const size_t vec_capacity = 4;
-	member_vector_init(&vec, 0, vec_capacity);
-	Mark(self, vec.data);
+	alloc_mark_vector(member_vector_init, vec, 0, vec_capacity);
 
 	member attr = {
 		.name = NULL,
@@ -651,8 +656,7 @@ static param_vector RecParseParameters(parser *self)
 
 	param_vector vec = {0};
 	const size_t vec_capacity = 4;
-	param_vector_init(&vec, 0, vec_capacity);
-	Mark(self, vec.data);
+	alloc_mark_vector(param_vector_init, vec, 0, vec_capacity);
 
 	param attr  = {
 		.name = NULL,
@@ -853,8 +857,7 @@ static stmt RecBlock(parser *self)
 	};
 
 	const size_t vec_capacity = 4;
-	fiat_vector_init(&node.block.fiats, 0, vec_capacity);
-	Mark(self, node.block.fiats.data);
+	alloc_mark_vector(fiat_vector_init, node.block.fiats, 0, vec_capacity);
 
 	GetNextValidToken(self);
 
@@ -959,8 +962,7 @@ static test_vector RecTests(parser *self)
 
 	test_vector vec = {0};
 	const size_t vec_capacity = 4;
-	test_vector_init(&vec, 0, vec_capacity);
-	Mark(self, vec.data);
+	alloc_mark_vector(test_vector_init, vec, 0, vec_capacity);
 
 	test t = {
 		.cond = NULL,
@@ -1605,8 +1607,7 @@ static expr_vector RecArguments(parser *self)
 
 	expr_vector vec = {0};
 	const size_t vec_capacity = 4;
-	expr_vector_init(&vec, 0, vec_capacity);
-	Mark(self, vec.data);
+	alloc_mark_vector(expr_vector_init, vec, 0, vec_capacity);
 
 	GetNextValidToken(self); 
 
@@ -1640,13 +1641,11 @@ static expr *RecArrayLiteral(parser *self)
 
 	node->line = self->tok.line;
 
-	const size_t idx_vec_capacity = 4;
-	idx_vector_init(&node->arraylit.indicies, 0, idx_vec_capacity);
-	Mark(self, node->arraylit.indicies.data);
+	const size_t idx_cap = 4;
+	alloc_mark_vector(idx_vector_init, node->arraylit.indicies, 0,idx_cap);
 	
-	const size_t expr_vec_capacity = 4;
-	expr_vector_init(&node->arraylit.values, 0, expr_vec_capacity);
-	Mark(self, node->arraylit.values.data);
+	const size_t expr_cap = 4;
+	alloc_mark_vector(expr_vector_init, node->arraylit.values, 0, expr_cap);
 
 	GetNextValidToken(self); 
 
