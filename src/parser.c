@@ -80,7 +80,7 @@ static expr *RecFactor(parser *self);
 static expr *RecUnary(parser *self);
 static expr *RecPrimary(parser *self);
 static expr *RecRvarOrIdentifier(parser *self);
-static expr *RecRvar(parser *self, token prev);
+static expr *RecRvar(parser *self, bool seen_tilde);
 static expr_vector RecArguments(parser *self);
 static expr *RecArrayLiteral(parser *self);
 static expr *RecArrayLiteral(parser *self);
@@ -91,9 +91,8 @@ file *SyntaxTreeInit(options *opt, string src, string alias)
 {
 	assert(opt);
 	assert(src);
-	assert(alias);
 
-	RAII(ParserFree) parser *prs = parser_init(opt, src);
+	RAII(ParserFree) parser *prs = ParserInit(opt, src);
 
 	if (!prs) {
 		xerror_issue("cannot init parser");
@@ -171,8 +170,6 @@ static void ParserFree(parser **self)
 	ptr_vector_free(&prs->garbage, NULL);
 
 	free(prs);
-
-	return XESUCCESS;
 }
 
 //------------------------------------------------------------------------------
@@ -184,7 +181,7 @@ static file *FileInit(string alias)
 
 	kmalloc(syntax_tree, sizeof(file));
 
-	syntax-tree->alias = alias;
+	syntax_tree->alias = alias;
 
 	const size_t fiat_capacity = 64;
 	fiat_vector_init(&syntax_tree->fiats, 0, fiat_capacity);
@@ -208,7 +205,7 @@ static decl *CopyDeclToHeap(parser *self, decl src)
 {
 	assert(self);
 
-	decl *new = AllocateAndMark(self, sizeof(decl);
+	decl *new = AllocateAndMark(self, sizeof(decl));
 
 	memcpy(new, &src, sizeof(decl));
 
@@ -238,7 +235,9 @@ static void *AllocateAndMark(parser *self, size_t bytes)
 {
 	assert(self);
 
-	void *region = kmalloc(dest, bytes);
+	void *region = NULL;
+
+	kmalloc(region, bytes);
 
 	Mark(self, region);
 
@@ -249,7 +248,7 @@ static void *AllocateAndMark(parser *self, size_t bytes)
 	do {								       \
 		vec_init(&recv, len, cap);				       \
 		Mark(self, recv.data);					       \
-	}
+	} while(0)
 
 static void CollectGarbage(parser *self, bool flag)
 {
@@ -494,7 +493,7 @@ static fiat RecFiat(parser *self)
 		gc_flag = true;
 	}
 
-	CollectGarbage(gc_flag);
+	CollectGarbage(self, gc_flag);
 
 	return node;
 }
@@ -1083,7 +1082,7 @@ static stmt RecNamedTarget(parser *self)
 	case _IMPORT:
 		node.tag = NODE_IMPORT;
 		move_check(self, _IDENTIFIER, "missing import name");
-		node.import = StringFromlexeme(self);
+		node.import = StringFromLexeme(self);
 		move_check_move(self, _SEMICOLON, "missing ';' after import");
 		break;
 
@@ -1478,7 +1477,7 @@ static expr *RecPrimary(parser *self)
 		break;
 
 	default:
-		usererror(errfmt, len, msg);
+		usererror(fmt, len, msg);
 		Throw(XXPARSE);
 	}
 
@@ -1509,7 +1508,7 @@ static expr *RecAccess(parser *self, expr *prev)
 		move_check(self, _IDENTIFIER, "missing attribute after '.'");
 
 		node->selector.name = prev;
-		node->selector.attr = RecIdentifier(self, self->tok);
+		node->selector.attr = RecIdentifier(self);
 
 		GetNextValidToken(self);
 		break;
@@ -1556,7 +1555,7 @@ static expr *RecRvarOrIdentifier(parser *self)
 
 	if (self->tok.type == _TILDE) {
 		self->tok = prev;
-		node = RecRvar(self);
+		node = RecRvar(self, true);
 	} else {
 		token tmp = self->tok;
 		self->tok = prev;
@@ -1588,7 +1587,7 @@ static expr *RecRvar(parser *self, bool seen_tilde)
 	expr *node = ExprInit(self, NODE_RVARLIT);
 
 	node->line = self->tok.line;
-	node->rvarlit.dist = StringFromlexeme(self);
+	node->rvarlit.dist = StringFromLexeme(self);
 
 	if (!seen_tilde) {
 		move_check(self, _TILDE, "missing '~' after distribution");

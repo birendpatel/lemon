@@ -1,6 +1,8 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <assert.h>
+#include <ctype.h>
+#include <limits.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -23,16 +25,15 @@ typedef struct scanner {
 
 static void* StartRoutine(void *data);
 static void Scan(scanner *self);
-static const string GetTokenName(token_type type);
 static void Consume(scanner *self, token_type type, size_t n);
 static void ConsumeIfPeek(scanner *self, char next, token_type a, token_type b);
 static void ConsumeComment(scanner *self);
 static void ConsumeNumber(scanner *self);
 static void ConsumeString(scanner *self);
-static void ConsumeSpace(scanner *self)
+static void ConsumeSpace(scanner *self);
 static void ConsumeInvalid(scanner *self, uint8_t flags);
 static void ConsumeIdentOrKeyword(scanner *self);
-static size_t GetIdentOrKeywordLength(scanner *self)
+static size_t GetIdentOrKeywordLength(scanner *self);
 static size_t Synchronize(scanner *self);
 static char Peek(scanner *self);
 static bool IsLetterDigit(char ch);
@@ -40,10 +41,10 @@ static bool IsLetter(char ch);
 static bool IsSpaceEOF(char ch);
 static void SendToken(scanner *self);
 static void SendEOF(scanner *self);
-static const string GetTokenName(token_type type);
+static string GetTokenName(token_type type);
 static void TokenPrint(token tok, FILE *stream);
 
-static const string GetTokenName(token_type type)
+static string GetTokenName(token_type type)
 {
 	STRING_TABLE_BEGIN
 		STRING_TABLE_ENTRY(_INVALID, "INVALID")
@@ -116,13 +117,18 @@ static const string GetTokenName(token_type type)
 
 static void TokenPrint(token tok, FILE *stream)
 {
-	const string lexfmt = "TOKEN { line %-10d: %-20s: %.*s }\n";
-	const string nolexfmt = "TOKEN { line %-10d: %-20s }\n";
+	const string lexfmt = "TOKEN { line %-10zu: %-20s: %.*s }\n";
+	const string nolexfmt = "TOKEN { line %-10zu: %-20s }\n";
 
 	const size_t line = tok.line;
 	const string name = GetTokenName(tok.type);
-	const size_t len = tok.lexeme.len;
 	const char *data = tok.lexeme.data;
+
+	//sometimes gcc won't trigger a -Werror-format in -O0 to flag situations
+	//where a size_t is used for a field format specifier (which is an int).
+	//hence a manual check in debug mode.
+	assert(tok.lexeme.len <= INT_MAX);
+	const int len = (int) tok.lexeme.len;
 
 	if (data) {
 		fprintf(stream, lexfmt, line, name, len, data);
@@ -150,7 +156,7 @@ xerror ScannerInit(options *opt, string src, token_channel *chan)
 	scn->curr = NULL;
 	scn->src = src;
 	scn->line = 1;
-	scn->tok = {0};
+	scn->tok = (token) {0};
 
 	pthread_t thread;
 	int err = pthread_create(&thread, &attr, StartRoutine, scn);
@@ -325,6 +331,7 @@ static void Scan(scanner *self)
 
 		case '_':
 			ConsumeIdentOrKeyword(self);
+			break;
 
 		default:
 			ConsumeInvalid(self, TOKEN_OKAY);
@@ -380,7 +387,7 @@ static void ConsumeIdentOrKeyword(scanner *self)
 			.data = self->pos,
 			.len = word_length
 		},
-		.type = kv ? kv->type : _IDENTIFER,
+		.type = kv ? kv->typ: _IDENTIFIER,
 		.line = self->line,
 		.flags = TOKEN_OKAY
 	};
@@ -439,7 +446,6 @@ static void Consume(scanner *self, token_type type, size_t n)
 		},
 		.type = type,
 		.line = self->line,
-		.len = n,
 		.flags = TOKEN_OKAY
 	};
 
@@ -591,7 +597,7 @@ static void ConsumeString(scanner *self)
 	}
 
 	//-1 to remove terminating quotation mark
-	size_t delta = (self->curr - self->pos) - 1;
+	size_t delta = (size_t) ((self->curr - self->pos) - 1);
 
 	self->tok = (token) {
 		.lexeme = {

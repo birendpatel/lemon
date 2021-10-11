@@ -148,9 +148,8 @@ void XerrorLog
 	va_end(args);
 }
 
-void XerrorUser(const int line, const string msg, ...)
+void XerrorUser(const size_t line, const string msg, ...)
 {
-	assert(line >= 0);
 	assert(msg);
 
 	va_list args;
@@ -161,7 +160,7 @@ void XerrorUser(const int line, const string msg, ...)
  	//cannot be applied directly to the input msg because the macro relies
         //on string concatenation.
 	if (line) {
-                fprintf(stderr, ANSI_RED "(line %d) ", line);
+                fprintf(stderr, ANSI_RED "(line %zu) ", line);
         } else {
                 fprintf(stderr, ANSI_RED " \b");
         }
