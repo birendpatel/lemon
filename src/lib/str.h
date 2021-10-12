@@ -2,7 +2,8 @@
 //
 // This header provides dynamic string data structures. The two fundamental
 // data structures are the string and the view. Strings are reference-counted
-// vector<char> and views are references to subsequences of strings.
+// vector<char> and views are references to subsequences of strings. Some
+// minor abstractions over C-style strings are also provided.
 
 #pragma once
 
@@ -19,6 +20,27 @@
 #ifndef STR_EREF
 	#error "str.h requires user to implement STR_EREF int code"
 #endif
+
+//------------------------------------------------------------------------------
+
+//I'm told a special rung in hell is reserved for people who typedef pointers
+typedef char* cstring;
+
+#define CSTRING_INIT NULL
+
+//table macros support no more than one lookup table per function
+#define CSTRING_TABLE_BEGIN 					               \
+	static const char *const str_table_lookup[] = {
+
+#define CSTRING_TABLE_ENTRY(key, value)                                        \
+	[key] = value,
+
+#define CSTRING_TABLE_END                                                      \
+	};                                                                     \
+	const size_t str_table_len = sizeof(str_table_lookup) / sizeof(char*);
+
+#define CSTRING_TABLE_FETCH(key, default)                                      \
+	key < str_table_len ? str_table_lookup[key] : default
 
 //------------------------------------------------------------------------------
 
@@ -119,8 +141,8 @@ static void StringFromCString(string *const str, char *src)
 
 //------------------------------------------------------------------------------
 
-//views are created on stack but they must use initializer functions to ensure
-//that the underlying string tracks references.
+//view are created on stack but the initializer functions guarantee correct
+//reference tracking.
 static view ViewOpen(const string src, const char *const data, const size_t len)
 {
 	assert(src);
@@ -161,19 +183,3 @@ static void ViewToString(view *const v, string *const str)
 
 	ViewClose(v);
 }
-
-//------------------------------------------------------------------------------
-//lookup table abstraction; supports at most one table per function
-
-#define CSTRING_TABLE_BEGIN 					               \
-	static const char *const str_table_lookup[] = {
-
-#define CSTRING_TABLE_ENTRY(key, value)                                        \
-	[key] = value,
-
-#define CSTRING_TABLE_END                                                      \
-	};                                                                     \
-	const size_t str_table_len = sizeof(str_table_lookup) / sizeof(char*);
-
-#define CSTRING_TABLE_FETCH(key, default)                                      \
-	key < str_table_len ? str_table_lookup[key] : default
