@@ -376,8 +376,8 @@ static void ReportInvalidToken(parser *self)
 	assert(self);
 	assert(self->tok.type == _INVALID);
 
-	char *msg = self->tok.lexeme.data;
-	size_t msg_len = self->tok.lexeme.len;
+	const char *msg = self->tok.lexeme.data;
+	const size_t msg_len = self->tok.lexeme.len;
 
 	switch (self->tok.flags) {
 	case TOKEN_OKAY:
@@ -1432,8 +1432,8 @@ static expr *RecPrimary(parser *self)
 	assert(self);
 
 	static const string fmt = "expression is ill-formed at '%.*s'";
-	char *msg = self->tok.lexeme.data;
-	size_t len = self->tok.lexeme.len;
+	const char *msg = self->tok.lexeme.data;
+	const size_t len = self->tok.lexeme.len;
 
 	expr *node = NULL;
 

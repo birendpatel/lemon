@@ -143,7 +143,7 @@ xerror ExecRepl(options *opt)
 			return XESUCCESS;
 		}
 
-		string source = (ViewFromDynamicString(&input)).data;
+		string source = DynamicStringGetBuffer(&input);
 
 		if (IsShellCommand(source)) {
 			ExecShell(opt, source);

@@ -1,4 +1,13 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+//
+// A short and simple library for creating and destroying strings, which are
+// defined as null-terminated char arrays. The library's purpose is to make it
+// obvious and self-documenting in source code when a char pointer is a string
+// and when a vector<char> is compatible with the glibc string.h header via its
+// underlying buffer.
+//
+// The library functions are implemented directly in this header file for ease
+// of use when porting to new and existing projects.
 
 #pragma once
 
@@ -8,19 +17,19 @@
 
 #include "vector.h"
 
-#ifndef kmalloc
-	#define kmalloc(target, bytes) memset((target = malloc(bytes)), 0, 1)
-#endif
-
+//views refer to a contiguous non-strict subsequence of data "owned" by some
+//other variable, hence read-only.
 typedef struct view {
-	char *data;
+	const char *data;
 	size_t len;
 } view;
 
 //------------------------------------------------------------------------------
-//static strings; null terminated fixed-length char arrays
+//static strings; null terminated fixed-length char arrays on heap
 
 typedef char* string;
+
+#define STRING_DEFAULT_VALUE NULL
 
 static string StringFromArray(char *src, size_t len)
 {
@@ -62,7 +71,7 @@ static void StringFree(string s)
 	}
 }
 
-//use with gcc cleanup
+//for use with gcc cleanup
 static void StringPtrFree(string *sptr)
 {
 	if (sptr && *sptr) {
@@ -87,7 +96,7 @@ static void StringPtrFree(string *sptr)
 	key < str_table_len ? str_table_lookup[key] : default
 
 //------------------------------------------------------------------------------
-//dynamic strings
+//dynamic strings; null-terminated char vectors
 
 make_vector(char, string, static)
 
@@ -139,4 +148,12 @@ static view ViewFromDynamicString(dynamic_string *self)
 	};
 
 	return v;
+}
+
+static string DynamicStringGetBuffer(dynamic_string *self)
+{
+	assert(self);
+	assert(self->len != 0 && "dynamic string not initialized");
+
+	return self->data;
 }
