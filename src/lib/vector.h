@@ -1,18 +1,6 @@
-/**
- * @file vector.h
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Templated vector data structure for shallow copies.
- *
- * @details This file is plug and play, but with a few words of advice. Vectors
- * use a little memset trick to immediately induce a segementation violation
- * whenever stdlib allocs fail. You will first have to remove the kmalloc
- * wrapper and introduce errors codes to impl_vector_init and impl_vector_push
- * if you want to avoid this behavior. Vectors also intentionally crash if you
- * attempt to push more than SIZE_MAX elements.
- *
- * Since vector.h was originally designed for the Lemon compiler, this fail
- * fast and die early approach suited the compiler requirements well. YMMV.
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+//
+// Simple dynamic arrays implemented via C-style templates
 
 #pragma once
 
@@ -21,13 +9,11 @@
 #include <stdlib.h>
 #include <string.h>
 
-//vector tracing on stderr if VECTOR_TRACE_STDERR is defined.
-//Thread IDs are provided but they may collide because the opaque pthread_t
-//struct is transformed to a numeric value in a portable manner.
+//tracing provides thread IDs but two different threads may have an ID collision
+//because the pthread_t transformation is not an injective function.
 #ifdef VECTOR_TRACE_STDERR
 	#include <pthread.h>
 	#include <stdio.h>
-
 	#define TID ((void *) pthread_self())
 	static const char *fmt = "vector: thread %p: %s\n";
 	#define VECTOR_TRACE(msg) fprintf(stderr, fmt, TID, msg)
@@ -44,11 +30,10 @@
                 }                                                              \
         } while (0)
 
-//typedef and forward declaration
 #define alias_vector(pfix)					               \
 typedef struct pfix##_vector pfix##_vector;
 
-//declares a struct with a pfixed tag and elements of type T
+//buffer has a maximum capacity of cap and current size len.
 #define declare_vector(T, pfix) 					       \
 struct pfix##_vector {					                       \
 	size_t len;					                       \
@@ -56,27 +41,18 @@ struct pfix##_vector {					                       \
 	T *buffer;						               \
 };
 
-//prototypes
 #define api_vector(T, pfix, cls)					       \
-cls void pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap);      \
-cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T));	       \
-cls void pfix##_vector_push(pfix##_vector *self, T datum);	               \
-cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum);     \
-cls T pfix##_vector_set(pfix##_vector *self, const size_t i, T datum);         \
-cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T));	       \
+cls void pfix##VectorInit(pfix##_vector *self, size_t len, size_t cap);        \
+cls void pfix##VectorFree(pfix##_vector *self, void (*vfree) (T));	       \
+cls void pfix##VectorPush(pfix##_vector *self, T datum);	               \
+cls void pfix##VectorGet(pfix##_vector *self, const size_t i, T *datum);       \
+cls T pfix##VectorSet(pfix##_vector *self, const size_t i, T datum);           \
+cls void pfix##VectorReset(pfix##_vector *self, void (*vfree) (T));	       \
 cls void pfix##VectorNewCopy(pfix##_vector *dest, pfix##_vector *src);	       \
-cls void pfix##_VectorAdopt(pfix##vector *dest, void *src, size_t bytes);
+cls void pfix##VectorAdopt(pfix##vector *dest, void *src, size_t bytes);
 
-//implementation helpers
-#define GROW_CAP(x) (x * (size_t) 2)
-#define CAP_THRESHOLD (SIZE_MAX / 2)
-
-/*******************************************************************************
- * @def impl_vector_init
- * @brief Initialize and zero-out the first 'len' elements.
- ******************************************************************************/
 #define impl_vector_init(T, pfix, cls)				               \
-cls void pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)       \
+cls void pfix##VectorInit(pfix##_vector *self, size_t len, size_t cap)         \
 {                                                                              \
 	assert(self);							       \
 	assert(len <= cap);						       \
@@ -93,15 +69,11 @@ cls void pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)       \
 	VECTOR_TRACE("vector initialized");				       \
 }
 
-/*******************************************************************************
- * @def impl_vector_free
- * @brief Release data pointer to system.
- * @details This function may be used with the GCC cleanup attribute.
- * @param vfree If vfree is a non-null function pointer then it will be called
- * on each element present in the vector.
- ******************************************************************************/
+//may be used with GCC cleanup if the vector is located on stack.
+//vfree is called on each element present in the vector before the vector buffer
+//is freed, unless vfree is NULL.
 #define impl_vector_free(T, pfix, cls)					       \
-cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T))	       \
+cls void pfix##VectorFree(pfix##_vector *self, void (*vfree) (T))	       \
 {									       \
 	assert(self);							       \
 									       \
@@ -124,12 +96,12 @@ cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T))	       \
 	}                                                                      \
 }
 
-/*******************************************************************************
- * @def impl_vector_push
- * @brief Append an element to the end of the vector in amoritized O(1) time.
- ******************************************************************************/
+#define GROW_CAP(x) (x * (size_t) 2)
+
+#define CAP_THRESHOLD (SIZE_MAX / 2)
+
 #define impl_vector_push(T, pfix, cls)					       \
-cls void pfix##_vector_push(pfix##_vector *self, T datum)	               \
+cls void pfix##VectorPush(pfix##_vector *self, T datum)	                       \
 {									       \
 	assert(self);							       \
                                                                                \
@@ -169,14 +141,8 @@ cls void pfix##_vector_push(pfix##_vector *self, T datum)	               \
 	VECTOR_TRACE("push successful");				       \
 }
 
-/*******************************************************************************
- * @def impl_vector_get
- * @brief Array indexing on vector, O(1).
- * @details This function is intended for situations where array indexing
- * checks are required in debug mode or where the vector struct is opaque.
- ******************************************************************************/
 #define impl_vector_get(T, pfix, cls)					       \
-cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
+cls void pfix##VectorGet(pfix##_vector *self, const size_t i, T *datum)      \
 {									       \
 	assert(self);                                                          \
 	assert(i < self->len);                                                 \
@@ -186,13 +152,9 @@ cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
 	VECTOR_TRACE("get; data copied");				       \
 }
 
-/*******************************************************************************
- * @def impl_vector_set
- * @brief Set an element at the specified index to a new element.
- * @return The old element is returned.
- ******************************************************************************/
+//return the old element
 #define impl_vector_set(T, pfix, cls)					       \
-cls T pfix##_vector_set(pfix##_vector *self, const size_t i, T datum)          \
+cls T pfix##VectorSet(pfix##_vector *self, const size_t i, T datum)          \
 {									       \
 	assert(self);							       \
 	assert(i < self->len);						       \
@@ -205,15 +167,10 @@ cls T pfix##_vector_set(pfix##_vector *self, const size_t i, T datum)          \
 	return old;							       \
 }
 
-/*******************************************************************************
- * @def impl_vector_reset
- * @brief Remove all elements from the vector but retain its capacity. After
- * reset, the vector will have a length of zero.
- * @param vfree If vfree is not null, it will be called on each element that
- * is present in the vector before initiating a reset.
- ******************************************************************************/
+//vfree is called on each element in the vector before initiating a reset, unless
+//vfree is NULL.
 #define impl_vector_reset(T, pfix, cls)					       \
-cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T))	       \
+cls void pfix##VectorReset(pfix##_vector *self, void (*vfree) (T))	       \
 {									       \
 	assert(self);							       \
 									       \
@@ -228,6 +185,7 @@ cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T))	       \
 	self->len = 0;							       \
 }
 
+//init the dest vector as a copy of the src
 #define impl_vector_new_copy(T, pfix, cls)				       \
 cls void pfix##VectorNewCopy(pfix##_vector *dest, pfix##_vector *src)	       \
 {									       \
@@ -241,8 +199,9 @@ cls void pfix##VectorNewCopy(pfix##_vector *dest, pfix##_vector *src)	       \
 	memcpy(dest->buffer, src->buffer, bytes);			       \
 }
 
+//init the dest vector using the heap buffer src as the underlying vec buffer
 #define impl_vector_new_adopt(T, pfix, cls)				       \
-cls void pfix##_VectorAdopt(pfix##vector *dest, void *src, size_t bytes)       \
+cls void pfix##VectorAdopt(pfix##vector *dest, void *src, size_t bytes)        \
 {									       \
 	assert(dest);							       \
 	assert(src);							       \
@@ -252,11 +211,8 @@ cls void pfix##_VectorAdopt(pfix##vector *dest, void *src, size_t bytes)       \
 	dest->cap = bytes;						       \
 }
 
-/*******************************************************************************
- * @def make_vector
- * @brief Create a generic vector named pfix_vector which contains elements
- * of type T and calls methods with storage class cls.
- ******************************************************************************/
+//create a generic vector<T> named pfix_vector containing elements of type T and
+//functions with storage class cls.
 #define make_vector(T, pfix, cls)					       \
 	alias_vector(pfix)  					               \
 	declare_vector(T, pfix)					               \
