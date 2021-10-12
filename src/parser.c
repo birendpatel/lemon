@@ -737,8 +737,6 @@ static decl RecVariable(parser *self)
 
 	check_move(self, _EQUAL, "declared variables must be initialized");
 
-	check(self, _SEMICOLON, "missing value after '=' in declaration");
-
 	node.variable.value = RecAssignment(self);
 
 	check_move(self, _SEMICOLON, "missing ';' after declaration");
