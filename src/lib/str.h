@@ -1,13 +1,8 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// A short and simple library for creating and destroying strings, which are
-// defined as null-terminated char arrays. The library's purpose is to make it
-// obvious and self-documenting in source code when a char pointer is a string
-// and when a vector<char> is compatible with the glibc string.h header via its
-// underlying buffer.
-//
-// The library functions are implemented directly in this header file for ease
-// of use when porting to new and existing projects.
+// This header provides dynamic string data structures. The two fundamental
+// data structures are the string and the view. Strings are reference-counted
+// vector<char> and views are references to subsequences of strings.
 
 #pragma once
 
@@ -17,143 +12,168 @@
 
 #include "vector.h"
 
-//views refer to a contiguous non-strict subsequence of data "owned" by some
-//other variable, hence read-only.
-typedef struct view {
-	const char *data;
-	size_t len;
-} view;
+#ifndef STR_ESUCCESS
+	#error "str.h requires user to implement STR_ESUCCESS int code"
+#endif
+
+#ifndef STR_EREF
+	#error "str.h requires user to implement STR_EREF int code"
+#endif
 
 //------------------------------------------------------------------------------
-//static strings; null terminated fixed-length char arrays on heap
 
-typedef char* string;
+typedef struct string string;
+typedef struct view view;
 
-#define STRING_DEFAULT_VALUE NULL
+make_vector(char, Char, static)
 
-static string StringFromArray(char *src, size_t len)
+struct string {
+	Char_vector vec;
+	size_t refcount;
+};
+
+struct view {
+	string *ref;
+	char *data;
+	size_t len;
+};
+
+//------------------------------------------------------------------------------
+
+static void StringInit(string *const str, const size_t capacity)
 {
+	assert(str);
+	assert(capacity);
+
+	CharVectorInit(&str->vec, 0, capacity);
+	CharVectorPush(&str->vec, '\0');
+
+	str->refcount = 0;
+}
+
+static int StringFree(string *str)
+{
+	assert(str);
+	assert(str->vec.len);
+
+	if (str->refcount != 0) {
+		return STR_EREF;
+	}
+
+	CharVectorFree(&str->vec, NULL);
+	str->vec = (Char_vector) {0};
+
+	return STR_ESUCCESS;
+}
+
+static size_t StringLength(const string *const str)
+{
+	assert(self);
+	assert(self->vec.len != 0);
+
+	return self->vec.len - 1;
+}
+
+static void StringAppend(string *const str, const char c)
+{
+	assert(str);
+	assert(str->vec.len);
+
+	(void) CharVectorSet(&str->vec, str->vec.len - 1, c);
+	CharVectorPush(&str->vec, '\0');
+}
+
+static void StringReset(string *const str)
+{
+	assert(str);
+	assert(str->vec.len);
+
+	CharVectorReset(&str->vec, NULL);
+	CharVectorPush(&str->vec, '\0');
+}
+
+//copy the view subsequence to a new string; the view remains valid on return.
+static void StringFromView(string *const str, const view *const v)
+{
+	assert(str);
+	assert(v);
+	assert(v->data);
+	assert(v->len);
+	assert(v->ref);
+	assert(v->ref->vec.len);
+
+	CharVectorNewCopy(&str->vec, &v->ref->vec);
+
+	str->refcount = 0;
+}
+
+static void StringFromCString(string *const str, char *src)
+{
+	assert(str);
 	assert(src);
 
-	string dest;
-	kmalloc(dest, sizeof(char) * len + 1);
-	memcpy(dest, src, sizeof(char) * len);
-	dest[len] = '\0';
+	CharVectorAdopt(&str->vec, src, strlen(src));
 
-	return dest;
+	str->refcount = 0;
 }
 
-static string StringFromView(view v)
+//------------------------------------------------------------------------------
+
+//views are created on stack but they must use initializer functions to ensure
+//that the underlying string tracks references.
+static view ViewOpen(const string src, const char *const data, const size_t len)
 {
-	assert(v.data);
+	assert(src);
+	assert(src->vec.len != 0);
+	assert(data);
+	assert(len != 0);
 
-	string dest;
-	kmalloc(dest, sizeof(char) * v.len + 1);
-	memcpy(dest, v.data, sizeof(char) * v.len);
-	dest[v.len] = '\0';
+	view new = {
+		.ref = &src,
+		.data = data,
+		.len = len,
+	};
 
-	return dest;
+	src->refcount++;
+
+	return new;
 }
 
-static string StringInit(size_t len)
+static void ViewClose(view *const v)
 {
-	string dest;
-	kmalloc(dest, sizeof(char) * len + 1);
-	dest[len] = '\0';
+	assert(v);
 
-	return dest;
+	v->data = NULL;
+	v->len = 0;
+	v->src->refcount--;
 }
 
-static void StringFree(string s)
+static void ViewToString(view *const v, string *const str)
 {
-	if (s) {
-		free(s);
-	}
-}
+	assert(str);
+	assert(v);
+	assert(v->data);
+	assert(v->len);
+	assert(v->ref);
+	assert(v->ref->vec.len);
 
-//for use with gcc cleanup
-static void StringPtrFree(string *sptr)
-{
-	if (sptr && *sptr) {
-		free(*sptr);
-	}
+	StringFromView(str, v);
+
+	ViewClose(v);
 }
 
 //------------------------------------------------------------------------------
 //lookup table abstraction; supports at most one table per function
 
-#define STRING_TABLE_BEGIN \
-	static const string const str_table_lookup[] = {
+#define CSTRING_TABLE_BEGIN 					               \
+	static const char *const str_table_lookup[] = {
 
-#define STRING_TABLE_ENTRY(key, value) \
+#define CSTRING_TABLE_ENTRY(key, value)                                        \
 	[key] = value,
 
-#define STRING_TABLE_END \
-	}; \
+#define CSTRING_TABLE_END                                                      \
+	};                                                                     \
 	const size_t str_table_len = sizeof(str_table_lookup) / sizeof(char*);
 
-#define STRING_TABLE_FETCH(key, default) \
+#define CSTRING_TABLE_FETCH(key, default)                                      \
 	key < str_table_len ? str_table_lookup[key] : default
-
-//------------------------------------------------------------------------------
-//dynamic strings; null-terminated char vectors
-
-make_vector(char, string, static)
-
-typedef string_vector dynamic_string;
-
-static void DynamicStringInit(dynamic_string *self, size_t cap)
-{
-	assert(self);
-	string_vector_init(self, 0, cap);
-	string_vector_push(self, '\0');
-}
-static void DynamicStringFree(dynamic_string *self)
-{
-	assert(self);
-	string_vector_free(self, NULL);
-}
-
-static size_t DynamicStringLength(dynamic_string *self)
-{
-	assert(self);
-	assert(self->len != 0 && "dynamic string not initialized");
-
-	return self->len - 1;
-}
-
-static void DynamicStringAppend(dynamic_string *self, char c)
-{
-	assert(self);
-	assert(self->len != 0 && "dynamic string not initialized");
-
-	(void) string_vector_set(self, self->len - 1, c);
-	string_vector_push(self, '\0');
-}
-
-static void DynamicStringReset(dynamic_string *self)
-{
-	string_vector_reset(self, NULL);
-	string_vector_push(self, '\0');
-}
-
-static view ViewFromDynamicString(dynamic_string *self)
-{
-	assert(self);
-	assert(self->len != 0 && "dynamic string not initialized");
-
-	view v = {
-		.data = self->data,
-		.len = self->len - 1
-	};
-
-	return v;
-}
-
-static string DynamicStringGetBuffer(dynamic_string *self)
-{
-	assert(self);
-	assert(self->len != 0 && "dynamic string not initialized");
-
-	return self->data;
-}

@@ -53,7 +53,7 @@ typedef struct pfix##_vector pfix##_vector;
 struct pfix##_vector {					                       \
 	size_t len;					                       \
 	size_t cap;						               \
-	T *data;						               \
+	T *buffer;						               \
 };
 
 //prototypes
@@ -63,7 +63,9 @@ cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T));	       \
 cls void pfix##_vector_push(pfix##_vector *self, T datum);	               \
 cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum);     \
 cls T pfix##_vector_set(pfix##_vector *self, const size_t i, T datum);         \
-cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T));
+cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T));	       \
+cls void pfix##VectorNewCopy(pfix##_vector *dest, pfix##_vector *src);	       \
+cls void pfix##_VectorAdopt(pfix##vector *dest, void *src, size_t bytes);
 
 //implementation helpers
 #define GROW_CAP(x) (x * (size_t) 2)
@@ -84,9 +86,9 @@ cls void pfix##_vector_init(pfix##_vector *self, size_t len, size_t cap)       \
 	self->cap = cap;                                                       \
 									       \
 	size_t bytes = cap * sizeof(T);					       \
-	kmalloc(self->data, bytes);           				       \
+	kmalloc(self->buffer, bytes);           		               \
                       	 	 	 	 	                       \
-	memset(self->data, 0, len * sizeof(T));				       \
+	memset(self->buffer, 0, len * sizeof(T));			       \
 									       \
 	VECTOR_TRACE("vector initialized");				       \
 }
@@ -103,22 +105,22 @@ cls void pfix##_vector_free(pfix##_vector *self, void (*vfree) (T))	       \
 {									       \
 	assert(self);							       \
 									       \
-	if (self->data) {						       \
+	if (self->buffer) {						       \
 		if (vfree) {						       \
 			for (size_t i = 0; i < self->len; i++) {               \
-				vfree(self->data[i]);			       \
+				vfree(self->buffer[i]);			       \
 			}         					       \
 									       \
 			VECTOR_TRACE("vfree successful on vector elements");   \
 		}							       \
 									       \
-		free(self->data);					       \
+		free(self->buffer);					       \
 									       \
 		VECTOR_TRACE("returned system resources");		       \
 									       \
 		self->len = 0;						       \
 		self->cap = 0;						       \
-		self->data = NULL;					       \
+		self->buffer= NULL;					       \
 	}                                                                      \
 }
 
@@ -151,17 +153,17 @@ cls void pfix##_vector_push(pfix##_vector *self, T datum)	               \
 		size_t bytes = new_cap * sizeof(T);			       \
 		kmalloc(tmp, bytes);		                               \
 									       \
-		memcpy(tmp, self->data, self->len * sizeof(T));                \
+		memcpy(tmp, self->buffer, self->len * sizeof(T));              \
 									       \
-		free(self->data);					       \
+		free(self->buffer);					       \
   									       \
 		self->cap = new_cap;					       \
-		self->data = tmp;					       \
+		self->buffer= tmp;					       \
 									       \
 		VECTOR_TRACE("grow succeeded");				       \
 	}								       \
 									       \
-	self->data[self->len] = datum;					       \
+	self->buffer[self->len] = datum;				       \
 	self->len++;							       \
     									       \
 	VECTOR_TRACE("push successful");				       \
@@ -179,7 +181,7 @@ cls void pfix##_vector_get(pfix##_vector *self, const size_t i, T *datum)      \
 	assert(self);                                                          \
 	assert(i < self->len);                                                 \
 									       \
-	*datum = self->data[i];						       \
+	*datum = self->buffer[i];					       \
 									       \
 	VECTOR_TRACE("get; data copied");				       \
 }
@@ -195,8 +197,8 @@ cls T pfix##_vector_set(pfix##_vector *self, const size_t i, T datum)          \
 	assert(self);							       \
 	assert(i < self->len);						       \
 									       \
-	T old = self->data[i];						       \
-	self->data[i] = datum;						       \
+	T old = self->buffer[i];					       \
+	self->buffer[i] = datum;					       \
 									       \
 	VECTOR_TRACE("set; data swapped");				       \
 									       \
@@ -217,13 +219,37 @@ cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T))	       \
 									       \
 	if (vfree) {							       \
 		for (size_t i = 0; i < self->len; i++) {		       \
-			vfree(self->data[i]);				       \
+			vfree(self->buffer[i]);				       \
 		}							       \
 	}								       \
 									       \
 	VECTOR_TRACE("reset successful");				       \
 									       \
 	self->len = 0;							       \
+}
+
+#define impl_vector_new_copy(T, pfix, cls)				       \
+cls void pfix##VectorNewCopy(pfix##_vector *dest, pfix##_vector *src)	       \
+{									       \
+	assert(dest);							       \
+	assert(src);						 	       \
+									       \
+	pfix##VectorInit(dest, src->len, src->cap);			       \
+									       \
+	size_t bytes = sizeof(T) * src->len;				       \
+						   			       \
+	memcpy(dest->buffer, src->buffer, bytes);			       \
+}
+
+#define impl_vector_new_adopt(T, pfix, cls)				       \
+cls void pfix##_VectorAdopt(pfix##vector *dest, void *src, size_t bytes)       \
+{									       \
+	assert(dest);							       \
+	assert(src);							       \
+									       \
+	dest->buffer = src;						       \
+	dest->len = bytes;						       \
+	dest->cap = bytes;						       \
 }
 
 /*******************************************************************************
@@ -240,4 +266,6 @@ cls void pfix##_vector_reset(pfix##_vector *self, void (*vfree) (T))	       \
 	impl_vector_push(T, pfix, cls)					       \
 	impl_vector_get(T, pfix, cls)					       \
 	impl_vector_set(T, pfix, cls)					       \
-	impl_vector_reset(T, pfix, cls)
+	impl_vector_reset(T, pfix, cls)					       \
+	impl_vector_new_copy(T, pfix, cls)				       \
+	impl_vector_new_adopt(T, pfix, cls)
