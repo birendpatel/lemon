@@ -27,7 +27,7 @@
 options ConfigOptions(int *, char ***);
 xerror ExecUnknown(const options *, const int, char **);
 xerror ExecRepl(const options *);
-xerror CollectInput(string *);
+xerror ReadTerminal(string *);
 bool IsShellCommand(const string *);
 void ExecShell(const options *, const string *);
 void TryStringFree(string *str)
@@ -37,6 +37,8 @@ xerror ExecFile(const options *, const int, char **);
 xerror CopyFileToString(FILE *, string *, const size_t);
 xerror GetFilesize(FILE *, size_t *);
 xerror Compile(const options *, const string *, const cstring *);
+
+//------------------------------------------------------------------------------
 
 int main(int argc, char **argv)
 {
@@ -73,17 +75,18 @@ options ConfigOptions(int *argc, char ***argv)
 xerror ExecUnknown(const options *opt, const int argc, char **argv)
 {
 	assert(opt);
-	assert(argc);
 	assert(argv);
 
 	xerror err = XEUNDEFINED;
 
 	if (argv[argc] == NULL) {
+		ShowHeader();
 		err = ExecRepl(opt);
 	} else {
 		err = ExecFile(opt, argc, argv);
+		const bool launch_repl = opt->user & USER_INTERACTIVE;
 
-		if (!err && (opt->user & USER_INTERACTIVE)) {
+		if (!err && launch_repl) {
 			err = ExecRepl(opt);
 		}
 	}
@@ -93,16 +96,16 @@ xerror ExecUnknown(const options *opt, const int argc, char **argv)
 
 void ShowHelp(void)
 {
-	const cstring *msg =
+	static const cstring *msg =
 		"\nProgram failed. Report an issue: "
 		"https://github.com/birendpatel/lemon/issues\n";
 
-	fprintf(stderr, "%s", msg);
+	fputs(msg, stderr);
 }
 
 void ShowHeader(void)
 {
-	const cstring *msg =
+	static const cstring *msg =
 		"Lemon (%s) (Compiled %s %s)\n"
 		"Copyright (C) 2021 Biren Patel.\n"
 		"GNU General Public License v3.0.\n\n"
@@ -118,22 +121,21 @@ void TryStringFree(string *str)
 	xerror err = StringFree(str);
 
 	if (err) {
-		xerror_issue("possible use after free; induced memory leak");
+		xerror_issue("use after free is possible; induced memory leak");
 	}
 }
+
+//------------------------------------------------------------------------------
 
 xerror ExecRepl(const options *opt)
 {
 	xerror err = XEUNDEFINED;
 	const xerror fatal_errors = ~(XESUCCESS | XEPARSE);
 
-	string input = STRING_DEFAULT_VALUE;
-	StringInit(&input, KiB(1));
-
-	ShowHeader();
+	string input = StringInit(KiB(1));
 
 	while (true) {
-		if (CollectInput(&input) == XECLOSED) {
+		if (ReadTerminal(&input) == XECLOSED) {
 			err = XESUCCESS;
 			goto cleanup;
 		}
@@ -158,13 +160,12 @@ cleanup:
 }
 
 //returns XECLOSED if encountered a SIGINT.
-xerror CollectInput(string *input)
+xerror ReadTerminal(string *input)
 {
 	assert(input);
 
 	const cstring *wait_msg = ">>> ";
 	const cstring *continue_msg = "... ";
-
 	xerror err = XEUNDEFINED;
 	int prev = 0;
 	int curr = 0;
@@ -178,13 +179,11 @@ xerror CollectInput(string *input)
 
 		if (curr == EOF) {
 			fprintf(stdout, "\n");
-			err = XECLOSED;
-			break;
+			return XECLOSED;
 		}
 
 		if (curr == '\n') {
 			if (prev == '\n') {
-				err = XESUCCESS;
 				break;
 			}
 
@@ -196,8 +195,12 @@ xerror CollectInput(string *input)
 		prev = curr;
 	}
 
-	return err;
+	StringTrim(input, '\n');
+
+	return XESUCCESS;
 }
+
+//------------------------------------------------------------------------------
 
 bool IsShellCommand(const string *input)
 {
@@ -233,6 +236,8 @@ void ExecShell(const options *opt, const string *src)
 		perror(NULL);
 	}
 }
+
+//------------------------------------------------------------------------------
 
 xerror ExecFile(const options *opt, const int argc, char **argv)
 {
@@ -347,6 +352,8 @@ xerror CopyFileToString(FILE *openfile, string *dest)
 
 	return XESUCCESS;
 }
+
+//------------------------------------------------------------------------------
 
 xerror Compile(const options * opt, string * src, const cstring *alias)
 {

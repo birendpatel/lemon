@@ -8,6 +8,7 @@
 #pragma once
 
 #include <assert.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -91,13 +92,32 @@ static void StringAppend(string *s, const char c)
 static char StringGet(const string *s, const size_t index)
 {
 	assert(s);
-	assert(index < s->vec.len);
+	assert(index < StringLength(s));
 
 	char c = '\0';
 
 	CharVectorGet(s, index, &c);
 
 	return c;
+}
+
+static void StringTrim(string *s, char c)
+{
+	assert(s);
+	assert(c);
+
+	size_t pos = StringLength(s) - 1;
+
+	while (pos != SIZE_MAX) {
+		if (s->vec.buffer[pos] != c) {
+			break;
+		}
+
+		pos--;
+		s->vec.len--;
+	}
+
+	(void) CharVectorSet(&s->vec, s->vec.len, '\0');	
 }
 
 static void StringReset(string *s)
