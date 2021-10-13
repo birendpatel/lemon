@@ -24,68 +24,53 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-xerror ConfigOptions(options *opt, int argc, char **argv, int *total_parsed);
-xerror ExecUnknown(options *opt, int argc, char **argv, int total_parsed);
-xerror ExecFile(options *opt, int argc, char **argv, int argi);
-xerror ExecRepl(options *opt);
-xerror CollectInput(dynamic_string *userinput);
-bool IsShellCommand(string src);
-void ExecShell(options *opt, string src);
+options ConfigOptions(int *, char ***);
+xerror ExecUnknown(const options *, const int, char **);
+xerror ExecRepl(const options *);
+xerror CollectInput(string *);
+bool IsShellCommand(const string *);
+void ExecShell(const options *, const string *);
+void TryStringFree(string *str)
 void ShowHeader(void);
 void ShowHelp(void);
-xerror StringFromFile(FILE *fp, string dest, size_t n);
-xerror GetFilesize(FILE *fp, size_t *n);
-void FileCloseAuto(FILE **fptr);
-xerror Compile(options *opt, string source, string alias);
+xerror ExecFile(const options *, const int, char **);
+xerror CopyFileToString(FILE *, string *, const size_t);
+xerror GetFilesize(FILE *, size_t *);
+xerror Compile(const options *, const string *, const cstring *);
 
 int main(int argc, char **argv)
 {
-	options opt = {0};
-	int total_parsed = 0;
-	xerror err = XEUNDEFINED;
+	options opt = ConfigOptions(&argc, &argv);
 
-	err = ConfigOptions(&opt, argc, argv, &total_parsed);
+	xerror err = ExecUnknown(&opt, argc, argv);
 
 	if (err) {
-		goto fail;
-	}
-
-	err = ExecUnknown(&opt, argc, argv, total_parsed);
-
-	if (err) {
-		goto fail;
+		xerror_fatal("%s", XerrorDescription(err));
+		ShowHelp();
+		return EXIT_FAILURE;
 	}
 
 	XerrorFlush();
 	return EXIT_SUCCESS;
-
-fail:
-	xerror_fatal("%s", XerrorDescription(err));
-	ShowHelp();
-	return EXIT_FAILURE;
 }
 
-xerror ConfigOptions(options *opt, int argc, char **argv, int *total_parsed)
+options ConfigOptions(int *argc, char ***argv)
 {
-	assert(opt);
 	assert(argc);
 	assert(argv);
-	assert(total_parsed);
 
-	*opt = OptionsInit();
+	options opt = OptionsInit();
 
-	xerror err = OptionsParse(opt, argc, argv, total_parsed);
+	OptionsParse(&opt, argc, argv);
 
-	bool state_flag = opt->diagnostic & DIAGNOSTIC_OPT;
-
-	if (!err && state_flag) {
+	if (opt->diagnostic & DIAGNOSTIC_OPT) {
 		OptionsPrint(opt, stderr);
 	}
 
-	return err;
+	return opt;
 }
 
-xerror ExecUnknown(options *opt, int argc, char **argv, int total_parsed)
+xerror ExecUnknown(const options *opt, const int argc, char **argv)
 {
 	assert(opt);
 	assert(argc);
@@ -93,10 +78,10 @@ xerror ExecUnknown(options *opt, int argc, char **argv, int total_parsed)
 
 	xerror err = XEUNDEFINED;
 
-	if (total_parsed == argc) {
+	if (argv[argc] == NULL) {
 		err = ExecRepl(opt);
 	} else {
-		err = ExecFile(opt, argc, argv, total_parsed);
+		err = ExecFile(opt, argc, argv);
 
 		if (!err && (opt->user & USER_INTERACTIVE)) {
 			err = ExecRepl(opt);
@@ -108,7 +93,7 @@ xerror ExecUnknown(options *opt, int argc, char **argv, int total_parsed)
 
 void ShowHelp(void)
 {
-	const string msg =
+	const cstring *msg =
 		"\nProgram failed. Report an issue: "
 		"https://github.com/birendpatel/lemon/issues\n";
 
@@ -117,7 +102,7 @@ void ShowHelp(void)
 
 void ShowHeader(void)
 {
-	const string msg =
+	const cstring *msg =
 		"Lemon (%s) (Compiled %s %s)\n"
 		"Copyright (C) 2021 Biren Patel.\n"
 		"GNU General Public License v3.0.\n\n"
@@ -128,48 +113,63 @@ void ShowHeader(void)
 	fprintf(stdout, msg, LEMON_VERSION, __DATE__, __TIME__);
 }
 
-xerror ExecRepl(options *opt)
+void TryStringFree(string *str)
 {
-	int fatal_errors = ~(XESUCCESS | XEPARSE);
-	RAII(DynamicStringFree) dynamic_string input = {0};
-	DynamicStringInit(&input, KiB(1));
+	xerror err = StringFree(str);
+
+	if (err) {
+		xerror_issue("possible use after free; induced memory leak");
+	}
+}
+
+xerror ExecRepl(const options *opt)
+{
+	xerror err = XEUNDEFINED;
+	const xerror fatal_errors = ~(XESUCCESS | XEPARSE);
+
+	string input = STRING_DEFAULT_VALUE;
+	StringInit(&input, KiB(1));
 
 	ShowHeader();
 
 	while (true) {
-		xerror err = CollectInput(&input);
-
-		if (err == XECLOSED) {
-			return XESUCCESS;
+		if (CollectInput(&input) == XECLOSED) {
+			err = XESUCCESS;
+			goto cleanup;
 		}
-
-		string source = DynamicStringGetBuffer(&input);
-
-		if (IsShellCommand(source)) {
-			ExecShell(opt, source);
+		
+		if (IsShellCommand(input)) {
+			ExecShell(opt, input);
 		} else {
-			err = Compile(opt, source, NULL);
+			err = Compile(opt, input, NULL);
 
 			if (err & fatal_errors) {
 				xerror_issue("cannot compile from repl");
-				return err;
+				goto cleanup;
 			}
 		}
 
-		DynamicStringReset(&input);
+		StringReset(&input);
 	}
+
+cleanup:
+	TryStringFree(&input);
+	return err;
 }
 
 //returns XECLOSED if encountered a SIGINT.
-xerror CollectInput(dynamic_string *buffer)
+xerror CollectInput(string *input)
 {
-	assert(buffer);
+	assert(input);
+
+	const cstring *wait_msg = ">>> ";
+	const cstring *continue_msg = "... ";
 
 	xerror err = XEUNDEFINED;
 	int prev = 0;
 	int curr = 0;
 
-	fprintf(stdout, ">>> ");
+	fprintf(stdout, wait_msg);
 
 	while (true) {
 		fflush(stdout);
@@ -188,10 +188,10 @@ xerror CollectInput(dynamic_string *buffer)
 				break;
 			}
 
-			fprintf(stdout, "... ");
+			fprintf(stdout, continue_msg);
 		}
 
-		DynamicStringAppend(buffer, (char) curr);
+		StringAppend(input, (char) curr);
 
 		prev = curr;
 	}
@@ -199,72 +199,97 @@ xerror CollectInput(dynamic_string *buffer)
 	return err;
 }
 
-void FileCloseAuto(FILE **fptr)
+bool IsShellCommand(const string *input)
 {
-	if (fptr && *fptr) {
-		fclose(*fptr);
+	const char shell_indicator = '$';
+	const char first_character = StringGet(input, 0);
+
+	if (first_character == shell_indicator) {
+		return true;
+	}
+
+	return false;
+}
+
+void ExecShell(const options *opt, const string *src)
+{
+	assert(opt);
+	assert(src);
+
+	int err = 0;
+
+	const cstring *null_command = "$\n\0";
+	const cstring *raw_input = src->vec.buffer;
+	
+	bool match = !strcmp(null_command, raw_input);
+
+	if (match) {
+		err = system(NULL);
+	} else {
+		err = system(raw_input + 1);
+	}
+
+	if (err == -1) {
+		perror(NULL);
 	}
 }
 
-xerror ExecFile(options *opt, int argc, char **argv, int argi)
+xerror ExecFile(const options *opt, const int argc, char **argv)
 {
 	assert(opt);
 	assert(argc);
 	assert(argv);
-	assert(argi < argc);
 
 	xerror err = XEUNDEFINED;
+	FILE *file_handle = NULL;
+	string src = STRING_DEFAULT_VALUE;
 
-	for (int i = argi; i < argc; i++) {
-		RAII(FileCloseAuto) FILE *fp = fopen(argv[i], "r");
+	for (int i = 0; i < argc; i++) {
+		const cstring *fname = argv[i];
+		file_handle = fopen(fname, "r");
 
-		if (!fp) {
-			xerror_issue("%s: %s", argv[i], strerror(errno));
-			err = XEFILE;
-			return err;
+		if (!file_handle) {
+			xerror_issue("%s: %s", fname, strerror(errno));
+			return XEFILE;
 		}
 
-		size_t len = 0;
-		err =  GetFilesize(fp, &len);
+		err = CopyFileToString(file_handle, &src);
 
 		if (err) {
-			xerror_issue("%s: cannot get bytecount", argv[i]);
-			return err;
+			xerror_issue("%s: cannot copy file to memory", fname);
+			goto clean_file;
 		}
 
-		RAII(StringPtrFree) string src = StringInit(len);
-		err = StringFromFile(fp, src, len);
+		err = Compile(opt, &src, fname);
 
 		if (err) {
-			xerror_issue("%s: cannot copy to memory", argv[i]);
-			return err;
+			xerror_issue("%s: cannot compile from file", fname);
+			goto clean_string;
 		}
 
-		err = Compile(opt, src, argv[i]);
-
-		if (err) {
-			xerror_issue("%s: cannot compile contents", argv[i]);
-			return err;
-		}
+		fclose(file_handle);
+		TryStringFree(&src);
 	}
 
 	return XESUCCESS;
+
+clean_string:
+	TryStringFree(&src);
+
+clean_file:
+	fclose(fp);
+	return err;
 }
 
-//this function moves the file position indicator but will move it back to the
-//original position on a successful return.
+//on return the file position will be set to the beginning of the file
 xerror GetFilesize(FILE *openfile, size_t *bytes)
 {
 	assert(openfile);
 	assert(bytes);
 
 	xerror xerr = XESUCCESS;
-	long savepoint = ftell(openfile);
 
-	if (savepoint == -1) {
-		xerror_issue("fseek: cannot save fpos: %s", strerror(errno));
-		return XEFILE;
-	}
+	rewind(openfile);
 
 	long err = fseek(openfile, 0L, SEEK_END);
 
@@ -287,63 +312,47 @@ xerror GetFilesize(FILE *openfile, size_t *bytes)
 	xerr = XESUCCESS;
 
 reset:
-	err = fseek(openfile, savepoint, SEEK_SET);
-
-	if (err) {
-		xerror_issue("fseek: cannot reset fpos: %s", strerror(errno));
-		xerr = XEFILE;
-	}
-
+	rewind(openfile);
 	return xerr;
 }
 
-xerror StringFromFile(FILE *openfile, string dest, size_t filesize)
+xerror CopyFileToString(FILE *openfile, string *dest)
 {
 	assert(openfile);
+	assert(dest);
 
-	size_t total_read = fread(dest, sizeof(char), filesize, openfile);
+	size_t filesize = 0;
+	xerror err = GetFilesize(openfile, &filesize);
+
+	if (err) {
+		xerror_issue("cannot calculate file size");
+		return XEFILE;
+	}
+
+	char *buffer = NULL;
+	size_t buffer_length = sizeof(char) * filesize + 1;
+	kmalloc(buffer, filesize);
+
+	size_t total_read = fread(buffer, sizeof(char), filesize, openfile);
 
 	if (total_read != filesize) {
 		xerror_issue("%s", strerror(errno));
 		return XEFILE;
 	}
 
+	buffer[filesize] = '\0';
+	cstring *source_code = buffer;
+
+	StringFromHeapCString(dest, source_code);
+
 	return XESUCCESS;
 }
 
-bool IsShellCommand(string src)
-{
-	if (src[0] == '$') {
-		return true;
-	}
-
-	return false;
-}
-
-void ExecShell(options *opt, string src)
+xerror Compile(const options * opt, string * src, const cstring *alias)
 {
 	assert(opt);
 	assert(src);
-
-	int err = 0;
-	const string null_command = "$\n\0";
-	bool match = !strcmp(null_command, src);
-
-	if (match) {
-		err = system(NULL);
-	} else {
-		err = system(src + 1);
-	}
-
-	if (err == -1) {
-		perror(NULL);
-	}
-}
-
-xerror Compile(options *opt, string src, string alias)
-{
-	assert(opt);
-	assert(src);
+	assert(alias);
 
 	if (opt->diagnostic & DIAGNOSTIC_PASS) {
 		fprintf(stderr, "compiler pass: echo\n");

@@ -27,11 +27,9 @@ typedef struct options {
 
 options OptionsInit(void);
 
-//This function may abort the program. Returns XENOMEM, XEOPTION, or XESUCCESS.
-//
-//on success, argi is the index in argv of the first element not parsed by the
-//options handler. The elements of argv are reordered so that all elements
-//from [argi, argc) are unparsed elements.
-xerror OptionsParse(options *self, int argc, char **argv, int *argi);
+//this function will abort the program on failure, but on return argv and argc
+//are modified so that **argv and (*argv)[*argc] point to the first unparsed 
+//option.
+void OptionsParse(options *opt, int *argc, char ***argv);
 
-void OptionsPrint(options *self, FILE *stream);
+void OptionsPrint(options *opt, FILE *stream);

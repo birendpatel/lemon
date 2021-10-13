@@ -7,7 +7,6 @@
 #include "defs.h"
 #include "options.h"
 
-
 #define NO_SHORT_OPTION(key) (256 + key)
 #define SHORT_OPTION(key) key
 
@@ -127,12 +126,13 @@ options OptionsInit(void)
 	return opt;
 }
 
-xerror OptionsParse(options *self, int argc, char **argv, int *argi)
+void OptionsParse(options *opt, int *argc, char ***argv)
 {
-	assert(self);
-	assert(argc > 0);
+	assert(opt);
+	assert(argc);
 	assert(argv);
-	assert(argi);
+	assert(*argc);
+	assert(*argv);
 
 	struct argp args_data = {
 		.options = options_info,
@@ -141,24 +141,39 @@ xerror OptionsParse(options *self, int argc, char **argv, int *argi)
 		.doc = doc
 	};
 
-	error_t err = argp_parse(&args_data, argc, argv, 0, argi, self);
+	int unparsed_index = 0;
+	error_t err = 0;
 
-	if (err == ENOMEM) {
-		return XENOMEM;
-	} else if (err == EINVAL) {
-		return XEOPTION;
-	} 
+	err = argp_parse(&args_data, *argc, *argv, 0, &unparsed_index, opt);
 
-	//argp docs only list ENOMEM and EINVAL but suggest that other error
-	//codes could appear.
-	assert(err == 0);
+	switch (err) {
+	case 0:
+		*argc = *argc - unparsed_index;
+		*argv = *argv + unparsed_index;
+		return;
 
-	return XESUCCESS;
+	case ENOMEM:
+		xerror_fatal("dynamic allocation failed");
+		abort();
+
+	case EINVAL:
+		XerrorUser(0, "invalid option or option argument");
+		abort();
+
+	default:
+		//argp docs only list ENOMEM and EINVAL but suggest that other
+		//error codes could appear.
+		xerror_fatal("unknown argp error");
+		abort();
+	}
 }
 
-#define TO_BOOL(x) ((x) ? 1 : 0)
+static int ToIndicator(int value)
+{
+	return value ? 1 : 0;
+}
 
-void OptionsPrint(options *self, FILE *stream)
+void OptionsPrint(options *opt, FILE *stream)
 {
 	const char *msg = "diagnostic\n"
 			  "\tall: %d\n"
@@ -174,14 +189,14 @@ void OptionsPrint(options *self, FILE *stream)
 			  "\tinteractive: %d\n"
 			  "\n";
 
-	int dall = TO_BOOL(self->diagnostic & DIAGNOSTIC_ALL);
-	int dopt = TO_BOOL(self->diagnostic & DIAGNOSTIC_OPT);
-	int dpass = TO_BOOL(self->diagnostic & DIAGNOSTIC_PASS);
-	int dtokens = TO_BOOL(self->diagnostic & DIAGNOSTIC_TOKENS);
-	int dthread = TO_BOOL(self->diagnostic & DIAGNOSTIC_THREAD);
-	int irdasm = TO_BOOL(self->ir & IR_DISASSEMBLE);
-	int mnorun = TO_BOOL(self->machine & MACHINE_NORUN);
-	int uinteractive = TO_BOOL(self->user & USER_INTERACTIVE);
+	int dall = ToIndicator(self->diagnostic & DIAGNOSTIC_ALL);
+	int dopt = ToIndicator(self->diagnostic & DIAGNOSTIC_OPT);
+	int dpass = ToIndicator(self->diagnostic & DIAGNOSTIC_PASS);
+	int dtokens = ToIndicator(self->diagnostic & DIAGNOSTIC_TOKENS);
+	int dthread = ToIndicator(self->diagnostic & DIAGNOSTIC_THREAD);
+	int irdasm = ToIndicator(self->ir & IR_DISASSEMBLE);
+	int mnorun = ToIndicator(self->machine & MACHINE_NORUN);
+	int uinteractive = ToIndicator(self->user & USER_INTERACTIVE);
 
 	fprintf(stream, msg, dall, dopt, dpass, dtokens, dthread, irdasm,
 		mnorun, uinteractive);

@@ -21,29 +21,7 @@
 	#error "str.h requires user to implement STR_EREF int code"
 #endif
 
-//------------------------------------------------------------------------------
-
-//I'm told a special rung in hell is reserved for people who typedef pointers
-typedef char* cstring;
-
-#define CSTRING_INIT NULL
-
-//table macros support no more than one lookup table per function
-#define CSTRING_TABLE_BEGIN 					               \
-	static const char *const str_table_lookup[] = {
-
-#define CSTRING_TABLE_ENTRY(key, value)                                        \
-	[key] = value,
-
-#define CSTRING_TABLE_END                                                      \
-	};                                                                     \
-	const size_t str_table_len = sizeof(str_table_lookup) / sizeof(char*);
-
-#define CSTRING_TABLE_FETCH(key, default)                                      \
-	key < str_table_len ? str_table_lookup[key] : default
-
-//------------------------------------------------------------------------------
-
+typedef char cstring;
 typedef struct string string;
 typedef struct view view;
 
@@ -62,106 +40,135 @@ struct view {
 
 //------------------------------------------------------------------------------
 
-static void StringInit(string *const str, const size_t capacity)
+static string StringInit(const size_t capacity)
 {
-	assert(str);
-	assert(capacity);
+	const size_t default_length = 0;
+	const char null_terminator = '\0';
 
-	CharVectorInit(&str->vec, 0, capacity);
-	CharVectorPush(&str->vec, '\0');
+	string s = {
+		.vec = {0},
+		.refcount = 0
+	};
 
-	str->refcount = 0;
+	CharVectorInit(&s.vec, default_length, capacity);
+	CharVectorPush(&s.vec, null_terminator);
+
+	return s;
 }
 
-static int StringFree(string *str)
+static int StringFree(string *s)
 {
-	assert(str);
+	assert(s);
 	assert(str->vec.len);
 
-	if (str->refcount != 0) {
+	if (s->refcount != 0) {
 		return STR_EREF;
 	}
 
-	CharVectorFree(&str->vec, NULL);
-	str->vec = (Char_vector) {0};
+	CharVectorFree(&s->vec, NULL);
+	s->vec = (Char_vector) {0};
 
 	return STR_ESUCCESS;
 }
 
-static size_t StringLength(const string *const str)
+static size_t StringLength(const string *s)
 {
 	assert(self);
-	assert(self->vec.len != 0);
+	assert(s->vec.len != 0);
 
-	return self->vec.len - 1;
+	return s->vec.len - 1;
 }
 
-static void StringAppend(string *const str, const char c)
+static void StringAppend(string *s, const char c)
 {
-	assert(str);
-	assert(str->vec.len);
+	assert(s);
+	assert(s->vec.len);
 
-	(void) CharVectorSet(&str->vec, str->vec.len - 1, c);
-	CharVectorPush(&str->vec, '\0');
+	(void) CharVectorSet(&s->vec, s->vec.len - 1, c);
+	CharVectorPush(&s->vec, '\0');
 }
 
-static void StringReset(string *const str)
+static char StringGet(const string *s, const size_t index)
 {
-	assert(str);
-	assert(str->vec.len);
+	assert(s);
+	assert(index < s->vec.len);
 
-	CharVectorReset(&str->vec, NULL);
-	CharVectorPush(&str->vec, '\0');
+	char c = '\0';
+
+	CharVectorGet(s, index, &c);
+
+	return c;
+}
+
+static void StringReset(string *s)
+{
+	assert(s);
+	assert(s->vec.len);
+
+	CharVectorReset(&s->vec, NULL);
+	CharVectorPush(&s->vec, '\0');
 }
 
 //copy the view subsequence to a new string; the view remains valid on return.
-static void StringFromView(string *const str, const view *const v)
+static string StringFromView(const view *v)
 {
-	assert(str);
 	assert(v);
 	assert(v->data);
 	assert(v->len);
 	assert(v->ref);
 	assert(v->ref->vec.len);
 
-	CharVectorNewCopy(&str->vec, &v->ref->vec);
+	string s = {
+		.vec = {0},
+		.refcount = 0
+	};
 
-	str->refcount = 0;
+	CharVectorNewCopy(&s.vec, &v->ref->vec);
+
+	return s;
 }
 
-static void StringFromCString(string *const str, char *src)
+//CString gets subsumed by string, so if cstring exists on heap then it must
+//not be freed unless by StringFree. i.e., the cstring resource is given to the
+//string, not borrowed or copied.
+static string StringFromHeapCString(const cstring *src)
 {
-	assert(str);
 	assert(src);
+	assert(src[strlen(src) - 1] == '\0');
 
-	CharVectorAdopt(&str->vec, src, strlen(src));
+	string s = {
+		.vec = {0},
+		.refcount = 0
+	};
 
-	str->refcount = 0;
+	CharVectorAdopt(&s.vec, src, strlen(src));
+
+	return s;
 }
 
 //------------------------------------------------------------------------------
 
 //view are created on stack but the initializer functions guarantee correct
 //reference tracking.
-static view ViewOpen(const string src, const char *const data, const size_t len)
+static view ViewOpen(const string *src, const char *data, const size_t len)
 {
 	assert(src);
 	assert(src->vec.len != 0);
 	assert(data);
 	assert(len != 0);
 
-	view new = {
-		.ref = &src,
+	view v = {
+		.ref = src,
 		.data = data,
 		.len = len,
 	};
 
 	src->refcount++;
 
-	return new;
+	return v;
 }
 
-static void ViewClose(view *const v)
+static void ViewClose(view *v)
 {
 	assert(v);
 
@@ -170,7 +177,7 @@ static void ViewClose(view *const v)
 	v->src->refcount--;
 }
 
-static void ViewToString(view *const v, string *const str)
+static string ViewToString(view *v)
 {
 	assert(str);
 	assert(v);
@@ -179,7 +186,9 @@ static void ViewToString(view *const v, string *const str)
 	assert(v->ref);
 	assert(v->ref->vec.len);
 
-	StringFromView(str, v);
+	string s = StringFromView(v);
 
 	ViewClose(v);
+
+	return s;
 }
