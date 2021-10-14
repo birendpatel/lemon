@@ -13,7 +13,25 @@
 
 make_vector(char, Char, static)
 
+//-----------------------------------------------------------------------------
+//cstring
+
 typedef char cstring;
+
+static cstring cStringDuplicate(const cstring *cstr)
+{
+	cstring *new = strdup(cstr);
+
+	if (!new) {
+		abort();
+	}
+
+	return new;
+}
+
+//-----------------------------------------------------------------------------
+//vstring
+
 typedef Char_vector vstring;
 
 static vstring vStringInit(const size_t);
