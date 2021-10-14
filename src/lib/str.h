@@ -1,214 +1,128 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-//
-// This header provides dynamic string data structures. The two fundamental
-// data structures are the string and the view. Strings are reference-counted
-// vector<char> and views are references to subsequences of strings. Some
-// minor abstractions over C-style strings are also provided.
+// 
+// This header provides a dynamic string data structure. The vstring is a 
+// shallow wrapper over a vector<char> whose internal buffer is guaranteed
+// to be null-terminated.
 
 #pragma once
 
 #include <assert.h>
 #include <stdint.h>
-#include <stdlib.h>
-#include <string.h>
 
 #include "vector.h"
 
-#ifndef STR_ESUCCESS
-	#error "str.h requires user to implement STR_ESUCCESS int code"
-#endif
-
-#ifndef STR_EREF
-	#error "str.h requires user to implement STR_EREF int code"
-#endif
-
-typedef char cstring;
-typedef struct string string;
-typedef struct view view;
-
 make_vector(char, Char, static)
 
-struct string {
-	Char_vector vec;
-	size_t refcount;
-};
+typedef char cstring;
+typedef Char_vector vstring;
 
-struct view {
-	string *ref;
-	char *data;
-	size_t len;
-};
+static vstring vStringInit(const size_t capacity);
+static void vStringTerminate__internal(string *vstr);
+static void vStringFree(vstring *vstr);
+static size_t vStringLength(vstring *vstr);
+static void vStringAppend(vstring *vstr, const char ch);
+static char vStringGet(const vstring *vstr, size_t index);
+static void vStringTrim(vstring *vstr, const char ch);
+static void vStringReset(vstring *vstr);
+static const cstring *vStringBuffer(vstring *vstr);
 
-//------------------------------------------------------------------------------
-
-static string StringInit(const size_t capacity)
+static vstring vStringInit(const size_t capacity)
 {
 	const size_t default_length = 0;
+
+	string vstr = {0};
+
+	CharVectorInit(&vstr, default_length, capacity);
+
+	vStringTerminate__internal(&vstr);
+
+	return vstr;
+}
+
+static void vStringTerminate__internal(string *vstr)
+{
+	assert(vstr);
+
 	const char null_terminator = '\0';
 
-	string s = {
-		.vec = {0},
-		.refcount = 0
-	};
+	CharVectorPush(vstr, null_terminator);
 
-	CharVectorInit(&s.vec, default_length, capacity);
-	CharVectorPush(&s.vec, null_terminator);
-
-	return s;
 }
 
-static int StringFree(string *s)
+static void vStringFree(vstring *vstr)
 {
-	assert(s);
-	assert(str->vec.len);
+	assert(vstr);
 
-	if (s->refcount != 0) {
-		return STR_EREF;
-	}
-
-	CharVectorFree(&s->vec, NULL);
-	s->vec = (Char_vector) {0};
-
-	return STR_ESUCCESS;
+	CharVectorFree(vstr, NULL);
 }
 
-static size_t StringLength(const string *s)
+static size_t vStringLength(vstring *vstr)
 {
-	assert(self);
-	assert(s->vec.len != 0);
+	assert(vstr);
+	assert(vstr->len != 0);
 
-	return s->vec.len - 1;
+	return vstr->len - 1;
 }
 
-static void StringAppend(string *s, const char c)
+static void vStringAppend(vtring *vstr, const char ch)
 {
-	assert(s);
-	assert(s->vec.len);
+	assert(vstr);
+	assert(vstr->len != 0);
 
-	(void) CharVectorSet(&s->vec, s->vec.len - 1, c);
-	CharVectorPush(&s->vec, '\0');
+	(void) CharVectorSet(vstr vstr->len - 1, ch);
+
+	vStringTerminate__internal(vstr);
 }
 
-static char StringGet(const string *s, const size_t index)
+static char vStringGet(const vstring *vstr, size_t index)
 {
-	assert(s);
-	assert(index < StringLength(s));
+	assert(vstr);
+	assert(vstr->len != 0);
 
-	char c = '\0';
+	char ch = '\0';
 
-	CharVectorGet(s, index, &c);
+	CharVectorGet(vstr, index, &ch);
 
-	return c;
+	return ch;
 }
 
-static void StringTrim(string *s, char c)
+//remove a contiguous trailing sequence of ch from the right
+//e.g., vStringTrim("abcddd", 'd') -> "abc"
+static void vStringTrim(vstring *vstr, const char ch)
 {
-	assert(s);
-	assert(c);
+	assert(vstr);
+	assert(vstr->len != 0);
 
-	size_t pos = StringLength(s) - 1;
+	size_t test_index = vStringLength(vstr) - 1;
+	size_t null_index = vstr->len;
 
-	while (pos != SIZE_MAX) {
-		if (s->vec.buffer[pos] != c) {
+	while (test_index != SIZE_MAX) {
+		const current_char = vstr->buffer[test_index];
+
+		if (current_char != ch) {
 			break;
 		}
 
-		pos--;
-		s->vec.len--;
+		test_index--;
+		null_index--;
 	}
 
-	(void) CharVectorSet(&s->vec, s->vec.len, '\0');	
+	(void) CharVectorSet(vstr, null_index, '\0');
 }
 
-static void StringReset(string *s)
+static void vStringReset(vstring *vstr)
 {
-	assert(s);
-	assert(s->vec.len);
+	assert(vstr);
+	
+	CharVectorReset(vstr, NULL);
 
-	CharVectorReset(&s->vec, NULL);
-	CharVectorPush(&s->vec, '\0');
+	vStringTerminate__internal(vstr);
 }
 
-//copy the view subsequence to a new string; the view remains valid on return.
-static string StringFromView(const view *v)
+static const cstring *vStringBuffer(vstring *vstr)
 {
-	assert(v);
-	assert(v->data);
-	assert(v->len);
-	assert(v->ref);
-	assert(v->ref->vec.len);
+	assert(vstr);
+	assert(vstr->len != 0);
 
-	string s = {
-		.vec = {0},
-		.refcount = 0
-	};
-
-	CharVectorNewCopy(&s.vec, &v->ref->vec);
-
-	return s;
-}
-
-//CString gets subsumed by string, so if cstring exists on heap then it must
-//not be freed unless by StringFree. i.e., the cstring resource is given to the
-//string, not borrowed or copied.
-static string StringFromHeapCString(const cstring *src)
-{
-	assert(src);
-	assert(src[strlen(src) - 1] == '\0');
-
-	string s = {
-		.vec = {0},
-		.refcount = 0
-	};
-
-	CharVectorAdopt(&s.vec, src, strlen(src));
-
-	return s;
-}
-
-//------------------------------------------------------------------------------
-
-//view are created on stack but the initializer functions guarantee correct
-//reference tracking.
-static view ViewOpen(const string *src, const char *data, const size_t len)
-{
-	assert(src);
-	assert(src->vec.len != 0);
-	assert(data);
-	assert(len != 0);
-
-	view v = {
-		.ref = src,
-		.data = data,
-		.len = len,
-	};
-
-	src->refcount++;
-
-	return v;
-}
-
-static void ViewClose(view *v)
-{
-	assert(v);
-
-	v->data = NULL;
-	v->len = 0;
-	v->src->refcount--;
-}
-
-static string ViewToString(view *v)
-{
-	assert(str);
-	assert(v);
-	assert(v->data);
-	assert(v->len);
-	assert(v->ref);
-	assert(v->ref->vec.len);
-
-	string s = StringFromView(v);
-
-	ViewClose(v);
-
-	return s;
+	return vstr->buffer;
 }

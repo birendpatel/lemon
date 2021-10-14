@@ -27,16 +27,17 @@
 options ConfigOptions(int *, char ***);
 xerror ExecUnknown(const options *, const int, char **);
 xerror ExecRepl(const options *);
-xerror ReadTerminal(string *);
+int ReadTerminal(string *);
 bool IsShellCommand(const string *);
 void ExecShell(const options *, const string *);
 void TryStringFree(string *str)
 void ShowHeader(void);
 void ShowHelp(void);
+void FileCleanup(FILE **);
 xerror ExecFile(const options *, const int, char **);
-xerror CopyFileToString(FILE *, string *, const size_t);
+string FileToString(FILE *openfile, xerror *err);
 xerror GetFilesize(FILE *, size_t *);
-xerror Compile(const options *, const string *, const cstring *);
+xerror Compile(const options *, string *, const cstring *);
 
 //------------------------------------------------------------------------------
 
@@ -84,6 +85,7 @@ xerror ExecUnknown(const options *opt, const int argc, char **argv)
 		err = ExecRepl(opt);
 	} else {
 		err = ExecFile(opt, argc, argv);
+
 		const bool launch_repl = opt->user & USER_INTERACTIVE;
 
 		if (!err && launch_repl) {
@@ -116,12 +118,17 @@ void ShowHeader(void)
 	fprintf(stdout, msg, LEMON_VERSION, __DATE__, __TIME__);
 }
 
-void TryStringFree(string *str)
+void TryStringFree(string *s)
 {
-	xerror err = StringFree(str);
+	static const cstring *errormsg =
+		"string at %p is UAF exploitable; "
+		"StringFree failed; "
+		"induced memory leak";
+
+	xerror err = StringFree(s);
 
 	if (err) {
-		xerror_issue("use after free is possible; induced memory leak");
+		xerror_issue(errormsg, (void *) s);
 	}
 }
 
@@ -132,12 +139,11 @@ xerror ExecRepl(const options *opt)
 	xerror err = XEUNDEFINED;
 	const xerror fatal_errors = ~(XESUCCESS | XEPARSE);
 
-	string input = StringInit(KiB(1));
+	RAII(TryStringFree) string input = StringInit(KiB(1));
 
 	while (true) {
-		if (ReadTerminal(&input) == XECLOSED) {
-			err = XESUCCESS;
-			goto cleanup;
+		if (ReadTerminal(&input) == EOF) {
+			return XESUCCESS;
 		}
 		
 		if (IsShellCommand(input)) {
@@ -147,25 +153,22 @@ xerror ExecRepl(const options *opt)
 
 			if (err & fatal_errors) {
 				xerror_issue("cannot compile from repl");
-				goto cleanup;
+				return err;
 			}
 		}
 
 		StringReset(&input);
 	}
-
-cleanup:
-	TryStringFree(&input);
-	return err;
 }
 
-//returns XECLOSED if encountered a SIGINT.
-xerror ReadTerminal(string *input)
+//returns EOF if encountered a SIGINT.
+int ReadTerminal(string *input)
 {
 	assert(input);
 
 	const cstring *wait_msg = ">>> ";
 	const cstring *continue_msg = "... ";
+	
 	xerror err = XEUNDEFINED;
 	int prev = 0;
 	int curr = 0;
@@ -179,7 +182,7 @@ xerror ReadTerminal(string *input)
 
 		if (curr == EOF) {
 			fprintf(stdout, "\n");
-			return XECLOSED;
+			return EOF;
 		}
 
 		if (curr == '\n') {
@@ -197,7 +200,7 @@ xerror ReadTerminal(string *input)
 
 	StringTrim(input, '\n');
 
-	return XESUCCESS;
+	return 0;
 }
 
 //------------------------------------------------------------------------------
@@ -221,15 +224,16 @@ void ExecShell(const options *opt, const string *src)
 
 	int err = 0;
 
-	const cstring *null_command = "$\n\0";
-	const cstring *raw_input = src->vec.buffer;
+	const cstring *null_command = "$";
+	const cstring *input = src->vec.buffer;
 	
-	bool match = !strcmp(null_command, raw_input);
+	bool match = !strcmp(null_command, input);
 
 	if (match) {
 		err = system(NULL);
 	} else {
-		err = system(raw_input + 1);
+		const cstring *command = input + 1;
+		err = system(command);
 	}
 
 	if (err == -1) {
@@ -239,51 +243,77 @@ void ExecShell(const options *opt, const string *src)
 
 //------------------------------------------------------------------------------
 
+void FileCleanup(FILE **handle)
+{
+	if (*handle) {
+		fclose(*handle);
+	}
+}
+
 xerror ExecFile(const options *opt, const int argc, char **argv)
 {
 	assert(opt);
 	assert(argc);
 	assert(argv);
 
-	xerror err = XEUNDEFINED;
-	FILE *file_handle = NULL;
-	string src = STRING_DEFAULT_VALUE;
-
 	for (int i = 0; i < argc; i++) {
+		xerror err = XEUNDEFINED;
 		const cstring *fname = argv[i];
-		file_handle = fopen(fname, "r");
+		RAII(FileCleanup) FILE *fhandle = fopen(fname, "r");
 
-		if (!file_handle) {
+		if (!fhandle) {
 			xerror_issue("%s: %s", fname, strerror(errno));
 			return XEFILE;
 		}
-
-		err = CopyFileToString(file_handle, &src);
+	
+		RAII(TryStringFree) string src = FileToString(fhandle, &err);
 
 		if (err) {
 			xerror_issue("%s: cannot copy file to memory", fname);
-			goto clean_file;
+			return XEFILE;
 		}
 
 		err = Compile(opt, &src, fname);
 
 		if (err) {
 			xerror_issue("%s: cannot compile from file", fname);
-			goto clean_string;
+			return XEFILE;
 		}
-
-		fclose(file_handle);
-		TryStringFree(&src);
 	}
 
 	return XESUCCESS;
+}
 
-clean_string:
-	TryStringFree(&src);
+string FileToString(FILE *openfile, xerror *err)
+{
+	assert(openfile);
+	assert(err);
 
-clean_file:
-	fclose(fp);
-	return err;
+	size_t filesize = 0;
+	*err = GetFilesize(openfile, &filesize);
+
+	if (*err) {
+		xerror_issue("cannot calculate file size");
+		return (string) {0};
+	}
+
+	char *buffer = NULL;
+	size_t buffer_length = sizeof(char) * filesize + 1;
+	kmalloc(buffer, filesize);
+
+	size_t total_read = fread(buffer, sizeof(char), filesize, openfile);
+
+	if (total_read != filesize) {
+		xerror_issue("%s", strerror(errno));
+		*err = XEFILE;
+		return (string) {0};
+	}
+
+	buffer[filesize] = '\0';
+	string s = StringFromHeapCString(buffer);
+	
+	*err = XESUCCESS;
+	return s;
 }
 
 //on return the file position will be set to the beginning of the file
@@ -321,41 +351,9 @@ reset:
 	return xerr;
 }
 
-xerror CopyFileToString(FILE *openfile, string *dest)
-{
-	assert(openfile);
-	assert(dest);
-
-	size_t filesize = 0;
-	xerror err = GetFilesize(openfile, &filesize);
-
-	if (err) {
-		xerror_issue("cannot calculate file size");
-		return XEFILE;
-	}
-
-	char *buffer = NULL;
-	size_t buffer_length = sizeof(char) * filesize + 1;
-	kmalloc(buffer, filesize);
-
-	size_t total_read = fread(buffer, sizeof(char), filesize, openfile);
-
-	if (total_read != filesize) {
-		xerror_issue("%s", strerror(errno));
-		return XEFILE;
-	}
-
-	buffer[filesize] = '\0';
-	cstring *source_code = buffer;
-
-	StringFromHeapCString(dest, source_code);
-
-	return XESUCCESS;
-}
-
 //------------------------------------------------------------------------------
 
-xerror Compile(const options * opt, string * src, const cstring *alias)
+xerror Compile(const options *opt, string *src, const cstring *alias)
 {
 	assert(opt);
 	assert(src);
