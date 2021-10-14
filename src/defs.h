@@ -2,6 +2,8 @@
 
 #pragma once
 
+#include <stdlib.h>
+
 //------------------------------------------------------------------------------
 // versioning
 
@@ -22,24 +24,28 @@
 
 #define fallthrough __attribute__((fallthrough))
 
-#define unused __attribute__((unused))
-
-#define RAII(freefunc) __attribute__((__cleanup__(freefunc)))
-
-#define addressless register
+#define RAII(free) __attribute__((__cleanup__(free)))
 
 //------------------------------------------------------------------------------
 //allocation utils
 
-#define KiB(kilo) (1024 * kilo)
+static size_t KiB(size_t kilobytes)
+{
+	return 1024 * kilobytes;
+}
 
-#define MiB(mega) (1048576 * mega)
+static size_t MiB(size_t megabytes)
+{
+	return 1048576 * megabytes;
+}
 
-#define kmalloc(target, bytes)						       \
-	do {								       \
-		target = malloc(bytes);					       \
-									       \
-		if (!target) {						       \
-			abort();					       \
-		}							       \
-	} while (0)
+static void *AbortMalloc(size_t bytes)
+{
+	void *region = malloc(bytes);
+
+	if (!region) {
+		abort();
+	}
+
+	return region;
+}

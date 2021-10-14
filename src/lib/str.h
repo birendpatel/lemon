@@ -16,23 +16,21 @@ make_vector(char, Char, static)
 typedef char cstring;
 typedef Char_vector vstring;
 
-static vstring vStringInit(const size_t capacity);
-static void vStringTerminate__internal(string *vstr);
-static void vStringFree(vstring *vstr);
-static size_t vStringLength(vstring *vstr);
-static void vStringAppend(vstring *vstr, const char ch);
-static char vStringGet(const vstring *vstr, size_t index);
-static void vStringTrim(vstring *vstr, const char ch);
-static void vStringReset(vstring *vstr);
-static const cstring *vStringBuffer(vstring *vstr);
+static vstring vStringInit(const size_t);
+static void vStringTerminate__internal(string *);
+static void vStringFree(vstring *);
+static size_t vStringLength(vstring *);
+static void vStringAppend(vstring *, const char);
+static char vStringGet(const vstring *, size_t);
+static void vStringTrim(vstring *, const char);
+static void vStringReset(vstring *);
+static const cstring *vStringBuffer(vstring *);
 
 static vstring vStringInit(const size_t capacity)
 {
 	const size_t default_length = 0;
 
-	string vstr = {0};
-
-	CharVectorInit(&vstr, default_length, capacity);
+	string vstr = CharVectorInit(default_length, capacity);
 
 	vStringTerminate__internal(&vstr);
 
@@ -52,6 +50,7 @@ static void vStringTerminate__internal(string *vstr)
 static void vStringFree(vstring *vstr)
 {
 	assert(vstr);
+	assert(vstr->len != 0);
 
 	CharVectorFree(vstr, NULL);
 }
@@ -79,11 +78,7 @@ static char vStringGet(const vstring *vstr, size_t index)
 	assert(vstr);
 	assert(vstr->len != 0);
 
-	char ch = '\0';
-
-	CharVectorGet(vstr, index, &ch);
-
-	return ch;
+	return CharVectorGet(vstr, index);
 }
 
 //remove a contiguous trailing sequence of ch from the right
@@ -107,12 +102,14 @@ static void vStringTrim(vstring *vstr, const char ch)
 		null_index--;
 	}
 
+	vstr->len = null_index;
 	(void) CharVectorSet(vstr, null_index, '\0');
 }
 
 static void vStringReset(vstring *vstr)
 {
 	assert(vstr);
+	assert(vstr->len != 0);
 	
 	CharVectorReset(vstr, NULL);
 
