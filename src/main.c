@@ -1,12 +1,10 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// The main file contains all of the initialization and cleanup required before
-// and after compilation and execution. The main tasks are command line options
-// parsing, file IO, REPL management, symbol table management, and disassembly.
-//
-// The file also orchestrates the compiler phases and invokes each phase in turn
-// according to which optimisation and diagnostic flags have been set.
+// The main file is responsible for orchestrating the compiler phases and for
+// handling all initialization and cleanup required before, after, and between
+// these phases.
 
+#include <assert.h>
 #include <errno.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -17,7 +15,6 @@
 #include "options.h"
 #include "parser.h"
 #include "xerror.h"
-
 #include "lib/str.h"
 
 #if GCC_VERSION < 80300
@@ -32,7 +29,7 @@ bool IsShellCommand(const string *);
 void ExecShell(const options *, const string *);
 void TryStringFree(string *str)
 void ShowHeader(void);
-void ShowHelp(void);
+void ReportFailure(xerror);
 void FileCleanup(FILE **);
 xerror ExecFile(const options *, const int, char **);
 string FileToString(FILE *openfile, xerror *err);
@@ -48,8 +45,7 @@ int main(int argc, char **argv)
 	xerror err = ExecUnknown(&opt, argc, argv);
 
 	if (err) {
-		xerror_fatal("%s", XerrorDescription(err));
-		ShowHelp();
+		ReportFailure(err);
 		return EXIT_FAILURE;
 	}
 
@@ -96,11 +92,13 @@ xerror ExecUnknown(const options *opt, const int argc, char **argv)
 	return err;
 }
 
-void ShowHelp(void)
+void ReportFailure(xerror err)
 {
 	static const cstring *msg =
 		"\nProgram failed. Report an issue: "
 		"https://github.com/birendpatel/lemon/issues\n";
+
+	xerror_fatal("%s", XerrorDescription(err));
 
 	fputs(msg, stderr);
 }
