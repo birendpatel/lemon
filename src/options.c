@@ -4,12 +4,17 @@
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
-#include <stdbool.h>
 #include <stdint.h>
 
 #include "defs.h"
 #include "options.h"
 #include "xerror.h"
+
+error_t parser(int, __attribute__((unused)) char *, struct argp_state *);
+static const options *AcquireReadOnly(void);
+static void ReleaseReadOnly(void);
+
+//------------------------------------------------------------------------------
 
 typedef struct options {
 	pthread mutex_t mutex;
@@ -49,14 +54,19 @@ static options opt {
 	}
 };
 
-static const int diagnostic_all_key = 256;
-static const int diagnostic_options_state_key = 257;
-static const int diagnostic_compiler_passes_key = 258;
-static const int diagnostic_lexical_tokens_key = 259;
-static const int diagnostic_multithreading_Key = 260;
-static const int ir_disassemble_key = 'S';
-static const int vm_no_run_key = 'k';
-static const int user_interactive_key = 'i';
+//------------------------------------------------------------------------------
+//gnu argp
+
+enum argp_keys {
+	diagnostic_all_key = 256,
+	diagnostic_options_state_key = 257,
+	diagnostic_compiler_passes_key = 258,
+	diagnostic_lexical_tokens_key = 259,
+	diagnostic_multithreading_Key = 260,
+	ir_disassemble_key = 'S',
+	vm_no_run_key = 'k',
+	user_interactive_key = 'i',
+};
 
 const cstring *argp_program_version = LEMON_VERSION;
 const cstring *argp_program_bug_address = "github.com/birendpatel/lemon/issues";
@@ -107,7 +117,12 @@ static struct argp_option options_info[] = {
 	{0} //terminator required by GNU argp
 };
 
-error_t parser(int key, unused char *arg, struct argp_state *state)
+error_t parser
+(
+	int key,
+	__attribute__((unused)) char *arg,
+	struct argp_state *state
+)
 {
 	options *opt = (options *) state->input;
 
@@ -213,9 +228,24 @@ void OptionsParse(int *argc, char ***argv)
 	pthread_mutex_unlock(&opt.mutex);
 }
 
+//------------------------------------------------------------------------------
+//read-only functions
+
+static const options *AcquireReadOnly(void)
+{
+	pthread_mutex_lock(&opt.mutex);
+
+	return (const options *) &opt;
+}
+
+static void ReleaseReadOnly(void)
+{
+	pthread_mutex_unlock(&opt.mutex);
+}
+
 void OptionsPrint(void)
 {
-	static const cstring *fmt = 
+	static const cstring *fmt =
 		"diagnostic\n"
 		"\tall: %d\n"
 		"\toptions state: %d\n"
@@ -230,19 +260,68 @@ void OptionsPrint(void)
 		"\tinteractive: %d\n"
 		"\n";
 
-	pthread_mutex_lock(&opt.mutex);
+	const options *ro_opt = AcquireReadOnly();
 
-	const int dall = opt.diagnostic.all;
-	const int dopt = opt.diagnostic.options_state;
-	const int dpass = opt.diagnostic.compiler_passes; 
-	const int dtokens = opt.diagnostic.lexical_tokens; 
-	const int dthread = opt.diagnostic.multithreading; 
-	const int irdasm = opt.ir.disassemble; 
-	const int mnorun = opt.vm.no_run; 
-	const int uinteractive = opt.user.interactive; 
+	const int dall = ro_opt->diagnostic.all;
+	const int dopt = ro_opt->diagnostic.options_state;
+	const int dpass = ro_opt->diagnostic.compiler_passes;
+	const int dtokens = ro_opt->diagnostic.lexical_tokens;
+	const int dthread = ro_opt->diagnostic.multithreading;
+	const int irdasm = ro_opt->ir.disassemble;
+	const int mnorun = ro_opt->vm.no_run;
+	const int uinteractive = ro_opt->user.interactive;
 
-	pthread_mutex_unlock(&opt.mutex);
+	ReleaseReadOnly();
 
 	fprintf(stderr, fmt, dall, dopt, dpass, dtokens, dthread, irdasm,
 		mnorun, uinteractive);
+}
+
+bool OptionsGetFlag(const options_flag flag)
+{
+	bool status = false;
+
+	const options *ro_opt = AcquireReadOnly();
+
+	switch(flag) {
+	case DIAGNOSTIC_ALL:
+		status = ro_opt->diagnostic.all;
+		break;
+
+	case DIAGNOSTIC_OPTIONS_STATE:
+		status = ro_opt->diagnostic.options_state;
+		break;
+
+	case DIAGNOSTIC_COMPILER_PASSES:
+		status = ro_opt->diagnostic.compiler_passes;
+		break;
+
+	case DIAGNOSTIC_LEXICAL_TOKENS:
+		status = ro_opt->diagnostic.lexical_tokens;
+		break;
+
+	case DIAGNOSTIC_MULTITHREADING:
+		status = ro_opt->diagnostic.multithreading;
+		break;
+
+	case IR_DISASSEMBLE:
+		status = ro_opt->ir.disassemble;
+		break;
+
+	case VM_NO_RUN:
+		status = ro_opt->vm.no_run;
+		break;
+
+	case USER_INTERACTIVE:
+		status = ro_opt->user.interactive;
+		break;
+
+	default:
+		xerror_issue("invalid flag argument: %d", flag);
+		break;
+	}
+
+	ReleaseReadOnly();
+
+	return status;
 }
