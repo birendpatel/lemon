@@ -39,7 +39,7 @@ static size_t MiB(size_t megabytes)
 	return 1048576 * megabytes;
 }
 
-static void *AbortMalloc(size_t bytes)
+static void *AbortMalloc(size_t bytes) __attribute__((malloc))
 {
 	void *region = malloc(bytes);
 
