@@ -21,9 +21,9 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-options ConfigOptions(int *, char ***);
-xerror ExecUnknown(const options *, const int, char **);
-xerror ExecRepl(const options *);
+void ConfigureOptions(int *, char ***);
+void ShowHeader(void);
+xerror ExecuteFromRepl(const options *);
 int ReadTerminal(string *);
 bool IsShellCommand(const string *);
 void ExecShell(const options *, const string *);
@@ -31,7 +31,7 @@ void TryStringFree(string *str)
 void ShowHeader(void);
 void ReportFailure(xerror);
 void FileCleanup(FILE **);
-xerror ExecFile(const options *, const int, char **);
+xerror ExecuteFromFiles(const options *, const int, char **);
 string FileToString(FILE *openfile, xerror *err);
 xerror GetFilesize(FILE *, size_t *);
 xerror Compile(const options *, string *, const cstring *);
@@ -40,80 +40,42 @@ xerror Compile(const options *, string *, const cstring *);
 
 int main(int argc, char **argv)
 {
-	options opt = ConfigOptions(&argc, &argv);
+	ConfigureOptions(&argc, &argv);
 
-	xerror err = ExecUnknown(&opt, argc, argv);
+	xerror err = XEUNDEFINED;
 
-	if (err) {
-		ReportFailure(err);
-		return EXIT_FAILURE;
+	if (argv[argc]) {
+		err = ExecuteFromFiles(argc, argv);
+	} else {
+		err = ExecuteFromRepl();
 	}
 
-	XerrorFlush();
-	return EXIT_SUCCESS;
+	Terminate(err);
 }
 
-options ConfigOptions(int *argc, char ***argv)
+void ConfigureOptions(int *argc, char ***argv)
 {
 	assert(argc);
 	assert(argv);
 
-	options opt = OptionsInit();
+	OptionsParse(argc, argv);
 
-	OptionsParse(&opt, argc, argv);
+	bool flag = OptionsGetFlag(DIAGNOSTIC_OPTIONS_STATE);
 
-	if (opt->diagnostic & DIAGNOSTIC_OPT) {
-		OptionsPrint(opt, stderr);
+	if (flag) {
+		OptionsPrint(stderr);
+	}
+}
+
+void Terminate(xerror err)
+{
+	if (err) {
+		xerror_fatal("%s", XerrorDescription(err));
+		exit(EXIT_FAILURE);
 	}
 
-	return opt;
-}
-
-xerror ExecUnknown(const options *opt, const int argc, char **argv)
-{
-	assert(opt);
-	assert(argv);
-
-	xerror err = XEUNDEFINED;
-
-	if (argv[argc] == NULL) {
-		ShowHeader();
-		err = ExecRepl(opt);
-	} else {
-		err = ExecFile(opt, argc, argv);
-
-		const bool launch_repl = opt->user & USER_INTERACTIVE;
-
-		if (!err && launch_repl) {
-			err = ExecRepl(opt);
-		}
-	}
-
-	return err;
-}
-
-void ReportFailure(xerror err)
-{
-	static const cstring *msg =
-		"\nProgram failed. Report an issue: "
-		"https://github.com/birendpatel/lemon/issues\n";
-
-	xerror_fatal("%s", XerrorDescription(err));
-
-	fputs(msg, stderr);
-}
-
-void ShowHeader(void)
-{
-	static const cstring *msg =
-		"Lemon (%s) (Compiled %s %s)\n"
-		"Copyright (C) 2021 Biren Patel.\n"
-		"GNU General Public License v3.0.\n\n"
-		"- Double tap 'return' to execute source code.\n"
-		"- Prefix input with '$' to execute a shell command.\n"
-		"- Exit with Ctrl-C.\n\n";
-
-	fprintf(stdout, msg, LEMON_VERSION, __DATE__, __TIME__);
+	XerrorFlush();
+	exit(EXIT_SUCCESS);
 }
 
 void TryStringFree(string *s)
@@ -132,12 +94,27 @@ void TryStringFree(string *s)
 
 //------------------------------------------------------------------------------
 
-xerror ExecRepl(const options *opt)
+void ShowHeader(void)
+{
+	static const cstring *msg =
+		"Lemon (%s) (Compiled %s %s)\n"
+		"Copyright (C) 2021 Biren Patel.\n"
+		"GNU General Public License v3.0.\n\n"
+		"- Double tap 'return' to execute source code.\n"
+		"- Prefix input with '$' to execute a shell command.\n"
+		"- Exit with Ctrl-C.\n\n";
+
+	fprintf(stdout, msg, LEMON_VERSION, __DATE__, __TIME__);
+}
+
+xerror ExecuteFromRepl(const options *opt)
 {
 	xerror err = XEUNDEFINED;
 	const xerror fatal_errors = ~(XESUCCESS | XEPARSE);
 
 	RAII(TryStringFree) string input = StringInit(KiB(1));
+
+	ShowHeader();
 
 	while (true) {
 		if (ReadTerminal(&input) == EOF) {
@@ -248,7 +225,7 @@ void FileCleanup(FILE **handle)
 	}
 }
 
-xerror ExecFile(const options *opt, const int argc, char **argv)
+xerror ExecuteFromFiles(const options *opt, const int argc, char **argv)
 {
 	assert(opt);
 	assert(argc);

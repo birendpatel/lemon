@@ -5,15 +5,16 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "defs.h"
 #include "options.h"
 #include "xerror.h"
 
-error_t parser(int, __attribute__((unused)) char *, struct argp_state *);
+error_t UnsafeParser(int, __attribute__((unused)) char *, struct argp_state *);
 static const options *AcquireReadOnly(void);
 static void ReleaseReadOnly(void);
-
+static void UnsafePrint(void);
 //------------------------------------------------------------------------------
 
 typedef struct options {
@@ -117,7 +118,7 @@ static struct argp_option options_info[] = {
 	{0} //terminator required by GNU argp
 };
 
-error_t parser
+error_t UnsafeParser
 (
 	int key,
 	__attribute__((unused)) char *arg,
@@ -187,7 +188,7 @@ void OptionsParse(int *argc, char ***argv)
 
 	struct argp args_data = {
 		.options = options_info,
-		.parser = parser,
+		.parser = UnsafeParser,
 		.args_doc = args_doc,
 		.doc = doc
 	};
@@ -224,26 +225,16 @@ void OptionsParse(int *argc, char ***argv)
 		abort();
 	}
 
+	if (opt.diagnostic.options_state) {
+		UnsafePrint();
+	}
+
 	called = true;
+
 	pthread_mutex_unlock(&opt.mutex);
 }
 
-//------------------------------------------------------------------------------
-//read-only functions
-
-static const options *AcquireReadOnly(void)
-{
-	pthread_mutex_lock(&opt.mutex);
-
-	return (const options *) &opt;
-}
-
-static void ReleaseReadOnly(void)
-{
-	pthread_mutex_unlock(&opt.mutex);
-}
-
-void OptionsPrint(void)
+static void UnsafePrint(void)
 {
 	static const cstring *fmt =
 		"diagnostic\n"
@@ -260,21 +251,33 @@ void OptionsPrint(void)
 		"\tinteractive: %d\n"
 		"\n";
 
-	const options *ro_opt = AcquireReadOnly();
-
-	const int dall = ro_opt->diagnostic.all;
-	const int dopt = ro_opt->diagnostic.options_state;
-	const int dpass = ro_opt->diagnostic.compiler_passes;
-	const int dtokens = ro_opt->diagnostic.lexical_tokens;
-	const int dthread = ro_opt->diagnostic.multithreading;
-	const int irdasm = ro_opt->ir.disassemble;
-	const int mnorun = ro_opt->vm.no_run;
-	const int uinteractive = ro_opt->user.interactive;
-
-	ReleaseReadOnly();
+	const int dall = opt.diagnostic.all;
+	const int dopt = opt.diagnostic.options_state;
+	const int dpass = opt.diagnostic.compiler_passes;
+	const int dtokens = opt.diagnostic.lexical_tokens;
+	const int dthread = opt.diagnostic.multithreading;
+	const int irdasm = opt.ir.disassemble;
+	const int mnorun = opt.vm.no_run;
+	const int uinteractive = opt.user.interactive;
 
 	fprintf(stderr, fmt, dall, dopt, dpass, dtokens, dthread, irdasm,
 		mnorun, uinteractive);
+}
+
+//------------------------------------------------------------------------------
+//read-only functions
+
+//generate compiler cast warning if read-only contract isn't enforced by caller
+static const options *AcquireReadOnly(void)
+{
+	pthread_mutex_lock(&opt.mutex);
+
+	return (const options *) &opt;
+}
+
+static void ReleaseReadOnly(void)
+{
+	pthread_mutex_unlock(&opt.mutex);
 }
 
 bool OptionsGetFlag(const options_flag flag)

@@ -7,18 +7,15 @@
 
 #include <stdbool.h>
 
-//on failure this function will abort the program. On success the elements of 
-//argv are reordered and argc is modified such that **argv points to the first
-//unparsed element. If argc and argv are the main() arguments, (*argv)[argc]
-//will remain NULL.
+//on failure this function will abort the application program. On success argv
+//and argc are modified such that (*argv)[0] thru (*argv)[argc - 1] are the
+//unparsed elements. (*argv)[argc] will remain NULL by C99 section 5.2.1.1.2.
+//if the --Dopt option is set, the options state will be printed to stderr.
 void OptionsParse(int *argc, char ***argv);
-
-//print the entire options state to stderr
-void OptionsPrint(void);
 
 typedef enum options_flag {
 	DIAGNOSTIC_ALL,
-	DIAGNOSTIC_OPTION_STATE,
+	DIAGNOSTIC_OPTIONS_STATE,
 	DIAGNOSTIC_COMPILER_PASSES,
 	DIAGNOSTIC_LEXICAL_TOKENS,
 	DIAGNOSTIC_MULTITHREADING,
