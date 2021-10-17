@@ -17,146 +17,63 @@ typedef struct scanner {
 	options *opt;
 	Token_channel *chan;
 	char *pos; //current byte being analysed
-	char *curr; //helps process multi-char lexemes in tandem with pos
-	string src;
+	char *curr; //works with pos to process multi-char lexemes
+	const cstring *src;
 	size_t line;
 	token tok;
 } scanner;
 
-static void* StartRoutine(void *data);
-static void Scan(scanner *self);
-static void Consume(scanner *self, token_type type, size_t n);
-static void ConsumeIfPeek(scanner *self, char next, token_type a, token_type b);
-static void ConsumeComment(scanner *self);
-static void ConsumeNumber(scanner *self);
-static void ConsumeString(scanner *self);
-static void ConsumeSpace(scanner *self);
-static void ConsumeInvalid(scanner *self, uint8_t flags);
-static void ConsumeIdentOrKeyword(scanner *self);
-static size_t GetIdentOrKeywordLength(scanner *self);
-static size_t Synchronize(scanner *self);
-static char Peek(scanner *self);
-static bool IsLetterDigit(char ch);
-static bool IsLetter(char ch);
-static bool IsSpaceEOF(char ch);
-static void SendToken(scanner *self);
-static void SendEOF(scanner *self);
-static string GetTokenName(token_type type);
-static void TokenPrint(token tok, FILE *stream);
+static void* StartRoutine(void *);
+static void Scan(scanner *);
+static void Consume(scanner *, token_type, size_t);
+static void ConsumeIfPeek(scanner *, char, token_type, token_type);
+static void ConsumeComment(scanner *);
+static void ConsumeNumber(scanner *);
+static void ConsumeString(scanner *);
+static void ConsumeSpace(scanner *);
+static void ConsumeInvalid(scanner *, token_flags);
+static void ConsumeIdentOrKeyword(scanner *);
+static size_t GetIdentOrKeywordLength(scanner *);
+static size_t Synchronize(scanner *);
+static char Peek(scanner *);
+static bool IsLetterDigit(char);
+static bool IsLetter(char);
+static bool IsSpaceEOF(char);
+static void SendToken(scanner *);
+static void SendEOF(scanner *);
+static cstring *GetTokenName(token_type);
+static void TokenPrint(scanner *);
+static _Noreturn void Hang(void);
 
-static string GetTokenName(token_type type)
+xerror ScannerInit(const cstring *src, Token_channel *chan)
 {
-	STRING_TABLE_BEGIN
-		STRING_TABLE_ENTRY(_INVALID, "INVALID")
-		STRING_TABLE_ENTRY(_EOF, "EOF")
-		STRING_TABLE_ENTRY(_IDENTIFIER, "IDENTIFIER")
-		STRING_TABLE_ENTRY(_LITERALINT, "INT LITERAL")
-		STRING_TABLE_ENTRY(_LITERALFLOAT, "FLOAT LITERAL")
-		STRING_TABLE_ENTRY(_LITERALSTR, "STRING LITERAL")
-		STRING_TABLE_ENTRY(_SEMICOLON, "SEMICOLON")
-		STRING_TABLE_ENTRY(_LEFTBRACKET, "LEFTBRACKET")
-		STRING_TABLE_ENTRY(_RIGHTBRACKET, "RIGHTBRACKET")
-		STRING_TABLE_ENTRY(_LEFTPAREN, "LEFT PARENTHESIS")
-		STRING_TABLE_ENTRY(_RIGHTPAREN, "RIGHT PARENTHESIS")
-		STRING_TABLE_ENTRY(_LEFTBRACE, "LEFT BRACE")
-		STRING_TABLE_ENTRY(_RIGHTBRACE, "RIGHT BRACE")
-		STRING_TABLE_ENTRY(_DOT, "DOT")
-		STRING_TABLE_ENTRY(_TILDE, "TILDE")
-		STRING_TABLE_ENTRY(_COMMA, "COMMA")
-		STRING_TABLE_ENTRY(_COLON, "COLON")
-		STRING_TABLE_ENTRY(_EQUAL, "EQUAL")
-		STRING_TABLE_ENTRY(_EQUALEQUAL, "EQUAL EQUAL")
-		STRING_TABLE_ENTRY(_NOTEQUAL, "NOT EQUAL")
-		STRING_TABLE_ENTRY(_NOT, "NOT")
-		STRING_TABLE_ENTRY(_AND, "AND")
-		STRING_TABLE_ENTRY(_OR, "OR")
-		STRING_TABLE_ENTRY(_BITNOT, "BITWISE NOT")
-		STRING_TABLE_ENTRY(_AMPERSAND, "AMPERSAND")
-		STRING_TABLE_ENTRY(_BITOR, "BITWISE OR")
-		STRING_TABLE_ENTRY(_BITXOR, "BITWISE XOR")
-		STRING_TABLE_ENTRY(_LSHIFT, "LEFT SHIFT")
-		STRING_TABLE_ENTRY(_RSHIFT, "RIGHT SHIFT")
-		STRING_TABLE_ENTRY(_GREATER, "GREATER THAN")
-		STRING_TABLE_ENTRY(_LESS, "LESS THAN")
-		STRING_TABLE_ENTRY(_GEQ, "GREATER OR EQUAL")
-		STRING_TABLE_ENTRY(_LEQ, "LESS OR EQUAL")
-		STRING_TABLE_ENTRY(_ADD, "ADD")
-		STRING_TABLE_ENTRY(_MINUS, "MINUS")
-		STRING_TABLE_ENTRY(_STAR, "STAR")
-		STRING_TABLE_ENTRY(_DIV, "DIVISION")
-		STRING_TABLE_ENTRY(_MOD, "MODULO")
-		STRING_TABLE_ENTRY(_FOR, "FOR")
-		STRING_TABLE_ENTRY(_WHILE, "WHILE LOOP")
-		STRING_TABLE_ENTRY(_BREAK, "BREAK")
-		STRING_TABLE_ENTRY(_CONTINUE, "CONTINUE")
-		STRING_TABLE_ENTRY(_IF, "IF BRANCH")
-		STRING_TABLE_ENTRY(_ELSE, "ELSE BRANCH")
-		STRING_TABLE_ENTRY(_SWITCH, "SWITCH")
-		STRING_TABLE_ENTRY(_CASE, "CASE")
-		STRING_TABLE_ENTRY(_DEFAULT, "DEFAULT")
-		STRING_TABLE_ENTRY(_FALLTHROUGH, "FALLTHROUGH")
-		STRING_TABLE_ENTRY(_GOTO, "GOTO")
-		STRING_TABLE_ENTRY(_LABEL, "LABEL")
-		STRING_TABLE_ENTRY(_LET, "LET")
-		STRING_TABLE_ENTRY(_MUT, "MUTABLE")
-		STRING_TABLE_ENTRY(_STRUCT, "STRUCT")
-		STRING_TABLE_ENTRY(_IMPORT, "IMPORT")
-		STRING_TABLE_ENTRY(_SELF, "SELF")
-		STRING_TABLE_ENTRY(_FUNC, "FUNCTION")
-		STRING_TABLE_ENTRY(_PUB, "PUBLIC")
-		STRING_TABLE_ENTRY(_PRIV, "PRIVATE")
-		STRING_TABLE_ENTRY(_RETURN, "RETURN")
-		STRING_TABLE_ENTRY(_VOID, "VOID")
-		STRING_TABLE_ENTRY(_NULL, "NULL")
-		STRING_TABLE_ENTRY(_TRUE, "TRUE")
-		STRING_TABLE_ENTRY(_FALSE, "FALSE")
-	STRING_TABLE_END
-
-	return STRING_TABLE_FETCH(type, "LOOKUP ERROR");
-}
-
-static void TokenPrint(token tok, FILE *stream)
-{
-	const string lexfmt = "TOKEN { line %-10zu: %-20s: %.*s }\n";
-	const string nolexfmt = "TOKEN { line %-10zu: %-20s }\n";
-
-	const size_t line = tok.line;
-	const string name = GetTokenName(tok.type);
-	const char *data = tok.lexeme.data;
-
-	//sometimes gcc won't trigger a -Werror-format in -O0 to flag situations
-	//where a size_t is used for a field format specifier (which is an int).
-	//hence a manual check in debug mode.
-	assert(tok.lexeme.len <= INT_MAX);
-	const int len = (int) tok.lexeme.len;
-
-	if (data) {
-		fprintf(stream, lexfmt, line, name, len, data);
-	} else {
-		fprintf(stream, nolexfmt, line, name);
-	}
-}
-
-xerror ScannerInit(options *opt, string src, Token_channel *chan)
-{
-	assert(opt);
 	assert(src);
 	assert(chan);
-
-	pthread_attr_t attr;
-	pthread_attr_init(&attr);
-	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
 	scanner *scn = NULL;
 	kmalloc(scn, sizeof(scanner));
 
-	scn->opt = opt;
-	scn->chan = chan;
-	scn->pos = src;
-	scn->curr = NULL;
-	scn->src = src;
-	scn->line = 1;
-	scn->tok = (token) {0};
+	*scn = (scanner) {
+		.opt = opt,
+		.chan = chan,
+		.pos = src,
+		.curr = NULL,
+		.src = src,
+		.line = 1,
+		.tok = {
+			.lexeme = NULL,
+			.type = _INVALID,
+			.line = 0,
+			.flags = {
+				.valid = 0,
+				.bad_string = 0
+			}
+		},
+	};
+
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED);
 
 	pthread_t thread;
 	int err = pthread_create(&thread, &attr, StartRoutine, scn);
@@ -166,21 +83,26 @@ xerror ScannerInit(options *opt, string src, Token_channel *chan)
 		return XETHREAD;
 	}
 
-	if (opt->diagnostic & DIAGNOSTIC_THREAD) {
+	return XESUCCESS;
+}
+
+static void *StartRoutine(void *pthread_payload)
+{
+	scanner *self = (scanner *) pthread_payload;
+
+	const bool trace = OptionsGetFlag(DIAGNOSTIC_MULTITHREADING);
+
+	if (trace) {
 		xerror_trace("scanner running in detached thread");
 		XerrorFlush();
 	}
 
-	return XESUCCESS;
-}
-
-static void *StartRoutine(void *data)
-{
-	assert(data);
-
-	scanner *self = (scanner *) data;
-
 	Scan(self);
+
+	if (trace) {
+		xerror_trace("scanner shutting down");
+		XerrorFlush();
+	}
 
 	free(self);
 
@@ -334,7 +256,12 @@ static void Scan(scanner *self)
 			break;
 
 		default:
-			ConsumeInvalid(self, TOKEN_OKAY);
+			const token_flags flags = {
+				.valid = 0,
+				.bad_string = 0
+			};
+
+			ConsumeInvalid(self, flags);
 		}
 	}
 
@@ -344,16 +271,119 @@ exit:
 	return;
 }
 
+static cstring *GetTokenName(token_type type)
+{
+	static const cstring *lookup = {
+		[_INVALID] = "INVALID",
+		[_EOF] = "EOF",
+		[_IDENTIFIER] = "IDENTIFIER",
+		[_LITERALINT] = "INT LITERAL",
+		[_LITERALFLOAT] = "FLOAT LITERAL",
+		[_LITERALSTR] = "STRING LITERAL",
+		[_SEMICOLON] = "SEMICOLON",
+		[_LEFTBRACKET] = "LEFTBRACKET",
+		[_RIGHTBRACKET] = "RIGHTBRACKET",
+		[_LEFTPAREN] = "LEFT PARENTHESIS",
+		[_RIGHTPAREN] = "RIGHT PARENTHESIS",
+		[_LEFTBRACE] = "LEFT BRACE",
+		[_RIGHTBRACE] = "RIGHT BRACE",
+		[_DOT] = "DOT",
+		[_TILDE] = "TILDE",
+		[_COMMA] = "COMMA",
+		[_COLON] = "COLON",
+		[_EQUAL] = "EQUAL",
+		[_EQUALEQUAL] = "EQUAL EQUAL",
+		[_NOTEQUAL] = "NOT EQUAL",
+		[_NOT] = "NOT",
+		[_AND] = "AND",
+		[_OR] = "OR",
+		[_BITNOT] = "BITWISE NOT",
+		[_AMPERSAND] = "AMPERSAND",
+		[_BITOR] = "BITWISE OR",
+		[_BITXOR] = "BITWISE XOR",
+		[_LSHIFT] = "LEFT SHIFT",
+		[_RSHIFT] = "RIGHT SHIFT",
+		[_GREATER] = "GREATER THAN",
+		[_LESS] = "LESS THAN",
+		[_GEQ] = "GREATER OR EQUAL",
+		[_LEQ] = "LESS OR EQUAL",
+		[_ADD] = "ADD",
+		[_MINUS] = "MINUS",
+		[_STAR] = "STAR",
+		[_DIV] = "DIVISION",
+		[_MOD] = "MODULO",
+		[_FOR] = "FOR",
+		[_WHILE] = "WHILE LOOP",
+		[_BREAK] = "BREAK",
+		[_CONTINUE] = "CONTINUE",
+		[_IF] = "IF BRANCH",
+		[_ELSE] = "ELSE BRANCH",
+		[_SWITCH] = "SWITCH",
+		[_CASE] = "CASE",
+		[_DEFAULT] = "DEFAULT",
+		[_FALLTHROUGH] = "FALLTHROUGH",
+		[_GOTO] = "GOTO",
+		[_LABEL] = "LABEL",
+		[_LET] = "LET",
+		[_MUT] = "MUTABLE",
+		[_STRUCT] = "STRUCT",
+		[_IMPORT] = "IMPORT",
+		[_SELF] = "SELF",
+		[_FUNC] = "FUNCTION",
+		[_PUB] = "PUBLIC",
+		[_PRIV] = "PRIVATE",
+		[_RETURN] = "RETURN",
+		[_VOID] = "VOID",
+		[_NULL] = "NULL",
+		[_TRUE] = "TRUE",
+		[_FALSE] = "FALSE",
+	};
+
+	if (type <= _INVALID && _type >= TOKEN_TYPE_COUNT) {
+		return lookup[type];
+	}
+
+	return "LOOKUP ERROR";
+}
+
+static void TokenPrint(scanner *self)
+{
+	const cstring *lexfmt = "TOKEN { line %-10zu: %-20s: %s }\n";
+	const cstring *nolexfmt = "TOKEN { line %-10zu: %-20s }\n";
+
+	const size_t line = self->line;
+	const cstring *name = GetTokenName(self->type);
+	const cstring *lexeme  = self->lexeme;
+
+	if (lexeme) {
+		fprintf(stderr, lexfmt, line, name, lexeme);
+	} else {
+		fprintf(stderr, nolexfmt, line, name);
+	}
+}
+
+static _Noreturn void Hang(void)
+{
+	for (;;) asm volatile ("") ;
+}
+
 static void SendToken(scanner *self)
 {
 	assert(self);
 	assert(self->chan->flags & CHANNEL_OPEN);
 
-	if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
-		TokenPrint(self->tok, stderr);
+	if (OptionsGetFlag(DIAGNOSTIC_LEXICAL_TOKENS)) {
+		TokenPrint(self);
 	}
 
-	(void) TokenChannelSend(self->chan, self->tok);
+	xerror err = TokenChannelSend(self->chan, self->tok);
+
+	if (err) {
+		xerror_fatal("cannot send token: %s", XerrorDescription(err));
+		xerror_fatal("cannot fulfill EOF contract on token channel");
+		xerror_fatal("hanging");
+		Hang();
+	}
 }
 
 static void SendEOF(scanner *self)
@@ -361,13 +391,12 @@ static void SendEOF(scanner *self)
 	assert(self);
 
 	self->tok = (token) {
-		.lexeme = {
-			.data = NULL,
-			.len = 0
-		},
+		.lexeme = NULL
 		.type = _EOF,
 		.line = self->line,
-		.flags = TOKEN_OKAY
+		.flags = {
+			.valid = 1,
+		}
 	};
 
 	SendToken(self);
@@ -383,13 +412,12 @@ static void ConsumeIdentOrKeyword(scanner *self)
 	const kv_pair *kv = kmap_lookup(self->pos, word_length);
 
 	self->tok = (token) {
-		.lexeme = {
-			.data = self->pos,
-			.len = word_length
-		},
-		.type = kv ? kv->typ: _IDENTIFIER,
+		.lexeme = cStringFromView(self->pos, word_length),
+		.type = kv ? kv->typ : _IDENTIFIER,
 		.line = self->line,
-		.flags = TOKEN_OKAY
+		.flags = {
+			.valid = 1,
+		}
 	};
 
 	SendToken(self);
@@ -397,6 +425,7 @@ static void ConsumeIdentOrKeyword(scanner *self)
 	self->pos = self->curr;
 }
 
+//on return self->curr is set to the first unscanned character
 static size_t GetIdentOrKeywordLength(scanner *self)
 {
 	assert(self);
@@ -440,20 +469,19 @@ static void Consume(scanner *self, token_type type, size_t n)
 	assert(type < _TOKEN_TYPE_COUNT);
 
 	self->tok = (token) {
-		.lexeme = {
-			.data = self->pos,
-			.len = n
-		},
+		.lexeme = cStringFromView(self->pos, n);
 		.type = type,
 		.line = self->line,
-		.flags = TOKEN_OKAY
+		.flags = {
+			.valid = 1,
+		}
 	};
 
 	SendToken(self);
 	self->pos += n;
 }
 
-static void ConsumeInvalid(scanner *self, uint8_t flags)
+static void ConsumeInvalid(scanner *self, token_flags flags)
 {
 	assert(self);
 
@@ -466,10 +494,7 @@ static void ConsumeInvalid(scanner *self, uint8_t flags)
 	size_t total_invalid_chars = Synchronize(self);
 
 	self->tok = (token) {
-		.lexeme = {
-			.data = start,
-			.len = total_invalid_chars
-		},
+		.lexeme = cStringFromView(start, total_invalid_chars);
 		.type = _INVALID,
 		.line = self->line,
 		.flags = flags
@@ -550,13 +575,12 @@ static void ConsumeNumber(scanner *self)
 	delta = self->curr - self->pos;
 
 	self->tok = (token) {
-		.lexeme = {
-			.data = self->pos,
-			.len = (size_t) delta
-		},
+		.lexeme = cStringFromView(self->pos, (size_t) delta);
 		.type = guess,
 		.line = self->line,
-		.flags = TOKEN_OKAY
+		.flags = {
+			.valid = 1,
+		}
 	};
 
 	SendToken(self);
@@ -588,7 +612,12 @@ static void ConsumeString(scanner *self)
 
 	while (*self->curr != '"') {
 		if (*self->curr == '\0') {
-			ConsumeInvalid(self, TOKEN_BAD_STR);
+			const token_flags flags = {
+				.valid = 0,
+				.bad_string = 1
+			};
+
+			ConsumeInvalid(self, flags);
 			self->pos = self->curr;
 			return;
 		}
@@ -600,13 +629,13 @@ static void ConsumeString(scanner *self)
 	size_t delta = (size_t) ((self->curr - self->pos) - 1);
 
 	self->tok = (token) {
-		.lexeme = {
-			.data = delta ? self->pos + 1 : NULL,
-			.len = delta
-		},
+		.lexeme = delta ? cStringFromView(self->pos + 1, delta) : NULL,
 		.type = _LITERALSTR,
 		.line = self->line,
-		.flags = TOKEN_OKAY
+		.flags = {
+			.valid = 1,
+			.bad_string = 0
+		}
 	};
 
 	SendToken(self);
@@ -616,7 +645,7 @@ static void ConsumeString(scanner *self)
 static char Peek(scanner *self)
 {
 	assert(self);
-	assert(*self->pos != '\0' && "attempted buffer over-read");
+	assert(*self->pos != '\0' && "buffer over-read");
 
 	return *(self->pos + 1);
 }

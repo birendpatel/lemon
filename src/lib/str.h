@@ -8,6 +8,7 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "vector.h"
 
@@ -25,6 +26,19 @@ static cstring cStringDuplicate(const cstring *cstr)
 	if (!new) {
 		abort();
 	}
+
+	return new;
+}
+
+static cstring *cStringFromView(const char *data, size_t len)
+{
+	const size_t bytes = sizeof(char) * len;
+
+	char *new = VectorMalloc(bytes + 1);
+
+	memcpy(new, data, bytes);
+
+	new[len] = '\0';
 
 	return new;
 }
