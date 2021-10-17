@@ -56,7 +56,9 @@ const char *XerrorDescription(const xerror err)
 	STRING_TABLE_ENTRY(XETHREAD, "multithreading failure")
 	STRING_TABLE_ENTRY(XESHELL, "shell error")
 	STRING_TABLE_ENTRY(XEPARSE, "parsing to AST failed")
+	XEPARAM, "bad input parameter"
 	STRING_TABLE_ENTRY(XEUNDEFINED, "unspecified error")
+
 	
 	STRING_TABLE_END
 

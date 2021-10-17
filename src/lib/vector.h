@@ -77,10 +77,18 @@ static size_t VectorGrow(size_t curr_capacity)
 
 //------------------------------------------------------------------------------
 
-//application code may directly modify vector members provided sizeof(buffer) ==
-//cap, len <= cap, and buffer is a non-null pointer compatible with stdlib free
-//and (m)(re)alloc calls. Provided these three restrictions are held, any covert 
-//modifications or reassignments will not hinder subsequent vector operations.
+//application code may directly modify vector members. After any modification
+//the vector must be equal to the default vector {0, 0, NULL} or the following 
+//restrictions must be met:
+//
+//1. buffer != NULL
+//2. sizeof(buffer)/sizeof(buffer[0]) == cap
+//3. len <= cap
+//4. buffer is compatible with stdlib free and (m)(re)alloc
+//
+//Provided these restrictions are met, any convert modification or reassignment
+//will not hinder subsequent vector operations. If the vector is the default
+//then no subsequent operation is well-defined other than VectorInit.
 //
 //these restrictions are enforced during vector operations by stdlib assertions.
 #define declare_vector(T, pfix) 					       \
@@ -158,8 +166,8 @@ cls void pfix##VectorPush(pfix##_vector *self, const T datum)                  \
 {									       \
 	assert(self);							       \
 	assert(self->len <= self->cap);                                        \
-	assert(sizeof(self->buffer)/sizeof(T) == self->cap);	               \
 	assert(self->buffer);						       \
+	assert(sizeof(self->buffer)/sizeof(T) == self->cap);	               \
                                                                                \
 	if (self->len == SIZE_MAX) {                                           \
 		VectorTrace("reached absolute capacity; aborting program");    \
@@ -185,6 +193,7 @@ cls void pfix##VectorPush(pfix##_vector *self, const T datum)                  \
 cls T pfix##VectorGet(pfix##_vector *self, const size_t index)                 \
 {									       \
 	assert(self);                                                          \
+	assert(self->buffer);                                                  \
 	assert(self->len <= self->cap);					       \
 	assert(sizeof(self->buffer)/sizeof(T) == self->cap);		       \
 	assert(index < self->len);                                             \
@@ -196,6 +205,7 @@ cls T pfix##VectorGet(pfix##_vector *self, const size_t index)                 \
 cls T pfix##VectorSet(pfix##_vector *self, const size_t index, const T datum)  \
 {									       \
 	assert(self);                                                          \
+	assert(self->buffer);						       \
 	assert(self->len <= self->cap);					       \
 	assert(sizeof(self->buffer)/sizeof(T) == self->cap);		       \
 	assert(index < self->len);                                             \
@@ -213,6 +223,7 @@ cls T pfix##VectorSet(pfix##_vector *self, const size_t index, const T datum)  \
 cls void pfix##VectorReset(pfix##_vector *self, void (*vfree) (T))	       \
 {									       \
 	assert(self);                                                          \
+	assert(self->buffer);                                                  \
 	assert(self->len <= self->cap);					       \
 	assert(sizeof(self->buffer)/sizeof(T) == self->cap);		       \
 									       \

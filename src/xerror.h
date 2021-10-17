@@ -68,7 +68,8 @@ void XerrorFlush(void);
 #define XETHREAD      7 //multithreading issue has occured
 #define XESHELL	      8 //shell error
 #define XEPARSE	      9 //parsing to AST failed
-#define XEUNDEFINED  10 //unspecified error
+#define XEPARAM	     10 //bad input parameter
+#define XEUNDEFINED  11 //unspecified error
 
 //code map for lib/channel.h
 #define CHANNEL_ESUCCESS XESUCCESS

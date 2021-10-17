@@ -21,17 +21,16 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-void Terminate(xerror) __attribute__((noreturn));
 void ShowHeader(void);
-void ExecuteFromRepl(void) __attribute__((noreturn));
-int ReadTerminal(string *);
-bool IsShellCommand(const string *);
-void ExecShell(const options *, const string *);
+xerror ExecuteFromRepl(void);
+cstring *ReadStandardInput(void);
+xerror ExecuteShell(const cstring *);
 void FileCleanup(FILE **);
-void ExecuteFromFiles(const int, char **) __attribute__((noreturn));
-string FileToString(FILE *openfile, xerror *err);
-xerror GetFilesize(FILE *, size_t *);
+void ExecuteFromFiles(const int, char **); 
+string FileToString(FILE *, xerror *);
+cstring *cStringFromFile(FILE *, xerror *);
 xerror Compile(const options *, string *, const cstring *);
+file *CreateSyntaxTree(const cstring *, const cstring *);
 
 //------------------------------------------------------------------------------
 
@@ -42,24 +41,23 @@ int main(int argc, char **argv)
 	xerror err = XEUNDEFINED;
 
 	if (argv[argc]) {
-		ExecuteFromFiles(argc, argv);
+		err = ExecuteFromFiles(argc, argv);
 	} else {
-		ExecuteFromRepl();
+		ShowHeader();
+		err = ExecuteFromRepl();
 	}
-}
 
-void Terminate(xerror err)
-{
 	if (err) {
 		xerror_fatal("%s", XerrorDescription(err));
-		exit(EXIT_FAILURE);
+		return EXIT_FAILURE;
 	}
 
 	XerrorFlush();
-	exit(EXIT_SUCCESS);
+	return EXIT_SUCCESS;
 }
 
 //------------------------------------------------------------------------------
+//repl management
 
 void ShowHeader(void)
 {
@@ -74,116 +72,94 @@ void ShowHeader(void)
 	fprintf(stdout, msg, LEMON_VERSION, __DATE__, __TIME__);
 }
 
-void ExecuteFromRepl(void)
+xerror ExecuteFromRepl(void)
 {
 	xerror err = XEUNDEFINED;
-	const xerror fatal_errors = ~(XESUCCESS | XEPARSE);
+	const xerror fatal_errors = ~(XESHELL | XEPARSE);
 
-	RAII(TryStringFree) string input = StringInit(KiB(1));
+	cstring *input = ReadStandardInput();
 
-	ShowHeader();
-
-	while (true) {
-		if (ReadTerminal(&input) == EOF) {
-			Terminate(XESUCCESS);
-		}
-		
-		if (IsShellCommand(input)) {
-			ExecShell(opt, input);
+	while (input) {
+		if (input[0] == '$') {
+			err = ExecuteShell(input);
 		} else {
-			err = Compile(opt, input, NULL);
-
-			if (err & fatal_errors) {
-				xerror_issue("cannot compile from repl");
-				Terminate(err);
-			}
+			err = Compile(input, NULL);
 		}
 
-		StringReset(&input);
+		free(input);
+
+		if (err & fatal_errors) {
+			xerror_issue("cannot execute via REPL");
+			return err;
+		}
+
+		input = ReadStandardInput();
 	}
+
+	return XESUCCESS;
 }
 
-//returns EOF if encountered a SIGINT.
-int ReadTerminal(string *input)
+//if encountered SIGINT return NULL, else return a dynamically allocated pointer
+cstring *ReadStandardInput(void)
 {
-	assert(input);
+	vstring buffer = vStringInit(KiB(1));
 
-	const cstring *wait_msg = ">>> ";
-	const cstring *continue_msg = "... ";
-	
-	xerror err = XEUNDEFINED;
 	int prev = 0;
 	int curr = 0;
 
-	fprintf(stdout, wait_msg);
+	printf(">>> ");
 
 	while (true) {
 		fflush(stdout);
 
-		curr = fgetc(stdin);
+		curr = getchar(); 
 
-		if (curr == EOF) {
-			fprintf(stdout, "\n");
-			return EOF;
-		}
+		switch(curr) {
+		case EOF:
+			printf("\n");
+			return NULL;
 
-		if (curr == '\n') {
+		case '\n':
 			if (prev == '\n') {
-				break;
-			}
+				vStringTrim(&buffer, '\n');
+				return cStringFromvString(&buffer);
+			} 
+			
+			printf("... ");
+			fallthrough;
 
-			fprintf(stdout, continue_msg);
+		default:
+			vStringAppend(&buffer, (char) curr);
+			prev = curr;
+			break;
 		}
-
-		StringAppend(input, (char) curr);
-
-		prev = curr;
 	}
-
-	StringTrim(input, '\n');
-
-	return 0;
 }
 
-//------------------------------------------------------------------------------
-
-bool IsShellCommand(const string *input)
+xerror ExecuteShell(const cstring *cstr)
 {
-	const char shell_indicator = '$';
-	const char first_character = StringGet(input, 0);
+	assert(cstr);
+	assert(cstr[0] == '$');
 
-	if (first_character == shell_indicator) {
-		return true;
+	cstring *cmd = NULL;
+	const cstring *santized_input = cstr + 1;
+
+	if (*sanitized_input) {
+		cmd = sanitized_input;
 	}
 
-	return false;
-}
-
-void ExecShell(const options *opt, const string *src)
-{
-	assert(opt);
-	assert(src);
-
-	int err = 0;
-
-	const cstring *null_command = "$";
-	const cstring *input = src->vec.buffer;
-	
-	bool match = !strcmp(null_command, input);
-
-	if (match) {
-		err = system(NULL);
-	} else {
-		const cstring *command = input + 1;
-		err = system(command);
-	}
+	int err = system(cmd);
 
 	if (err == -1) {
 		perror(NULL);
+		return XESHELL;
 	}
+
+	return XESUCCESS;
 }
 
 //------------------------------------------------------------------------------
+//file management
 
 void FileCleanup(FILE **handle)
 {
@@ -194,39 +170,40 @@ void FileCleanup(FILE **handle)
 
 void ExecuteFromFiles(const int argc, char **argv)
 {
-	assert(opt);
 	assert(argc);
 	assert(argv);
 
 	for (int i = 0; i < argc; i++) {
 		xerror err = XEUNDEFINED;
 		const cstring *fname = argv[i];
+
 		RAII(FileCleanup) FILE *fhandle = fopen(fname, "r");
 
 		if (!fhandle) {
 			xerror_issue("%s: %s", fname, strerror(errno));
-			Terminate(XEFILE);
+			return XEFILE;
 		}
 	
-		RAII(TryStringFree) string src = FileToString(fhandle, &err);
+		RAII(StdlibFree) cstring *src = cStringFromFile(fhandle, &err);
 
 		if (err) {
 			xerror_issue("%s: cannot copy file to memory", fname);
-			Terminate(XEFILE);
+			return XEFILE;
 		}
 
-		err = Compile(opt, &src, fname);
+		err = Compile(&src, fname);
 
 		if (err) {
 			xerror_issue("%s: cannot compile from file", fname);
-			Terminate(XEFILE);
+			return XEFILE;
 		}
 	}
 
-	Terminate(XESUCCESS);
+	return XESUCCESS;
 }
 
-string FileToString(FILE *openfile, xerror *err)
+//on failure return NULL, else return a dynamically allocated pointer
+cstring *cStringFromFile(FILE *openfile, xerror *err)
 {
 	assert(openfile);
 	assert(err);
@@ -236,36 +213,32 @@ string FileToString(FILE *openfile, xerror *err)
 
 	if (*err) {
 		xerror_issue("cannot calculate file size");
-		return (string) {0};
+		return NULL;
 	}
 
-	char *buffer = NULL;
-	size_t buffer_length = sizeof(char) * filesize + 1;
-	kmalloc(buffer, filesize);
+	const size_t buflen = sizeof(char) * filesize + 1;
+	cstring *buffer = AbortMalloc(buflen);
 
 	size_t total_read = fread(buffer, sizeof(char), filesize, openfile);
 
 	if (total_read != filesize) {
 		xerror_issue("%s", strerror(errno));
 		*err = XEFILE;
-		return (string) {0};
+		return NULL;
 	}
 
 	buffer[filesize] = '\0';
-	string s = StringFromHeapCString(buffer);
-	
 	*err = XESUCCESS;
-	return s;
+	return buffer;
 }
 
-//on return the file position will be set to the beginning of the file
+//on return the openfile position will be set to zero
 xerror GetFilesize(FILE *openfile, size_t *bytes)
 {
 	assert(openfile);
 	assert(bytes);
 
 	xerror xerr = XESUCCESS;
-
 	rewind(openfile);
 
 	long err = fseek(openfile, 0L, SEEK_END);
@@ -285,7 +258,6 @@ xerror GetFilesize(FILE *openfile, size_t *bytes)
 	}
 
 	*bytes = (size_t) bytecount;
-
 	xerr = XESUCCESS;
 
 reset:
@@ -294,22 +266,36 @@ reset:
 }
 
 //------------------------------------------------------------------------------
+//compiler passes
 
-xerror Compile(const options *opt, string *src, const cstring *alias)
+xerror Compile(const cstring *src, const cstring *alias)
 {
-	assert(opt);
 	assert(src);
 	assert(alias);
 
-	if (opt->diagnostic & DIAGNOSTIC_PASS) {
+	if (OptionsGetFlag(DIAGNOSTIC_COMPILER_PASSES)) {
 		fprintf(stderr, "compiler pass: echo\n");
 	}
 
-	file *ast = SyntaxTreeInit(opt, src, alias);
+	file *ast = CreateSyntaxTree(src, alias);
 
 	if (!ast) {
-		xerror_issue("cannot create abstact syntax tree");
+		xerror_issue("cannot create abstract syntax tree");
 		return XEPARSE;
+	}
+
+	return XESUCCESS;
+}
+
+file *CreateSyntaxTree(const cstring *src, const cstring *alias)
+{
+	assert(src);
+	assert(alias);
+
+	file *ast = SyntaxTreeInit(src, alias);
+
+	if (!ast) {
+		return NULL;
 	}
 
 	if (ast->errors) {
@@ -320,9 +306,8 @@ xerror Compile(const options *opt, string *src, const cstring *alias)
 		}
 
 		SyntaxTreeFree(ast);
-		return XEPARSE;
+		return NULL;
 	}
 
-	return XESUCCESS;
+	return ast;
 }
-

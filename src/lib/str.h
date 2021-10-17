@@ -42,7 +42,7 @@ static void vStringAppend(vstring *, const char);
 static char vStringGet(const vstring *, size_t);
 static void vStringTrim(vstring *, const char);
 static void vStringReset(vstring *);
-static const cstring *vStringBuffer(vstring *);
+static const cstring *vStringRaw(vstring *);
 
 static vstring vStringInit(const size_t capacity)
 {
@@ -134,10 +134,20 @@ static void vStringReset(vstring *vstr)
 	vStringTerminate__internal(vstr);
 }
 
-static const cstring *vStringBuffer(vstring *vstr)
+//the vstr is transformed t to a dynamically allocated cstr. If the vstr must
+//be used after this call, it must be reinitialized with vStringInit.
+static cstring *cStringFromvString(vstring *vstr)
 {
 	assert(vstr);
 	assert(vstr->len != 0);
 
-	return vstr->buffer;
+	cstring buffer = vstr->buffer;
+
+	vstr = (vstring) {
+		.len = 0,
+		.cap = 0,
+		.buffer = NULL
+	};
+
+	return buffer;
 }

@@ -29,14 +29,14 @@
 //------------------------------------------------------------------------------
 //allocation utils
 
-static size_t KiB(size_t kilobytes)
+static size_t KiB(double kilobytes)
 {
-	return 1024 * kilobytes;
+	return (size_t) (1024 * kilobytes);
 }
 
-static size_t MiB(size_t megabytes)
+static size_t MiB(double megabytes)
 {
-	return 1048576 * megabytes;
+	return (size_t) (1048576 * megabytes);
 }
 
 static void *AbortMalloc(size_t bytes) __attribute__((malloc))
@@ -48,4 +48,10 @@ static void *AbortMalloc(size_t bytes) __attribute__((malloc))
 	}
 
 	return region;
+}
+
+//for use with RAII
+static void StdlibFree(void **ptr)
+{
+	free(*ptr);
 }
