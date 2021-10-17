@@ -9,12 +9,17 @@
 
 #include "xerror.h"
 
-#define BUFFER_CAPACITY ((uint8_t) 64)
-#define MESSAGE_MAX_LENGTH ((uint8_t) 128)
+static const cstring *GetLevelName(const int);
+static void FlushBuffer(bool);
+
+enum xqueue_properties {
+	buffer_capacity = (uint8_t) 64,
+	message_max_length = (uint8_t 128)
+};
 
 struct xqueue {
 	pthread_mutex_t mutex;
-	char buf[BUFFER_CAPACITY][MESSAGE_MAX_LENGTH];
+	char buf[buffer_capacity][message_max_length];
 	uint8_t len;
 };
 
@@ -23,9 +28,9 @@ static struct xqueue xq = {
 	.len = 0
 };
 
-static const char *GetLevelName(const int level)
+static const cstring *GetLevelName(const int level)
 {
-	static const char *lookup[] = {
+	static const cstring *lookup[] = {
 		[XFATAL] = "FATAL",
 		[XERROR] = "ERROR",
 		[XTRACE] = "TRACE"
@@ -40,35 +45,30 @@ static const char *GetLevelName(const int level)
 
 const char *XerrorDescription(const xerror err)
 {
-	assert(err >= 0);
+	static const cstring *lookup[] = {
+		[XESUCCESS] = "function terminated successfully",
+		[XENOMEM] = "dynamic allocation failed",
+		[XEOPTION] = "options parsing failed",
+		[XEFULL] = "data structure reached capacity",
+		[XEFILE] = "IO failure",
+		[XEBUSY] = "thread is waiting on a condition",
+		[XECLOSED] = "communication channel is closed",
+		[XETHREAD] = "multithreading failure",
+		[XESHELL] = "shell failure",
+		[XEUNDEFINED] = "unspecified error"
+	};
 
-	const size_t code = (size_t) err;
-	
-	STRING_TABLE_BEGIN
-	
-	STRING_TABLE_ENTRY(XESUCCESS, "function terminated successfully")
-	STRING_TABLE_ENTRY(XENOMEM, "dynamic allocation failed")
-	STRING_TABLE_ENTRY(XEOPTION, "options parsing failed")
-	STRING_TABLE_ENTRY(XEFULL, "data structure is at capacity")
-	STRING_TABLE_ENTRY(XEFILE, "IO failure")
-	STRING_TABLE_ENTRY(XEBUSY, "thread is waiting on a condition")
-	STRING_TABLE_ENTRY(XECLOSED, "communication channel is closed")
-	STRING_TABLE_ENTRY(XETHREAD, "multithreading failure")
-	STRING_TABLE_ENTRY(XESHELL, "shell error")
-	STRING_TABLE_ENTRY(XEPARSE, "parsing to AST failed")
-	XEPARAM, "bad input parameter"
-	STRING_TABLE_ENTRY(XEUNDEFINED, "unspecified error")
+	if (err >= XESUCCESS && err <= XEUNDEFINED) {
+		return lookup[err];
+	}
 
-	
-	STRING_TABLE_END
-
-	return STRING_TABLE_FETCH(code, "no error description available");
+	return "no error description available";	
 }
 
 static void FlushBuffer(bool need_mutex)
 {
 	if (need_mutex) {
-		//mutex is a fast variant; return code is useless
+		//the mutex is a fast variant; return code is not useful
 		(void) pthread_mutex_lock(&xq.mutex);
 	}
 
@@ -93,11 +93,11 @@ void XerrorFlush(void)
 //source code might still execute perfectly even if the logger breaks.
 void XerrorLog 
 (
-	const char *file,
-	const char *func,
+	const cstring *file,
+	const cstring *func,
 	const int line,
 	const int level,
-	const char *msg,
+	const cstring *msg,
 	...
 )
 {
@@ -112,13 +112,13 @@ void XerrorLog
 
 	pthread_mutex_lock(&xq.mutex);
 
-	if (xq.len == BUFFER_CAPACITY) {
+	if (xq.len == buffer_capacity) {
 		FlushBuffer(false);
 	}
 
 	int total_printed = snprintf(
 		xq.buf[xq.len],
-		MESSAGE_MAX_LENGTH,
+		message_max_length,
 		"(%p) %s %s:%s:%d ",
 		(void *) pthread_self(),
 		GetLevelName(level),
@@ -131,7 +131,7 @@ void XerrorLog
 		total_printed = 0;
 	}
 
-	int remaining_chars = (int) MESSAGE_MAX_LENGTH - total_printed;
+	int remaining_chars = (int) message_max_length - total_printed;
 	assert(remaining_chars >= 0);
 
 	char *msg_offset = xq.buf[xq.len] + total_printed;
@@ -153,7 +153,7 @@ void XerrorLog
 	va_end(args);
 }
 
-void XerrorUser(const size_t line, const string msg, ...)
+void XerrorUser(const size_t line, const cstring *msg, ...)
 {
 	assert(msg);
 
