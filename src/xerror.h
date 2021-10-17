@@ -22,20 +22,19 @@
 #include "../extern/cexception/CException.h"
 #include "lib/str.h"
 
-//xerror is guaranteed to always alias int for glibc and backwards compatibility
 typedef int xerror;
 
 //this function enqueues a new error message to an internal thread-safe buffer.
-//the buffer will automatically flush when full or when the level is XFATAL. All
-//messages are guaranteed to be newline terminated.
+//The buffer will automatically flush to stderr when full or when the level is 
+//XFATAL. All messages are guaranteed to be newline terminated.
 __attribute__((__format__(__printf__, 5, 6)))
 void XerrorLog
 (
-	const char *file,
-	const char *func,
+	const cstring *file,
+	const cstring *func,
 	const int line,
 	const int level,
-	const char *msg,
+	const cstring *msg,
 	...
 );
 
@@ -54,7 +53,7 @@ XerrorLog(__FILE__, __func__, __LINE__, XERROR, msg, ##__VA_ARGS__)
 #define xerror_trace(msg, ...) \
 XerrorLog(__FILE__, __func__, __LINE__, XTRACE, msg, ##__VA_ARGS__)
 
-//manual full flush
+//manual stderr flush
 void XerrorFlush(void);
 
 //error codes
@@ -68,22 +67,21 @@ void XerrorFlush(void);
 #define XETHREAD      7 //multithreading issue has occured
 #define XESHELL	      8 //shell error
 #define XEPARSE	      9 //parsing to AST failed
-#define XEPARAM	     10 //bad input parameter
-#define XEUNDEFINED  11 //unspecified error
+#define XEUNDEFINED  10 //unspecified error
 
 //code map for lib/channel.h
 #define CHANNEL_ESUCCESS XESUCCESS
 #define CHANNEL_EBUSY	 XEBUSY
 #define CHANNEL_ECLOSED  XECLOSED
 
-const char *XerrorDescription(const xerror err);
+const cstring *XerrorDescription(const xerror err);
 
 //exceptions
 #define XXPARSE ((CEXCEPTION_T) 1) // cannot parse the current token
 
-//display an error message to stderr in red font; does not log to xerror buffer
-//if line is > 0 then the message is prefixed with "line #:"
-void XerrorUser(const size_t line, const string msg, ...); 
+//print a stderr message in red font; does not log to the internal buffer. If 
+//line > 0 then the message is prefixed with "line #:"
+void XerrorUser(const size_t line, const cstring *msg, ...); 
 
 //colours provided by @gon1332 at stackoverflow.com/questions/2616906/
 #ifdef COLOURS
