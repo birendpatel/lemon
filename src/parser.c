@@ -23,9 +23,7 @@
 
 #include "parser.h"
 #include "defs.h"
-
 #include "lib/channel.h"
-#include "lib/vector.h"
 
 typedef struct parser parser;
 
@@ -87,10 +85,10 @@ static expr *RecArrayLiteral(parser *self);
 static expr *RecIdentifier(parser *self);
 static expr *RecAccess(parser *self, expr *prev);
 
-file *SyntaxTreeInit(options *opt, string src, string alias)
+file *SyntaxTreeInit(const cstring *src, const cstring *alias)
 {
-	assert(opt);
 	assert(src);
+	assert(alias);
 
 	RAII(ParserFree) parser *prs = ParserInit(opt, src);
 

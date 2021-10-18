@@ -5,10 +5,9 @@
 // parsing process.
 //
 // The documentation in this header makes references to the Lemon language
-// specification and the EBNF grammar located at ../langspec.txt. As a general
-// guideline, the grammar metasyntax operators '+' and '*' are typically
-// implemented as vectors. The '|' operator is implemented via tagged unions.
-// The '?' operator is often represented as a boolean true or non-null pointer.
+// specification and the EBNF grammar located at ../langspec.txt. The grammar
+// metasyntax operations '+' and '*' are implemented via vectors. The '|'
+// operator is implemented via tagged anonymous unions. 
 
 #pragma once
 
@@ -18,66 +17,68 @@
 #include "options.h"
 #include "scanner.h"
 #include "xerror.h"
-
 #include "lib/str.h"
 #include "lib/vector.h"
 
 //AST nodes
-typedef struct file file; //root
+typedef struct file file; 
 typedef struct fiat fiat;
 typedef struct type type;
 typedef struct decl decl;
 typedef struct stmt stmt;
 typedef struct expr expr;
 
-//ASTs are created on heap. On error the returned pointer is NULL. Any compiler
-//errors that occured during parsing are logged to the xerror buffer.
-file *SyntaxTreeInit(options *opt, string src, string alias);
+//If initialisation fails, return NULL. If initialisation succeeds, the parsing
+//algorithm will return a non-null pointer to the root node of an abstract 
+//syntax tree. But, if file.errors > 0, then the tree is not a complete and 
+//accurate representation of the input source code.
+file *SyntaxTreeInit(const cstring *src, const cstring *alias);
 
-//file pointer will be set to NULL on return
+//okay to call when ast.errors > 0
 void SyntaxTreeFree(file *ast);
 
 //<member list>
 typedef struct member {
-	string name;
+	cstring *name;
 	type *typ;
 	bool public;
 } member;
 
-make_vector(member, member, static)
+make_vector(member, Member, static)
 
 //<parameter list>
 typedef struct param {
-	string name;
+	cstring *name;
 	type *typ;
 	bool mutable;
 } param;
 
-make_vector(param, param, static)
+make_vector(param, Param, static)
 
 //<case statement>
 typedef struct test {
-	expr *cond; //NULL for default case
-	stmt *pass; //block statement
+	expr *cond; //NULL for the default case
+	stmt *pass; //guaranteed to be a block statement
 } test;
 
-make_vector(test, test, static)
+make_vector(test, Test, static)
 
-//<tagged index> within the <array literal> rule
-make_vector(intmax_t, idx, static)
+//<tagged index> integer literals within the <array literal> rule
+make_vector(intmax_t, Index, static)
 
-make_vector(expr *, expr, static)
+//<arguments> within the <call>, <rvar literal>, and <array literal> rules
+make_vector(expr *, Expr, static)
 
 //some vectors need to be forward declared for node references, but the
 //implementations must be postponed until sizeof(T) is available.
-alias_vector(fiat)
-declare_vector(fiat, fiat)
+alias_vector(Fiat)
+declare_vector(fiat, Fiat)
 
-alias_vector(decl)
-declare_vector(decl, decl)
+alias_vector(Decl)
+declare_vector(decl, Decl)
 
-alias_vector(stmt)
-declare_vector(stmt, stmt)
+alias_vector(Stmt)
+declare_vector(stmt, Stmt)
 
 typedef enum typetag {
 	NODE_BASE,
@@ -85,12 +86,12 @@ typedef enum typetag {
 	NODE_ARRAY,
 } typetag;
 
-//<type> grammar rule. Composite types are implemented as a singly linked
-//list. The tail of the list represents the inner-most base type.
+//<type> rule; composite types form a singly linked list where the tail node
+//represents the inner-most base type.
 struct type {
 	typetag tag;
 	union {
-		string base;
+		cstring *base;
 		type *pointer;
 
 		struct {
@@ -106,28 +107,29 @@ typedef enum decltag {
 	NODE_VARIABLE,
 } decltag;
 
-//note; type declarations from the lemon grammar are renamed as user-defined
-//types (UDTs) to avoid namespace collision with type nodes.
+//<declaration> rule; due to difficulties with managing namespace collisions
+//in C, type declarations from the lemon grammar are nicknamed as UDTs (User
+//Defined Types).
 struct decl {
 	decltag tag;
 	union {
 		struct {
-			string name;
-			member_vector members;
+			cstring *name;
+			vector(Member) members;
 			bool public;
 		} udt;
 
 		struct {
-			string name;
+			cstring *name;
 			type *ret;
 			type *recv;
 			stmt *block;
-			param_vector params;
+			Vector(Param) params;
 			bool public;
 		} function;
 
 		struct {
-			string name;
+			cstring *name;
 			type *vartype;
 			expr *value;
 			bool mutable;
@@ -138,13 +140,13 @@ struct decl {
 	size_t line;
 };
 
-api_vector(decl, decl, static)
-impl_vector_init(decl, decl, static)
-impl_vector_free(decl, decl, static)
-impl_vector_push(decl, decl, static)
-impl_vector_get(decl, decl, static)
-impl_vector_set(decl, decl, static)
-impl_vector_reset(decl, decl, static)
+api_vector(decl, Decl, static)
+impl_vector_init(decl, Decl, static)
+impl_vector_free(decl, Decl, static)
+impl_vector_push(decl, Decl, static)
+impl_vector_get(decl, Decl, static)
+impl_vector_set(decl, Decl, static)
+impl_vector_reset(decl, Decl, static)
 
 typedef enum stmttag{
 	NODE_EXPRSTMT,
@@ -167,11 +169,11 @@ struct stmt {
 	union {
 		expr *exprstmt;
 		expr *returnstmt; //NULL if function returns void
-		string gotolabel;
-		string import;
+		cstring *gotolabel;
+		cstring *import;
 
 		struct {
-			fiat_vector fiats;
+			vector(Fiat) fiats;
 		} block;
 
 		struct {
@@ -202,11 +204,11 @@ struct stmt {
 
 		struct {
 			expr *controller;
-			test_vector tests;
+			Vector(Test) tests;
 		} switchstmt;
 
 		struct {
-			string name;
+			cstring *name;
 			stmt *target;
 		} label;
 	};
@@ -214,13 +216,13 @@ struct stmt {
 	size_t line;
 };
 
-api_vector(stmt, stmt, static)
-impl_vector_init(stmt, stmt, static)
-impl_vector_free(stmt, stmt, static)
-impl_vector_push(stmt, stmt, static)
-impl_vector_get(stmt, stmt, static)
-impl_vector_set(stmt, stmt, static)
-impl_vector_reset(stmt, stmt, static)
+api_vector(stmt, Stmt, static)
+impl_vector_init(stmt, Stmt, static)
+impl_vector_free(stmt, Stmt, static)
+impl_vector_push(stmt, Stmt, static)
+impl_vector_get(stmt, Stmt, static)
+impl_vector_set(stmt, Stmt, static)
+impl_vector_reset(stmt, Stmt, static)
 
 typedef enum exprtag {
 	NODE_ASSIGNMENT,
@@ -262,7 +264,7 @@ struct expr {
 
 		struct {
 			expr *name;
-			expr_vector args;
+			vector(Expr) args;
 		} call;
 
 		struct {
@@ -276,22 +278,22 @@ struct expr {
 		} index;
 
 		struct {
-			idx_vector indicies;
-			expr_vector values;
+			vector(Index) indicies;
+			vector(Expr) values;
 		} arraylit;
 
 		struct {
-			string dist;
-			expr_vector args;
+			cstring *dist;
+			vector(Expr) args;
 		} rvarlit;
 
 		struct {
-			string rep;
+			cstring *rep;
 			token_type littype;
 		} lit;
 
 		struct {
-			string name;
+			cstring *name;
 		} ident;
 	};
 
@@ -312,16 +314,16 @@ struct fiat {
 	};
 };
 
-api_vector(fiat, fiat, static)
-impl_vector_init(fiat, fiat, static)
-impl_vector_free(fiat, fiat, static)
-impl_vector_push(fiat, fiat, static)
-impl_vector_get(fiat, fiat, static)
-impl_vector_set(fiat, fiat, static)
-impl_vector_reset(fiat, fiat, static)
+api_vector(fiat, Fiat, static)
+impl_vector_init(fiat, Fiat, static)
+impl_vector_free(fiat, Fiat, static)
+impl_vector_push(fiat, Fiat, static)
+impl_vector_get(fiat, Fiat, static)
+impl_vector_set(fiat, Fiat, static)
+impl_vector_reset(fiat, Fiat, static)
 
 struct file {
-	string alias;
-	fiat_vector fiats;
+	cstring *alias;
+	vector(Fiat) fiats;
 	size_t errors;
 };
