@@ -29,17 +29,17 @@
 //------------------------------------------------------------------------------
 //allocation utils
 
-static size_t KiB(double kilobytes)
+static size_t KiB(const double kilobytes)
 {
 	return (size_t) (1024 * kilobytes);
 }
 
-static size_t MiB(double megabytes)
+static size_t MiB(const double megabytes)
 {
 	return (size_t) (1048576 * megabytes);
 }
 
-static void *AbortMalloc(size_t bytes) __attribute__((malloc))
+static void *AbortMalloc(const size_t bytes) __attribute__((malloc))
 {
 	void *region = malloc(bytes);
 

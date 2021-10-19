@@ -294,3 +294,5 @@ unlock:									       \
 	impl_channel_close(T, pfix, cls)				       \
 	impl_channel_send(T, pfix, cls)					       \
 	impl_channel_recv(T, pfix, cls)
+
+#define channel(pfix) pfix##_channel

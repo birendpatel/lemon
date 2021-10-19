@@ -107,6 +107,8 @@ typedef struct token {
 	token_flags flags;
 } token;
 
+#define INVALID_TOKEN (token) {NULL, _INVALID, 0, {0, 0}}
+
 //scanner sends tokens on this communication channel in the order that they
 //are found. When lexical analysis is complete, the scanner sends a final _EOF
 //token and then closes the channel.

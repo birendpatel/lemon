@@ -27,26 +27,26 @@
 
 typedef struct parser parser;
 
-//parser utils
-static parser *ParserInit(options *opt, string src);
-static void ParserFree(parser **self);
-static void Mark(parser *self, void *region);
-static void *AllocateAndMark(parser *self, size_t bytes);
-static void CollectGarbage(parser *self, bool flag);
-static string StringFromLexeme(parser *self);
-static void GetNextToken(parser *self);
-static void GetNextValidToken(parser *self);
-static void ReportInvalidToken(parser *self);
-static size_t Synchronize(parser *self);
-static void CheckToken(parser *self, token_type type, char *msg, bool, bool);
-static intmax_t ExtractArrayIndex(parser *self);
-static file *FileInit(string alias);
-static expr *ExprInit(parser *self, exprtag tag);
-static stmt *CopyStmtToHeap(parser *self, stmt src);
-static decl *CopyDeclToHeap(parser *self, decl src);
+//utils
+static parser *ParserInit(const cstring *);
+static void ParserFree(parser **);
+static void Mark(parser *, void *);
+static void *AllocateAndMark(parser *, const size_t);
+static void CollectGarbage(parser *);
+static cstring MarkedLexeme(parser *);
+static void GetNextToken(parser *);
+static void GetNextValidToken(parser *);
+static void ReportInvalidToken(parser *);
+static size_t Synchronize(parser *);
+static void CheckToken(parser *, token_type, cstring *, bool, bool);
+static intmax_t ExtractArrayIndex(parser *);
+static file *FileInit(const cstring *);
+static expr *ExprInit(parser *, const);
+static stmt *CopyStmtToHeap(parser *, const);
+static decl *CopyDeclToHeap(parser *, const);
 
 //declarations
-static file *RecursiveDescent(parser *self, string alias);
+static file *RecursiveDescent(parser *self, const cstring *alias);
 static fiat RecFiat(parser *self);
 static decl RecStruct(parser *self);
 static member_vector RecParseMembers(parser *self);
@@ -111,46 +111,41 @@ void SyntaxTreeFree(file *ast)
 //------------------------------------------------------------------------------
 // parser management
 
-make_vector(void *, ptr, static)
+make_vector(void *, Ptr, static)
 
 struct parser {
-	options *opt;
 	Token_channel *chan;
-	ptr_vector garbage;
+	vector(Ptr) garbage;
 	token tok;
 	size_t errors;
 };
 
-static parser *ParserInit(options *opt, string src)
+static parser *ParserInit(const cstring *src)
 {
-	assert(opt);
 	assert(src);
 
-	parser *prs = NULL;
-	kmalloc(prs, sizeof(parser));
+	parser *prs = AbortMalloc(sizeof(parser));
 
-	kmalloc(prs->chan, sizeof(Token_channel));
+	prs->chan = AbortMalloc(sizeof(channel(Token)));
 	TokenChannelInit(prs->chan, KiB(1));
 
-	xerror err = ScannerInit(opt, src, prs->chan);
+	const size_t garbage_capacity = 32;
+	PtrVectorInit(&prs->garbage, 0, garbage_capacity);
+
+	prs->tok = INVALID_TOKEN;
+	prs->errors = 0;
+
+	xerror err = ScannerInit(src, prs->chan);
 
 	if (err) {
 		xerror_issue("cannot init scanner: %s", XerrorDescription(err));
-		free(prs);
+		ParserFree(&prs);
 		return NULL;
 	}
-
-	const size_t garbage_capacity = 32;
-	ptr_vector_init(&prs->garbage, 0, garbage_capacity);
-
-	prs->opt = opt;
-	prs->tok = (token) { .type = _INVALID };
-	prs->errors = 0;
 
 	return prs;
 }
 
-//intended for use with gcc cleanup
 static void ParserFree(parser **self)
 {
 	assert(self);
@@ -173,14 +168,15 @@ static void ParserFree(parser **self)
 //------------------------------------------------------------------------------
 //node management
 
-static file *FileInit(string alias)
+static file *FileInit(const cstring *alias)
 {
-	file *syntax_tree = NULL;
+	file *syntax_tree = AbortMalloc(sizeof(file));
 
-	kmalloc(syntax_tree, sizeof(file));
-
-	syntax_tree->alias = alias;
-	syntax_tree->errors = 0;
+	*syntax_tree = (file) {
+		.alias = alias,
+		.fiats = {0},
+		.errors = 0
+	};
 
 	const size_t fiat_capacity = 64;
 	fiat_vector_init(&syntax_tree->fiats, 0, fiat_capacity);
@@ -188,7 +184,7 @@ static file *FileInit(string alias)
 	return syntax_tree;
 }
 
-static expr *ExprInit(parser *self, exprtag tag)
+static expr *ExprInit(parser *self, const exprtag tag)
 {
 	assert(self);
 	assert(tag >= NODE_ASSIGNMENT && tag <= NODE_IDENT);
@@ -200,24 +196,28 @@ static expr *ExprInit(parser *self, exprtag tag)
 	return new;
 }
 
-static decl *CopyDeclToHeap(parser *self, decl src)
+static decl *CopyDeclToHeap(parser *self, const decl src)
 {
 	assert(self);
 
-	decl *new = AllocateAndMark(self, sizeof(decl));
+	const size_t bytes = sizeof(decl);
 
-	memcpy(new, &src, sizeof(decl));
+	decl *new = AllocateAndMark(self, bytes); 
+
+	memcpy(new, &src, bytes);
 
 	return new;
 }
 
-static stmt *CopyStmtToHeap(parser *self, stmt src)
+static stmt *CopyStmtToHeap(parser *self, const stmt src)
 {
 	assert(self);
 
-	stmt *new = AllocateAndMark(self, sizeof(stmt));
+	const size_t bytes = sizeof(stmt);
 
-	memcpy(new, &src, sizeof(stmt));
+	stmt *new = AllocateAndMark(self, bytes);
+
+	memcpy(new, &src, bytes);
 
 	return new;
 }
@@ -227,16 +227,14 @@ static stmt *CopyStmtToHeap(parser *self, stmt src)
 
 static void Mark(parser *self, void *region)
 {
-	ptr_vector_push(&self->garbage, region);
+	PtrVectorPush(&self->garbage, region);
 }
 
-static void *AllocateAndMark(parser *self, size_t bytes)
+static void *AllocateAndMark(parser *self, const size_t bytes)
 {
 	assert(self);
 
-	void *region = NULL;
-
-	kmalloc(region, bytes);
+	void *region = AbortMalloc(bytes);
 
 	Mark(self, region);
 
@@ -249,34 +247,32 @@ static void *AllocateAndMark(parser *self, size_t bytes)
 		Mark(self, recv.data);					       \
 	} while(0)
 
-static void CollectGarbage(parser *self, bool flag)
+static void CollectGarbage(parser *self)
 {
-	void (*freefunc)(void *) = NULL;
-
-	if (flag) {
-		freefunc = free;
-	}
-
-	ptr_vector_reset(&self->garbage, freefunc);
+	ptr_vector_reset(&self->garbage, free);
 }
 
-//OOP in Lemon always uses 'self' as a convention, so the xerror API can be
-//simplified with a guaranteed access mechanism for the token line number
-#define usererror(msg, ...) XerrorUser(self->tok.line, msg, ##__VA_ARGS__)
+//the parser always uses 'self' as a OOP receiver name, so the xerro API can
+//be simplified with a guaranteed access mechanism for the token line number.
+#define usererror(msg, ...) 					               \
+	do {								       \
+		XerrorUser(self->tok.line, msg, ##__VA_ARGS__);		       \
+		self->errors++;						       \
+	} while (0)
 
-static string StringFromLexeme(parser *self)
+static cstring MarkedLexeme(parser *self)
 {
 	assert(self);
 
-	string new = StringFromView(self->tok.lexeme);
+	cstring *target = self->tok.lexeme;
 
-	Mark(self, new);
+	Mark(self, target);
 
-	return new;
+	return target;
 }
 
 //if the extracted index is not a simple nonnegative integer less than LLONG_MAX
-//then a parser exception ins thrown.
+//then a parser exception is thrown.
 static intmax_t ExtractArrayIndex(parser *self)
 {
 	assert(self);
@@ -284,9 +280,7 @@ static intmax_t ExtractArrayIndex(parser *self)
 	long long int candidate = 0;
 	char *end = NULL;
 
-	char *tmp = StringFromLexeme(self);
-
-	candidate = strtoll(tmp, &end, 10);
+	candidate = strtoll(self->tok.lexeme, &end, 10);
 
 	if (candidate == LONG_MAX) {
 		usererror("array index is too large");
@@ -304,10 +298,10 @@ static intmax_t ExtractArrayIndex(parser *self)
 static void CheckToken
 (
 	parser *self,
-	token_type type,
-	string msg,
-	bool move_before,
-	bool move_after
+	const token_type type,
+	const cstring *msg,
+	const bool move_before,
+	const bool move_after
 )
 {
 	assert(self);
@@ -340,21 +334,15 @@ static void CheckToken
 #define move_check_move(self, type, msg) \
 	CheckToken(self, type, msg,  true, true)
 
+//------------------------------------------------------------------------------
+//channel operations
+
 static void GetNextToken(parser *self)
 {
 	assert(self);
 
 	xerror err = TokenChannelRecv(self->chan, &self->tok);
 
-	//TODO: parser was refactored to use exceptions; this assertion can
-	//be removed and replaced with Throw()
-
-	//channel status is relegated to an assertion as a tradeoff to improve
-	//readability and simplicity of the recursive descent implementation.
-	//
-	//reading past EOF is a simple off-by-one bug. The final call to
-	//GetNextToken before the assertion triggered is occuring too early.
-	//The call stack backtrace will quickly locate the problem.
 	assert(!err && "attempted to read past EOF");
 }
 
@@ -374,23 +362,16 @@ static void ReportInvalidToken(parser *self)
 	assert(self);
 	assert(self->tok.type == _INVALID);
 
-	const char *msg = self->tok.lexeme.data;
-	const size_t msg_len = self->tok.lexeme.len;
+	const cstring *lexeme = self->tok.lexeme;
 
-	switch (self->tok.flags) {
-	case TOKEN_OKAY:
-		usererror("invalid syntax: %.*s", msg_len, msg);
-		break;
-
-	case TOKEN_BAD_STR:
+	if (self->tok.flags.bad_string == 1) {
 		usererror("unterminated string literal");
-		break;
-
-	default:
-		assert(0 == 0 && "token flag combination is not valid");
+	} else if (self->tok.flags.valid == 0) {
+		usererror("invalid syntax: %s", lexeme);
+	} else {
+		usererror("unspecified syntax error: %s", lexeme);
+		xerror_issue("invalid token is missing flags");
 	}
-
-	self->errors++;
 }
 
 static size_t Synchronize(parser *self)
@@ -427,24 +408,23 @@ found_sequence_point:
 //------------------------------------------------------------------------------
 //parsing algorithm
 
-//RecursiveDescent is guaranteed to return a file node that points to a valid
-//region of memory. But, if file.errors > 0 on return, then the tree is not
-//a complete and accurate representation of the input source code.
-static file *RecursiveDescent(parser *self, string alias)
+static file *RecursiveDescent(parser *self, const cstring *alias)
 {
 	assert(self);
 
+	CEXCEPTION_T exception;
+	
 	file *syntax_tree = FileInit(alias);
 
 	GetNextValidToken(self);
 
 	while (self->tok.type != _EOF) {
-		fiat node = RecFiat(self);
-
-		if (node.tag == NODE_INVALID) {
-			self->errors++;
-		} else {
-			fiat_vector_push(&syntax_tree->fiats, node);
+		Try {
+			fiat node = RecFiat(self);
+			FiatVectorPush(&syntax_tree->fiats, node);
+		} Catch (exception) {
+			(void) Synchronize(self);
+			CollectGarbage(self);
 		}
 	}
 
@@ -453,48 +433,33 @@ static file *RecursiveDescent(parser *self, string alias)
 	return syntax_tree;
 }
 
-//RecFiat will set the union tag on the returned node to NODE_INVALID if it
-//encounters a user error.
-//
-//all exceptions that may be thrown during recursive descent are guaranteed
-//to be caught and successfully handled by RecFiat.
 static fiat RecFiat(parser *self)
 {
 	assert(self);
 
-	CEXCEPTION_T exception;
 	fiat node = {0};
-	bool gc_flag = false;
 
-	Try {
-		switch (self->tok.type) {
-		case _STRUCT:
-			node.tag = NODE_DECL;
-			node.declaration = RecStruct(self);
-			break;
+	switch (self->tok.type) {
+	case _STRUCT:
+		node.tag = NODE_DECL;
+		node.declaration = RecStruct(self);
+		break;
 
-		case _FUNC:
-			node.tag = NODE_DECL;
-			node.declaration = RecFunction(self);
-			break;
+	case _FUNC:
+		node.tag = NODE_DECL;
+		node.declaration = RecFunction(self);
+		break;
 
-		case _LET:
-			node.tag = NODE_DECL;
-			node.declaration = RecVariable(self);
-			break;
+	case _LET:
+		node.tag = NODE_DECL;
+		node.declaration = RecVariable(self);
+		break;
 
-		default:
-			node.tag = NODE_STMT;
-			node.statement = RecStmt(self);
-			break;
-		}
-	} Catch (exception) {
-		(void) Synchronize(self);
-		node.tag = NODE_INVALID;
-		gc_flag = true;
+	default:
+		node.tag = NODE_STMT;
+		node.statement = RecStmt(self);
+		break;
 	}
-
-	CollectGarbage(self, gc_flag);
 
 	return node;
 }
@@ -502,9 +467,6 @@ static fiat RecFiat(parser *self)
 //------------------------------------------------------------------------------
 //declarations
 
-//<type declaration>; the lemon compiler uses 'struct' as an alias for the
-//'type' rule in the lemon grammar because the word 'type' makes it difficult
-//to avoid name collisions.
 static decl RecStruct(parser *self)
 {
 	assert(self);
@@ -529,7 +491,7 @@ static decl RecStruct(parser *self)
 
 	check(self, _IDENTIFIER, "missing struct name after 'struct' keyword");
 
-	node.udt.name = StringFromLexeme(self);
+	node.udt.name = MarkedLexeme(self);
 
 	move_check_move(self, _LEFTBRACE, "missing '{' after struct name");
 
@@ -566,7 +528,7 @@ static member_vector RecParseMembers(parser *self)
 
 		check(self, _IDENTIFIER, "missing struct member name");
 
-		attr.name = StringFromLexeme(self);
+		attr.name = MarkedLexeme(self);
 
 		move_check_move(self, _COLON, "missing ':' after name");
 
@@ -614,7 +576,7 @@ decl RecFunction(parser *self)
 
 	check(self, _IDENTIFIER, "missing function name in declaration");
 
-	node.function.name = StringFromLexeme(self);
+	node.function.name = MarkedLexeme(self);
 
 	//parameter list
 	move_check_move(self, _LEFTPAREN, "missing '(' after function name");
@@ -677,7 +639,7 @@ static param_vector RecParseParameters(parser *self)
 
 		check(self, _IDENTIFIER, "missing function parameter name");
 
-		attr.name = StringFromLexeme(self);
+		attr.name = MarkedLexeme(self);
 
 		move_check_move(self, _COLON, "missing ':' after name");
 
@@ -727,7 +689,7 @@ static decl RecVariable(parser *self)
 
 	check(self, _IDENTIFIER, "missing variable name in declaration");
 
-	node.variable.name = StringFromLexeme(self);
+	node.variable.name = MarkedLexeme(self);
 
 	move_check_move(self, _COLON, "missing ':' before type");
 
@@ -752,7 +714,7 @@ type *RecType(parser *self)
 	switch (self->tok.type) {
 	case _IDENTIFIER:
 		node->tag = NODE_BASE;
-		node->base = StringFromLexeme(self);
+		node->base = MarkedLexeme(self);
 		GetNextValidToken(self);
 		break;
 
@@ -1073,14 +1035,14 @@ static stmt RecNamedTarget(parser *self)
 	case _GOTO:
 		node.tag = NODE_GOTOLABEL;
 		move_check(self, _IDENTIFIER, "missing goto target");
-		node.gotolabel = StringFromLexeme(self);
+		node.gotolabel = MarkedLexeme(self);
 		move_check_move(self, _SEMICOLON, "missing ';' after goto");
 		break;
 
 	case _IMPORT:
 		node.tag = NODE_IMPORT;
 		move_check(self, _IDENTIFIER, "missing import name");
-		node.import = StringFromLexeme(self);
+		node.import = MarkedLexeme(self);
 		move_check_move(self, _SEMICOLON, "missing ';' after import");
 		break;
 
@@ -1155,7 +1117,7 @@ static stmt RecLabel(parser *self)
 
 	move_check(self, _IDENTIFIER, "label name must be an identifier");
 
-	node.label.name = StringFromLexeme(self);
+	node.label.name = MarkedLexeme(self);
 
 	move_check_move(self, _COLON, "missing ':' after label name");
 
@@ -1463,7 +1425,7 @@ static expr *RecPrimary(parser *self)
 	case _FALSE:
 		node = ExprInit(self, NODE_LIT);
 		node->line = self->tok.line;
-		node->lit.rep = StringFromLexeme(self);
+		node->lit.rep = MarkedLexeme(self);
 		node->lit.littype = self->tok.type;
 		GetNextValidToken(self);
 		break;
@@ -1571,7 +1533,7 @@ static expr *RecIdentifier(parser *self)
 
 	expr *node = ExprInit(self, NODE_IDENT);
 	node->line = self->tok.line;
-	node->ident.name = StringFromLexeme(self);
+	node->ident.name = MarkedLexeme(self);
 
 	return node;
 }
@@ -1585,7 +1547,7 @@ static expr *RecRvar(parser *self, bool seen_tilde)
 	expr *node = ExprInit(self, NODE_RVARLIT);
 
 	node->line = self->tok.line;
-	node->rvarlit.dist = StringFromLexeme(self);
+	node->rvarlit.dist = MarkedLexeme(self);
 
 	if (!seen_tilde) {
 		move_check(self, _TILDE, "missing '~' after distribution");
