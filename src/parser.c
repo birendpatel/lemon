@@ -1,275 +1,224 @@
-/**
- * @file parser.c
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Recursive descent parser.
- *
- * @remark The parser may encounter two types of errors: compiler errors and
- * user errors. Compiler errors are treated in the same fashion as the rest of
- * the program; Log the issue via xerror and propogate the error code up the 
- * call chain.
- *
- * User errors are very different. They are not logged via xerror. They do not
- * cause the parser to terminate. They do not propogate error codes. Instead,
- * they throw exceptions. Whenever an exception is caught, the parser will
- * synchronize to a new sequence point within the token stream. Sequence points
- * are, generally speaking, any tokens which identify or hint at the start of a
- * new statement or declaration.
- *
- * The only serious limitation to setjmp/longjmp exception handling is that
- * dynamic memory allocations made within a try-block are not released when an
- * exception occurs. For this reason, the parser contains a vector<void*> used
- * to track and release all memory allocations that were requested since the
- * last successful sequence point. The parser cannot walk the erroneous subtree
- * in post-order to release the allocations because sometimes an exception is
- * thrown before a parent and child are connected. This results in a dangling
- * pointer. So, every kmalloc call must be coupled to an immediate vector push.
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+//
+// Recursive descent parser. Two types of errors may be encountered: compiler
+// errors and user errors. Compiler errors are treated as usual; Log the issue
+// and propogate the error code.
+//
+// User errors are not logged, they don't propoage error codes, and they do not
+// cause the parser to terminate. Instead, they throw exceptions which trigger
+// the parser to synchronize to a new sequence point within the token stream.
+//
+// The setjmp/longjmp exception handler does not release the dynamic memory
+// allocations made within a try-block when an exception occurs. The parser
+// contains a vector<void*> used to track all memory allocations requested since
+// the last successful sequence point. Garbage collection is triggered after
+// synchronisation.
 
 #include <assert.h>
 #include <limits.h>
 #include <stdarg.h>
-#include <stdbool.h>
 #include <stdlib.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "parser.h"
 #include "defs.h"
-#include "nodes.h"
-#include "options.h"
-#include "scanner.h"
-#include "xerror.h"
-#include "lib/vector.h"
+#include "lib/channel.h"
 
-make_vector(void *, mem, static inline)
+typedef struct parser parser;
 
-typedef struct parser {
-	scanner *scn;
-	options *opt;
-	mem_vector mempool;
-	token tok;
-	size_t errors;
-} parser;
+//utils
+static parser *ParserInit(const cstring *);
+static void ParserFree(parser **);
+static void Mark(parser *, void *);
+static void *AllocateAndMark(parser *, const size_t);
+static void CollectGarbage(parser *);
+static cstring *MarkedLexeme(parser *);
+static void GetNextToken(parser *);
+static void GetNextValidToken(parser *);
+static void ReportInvalidToken(parser *);
+static size_t Synchronize(parser *);
+static void CheckToken
+(parser *, const token_type, const cstring *, const bool, const bool);
+static intmax_t ExtractArrayIndex(parser *);
+static file *FileInit(const cstring *);
+static expr *ExprInit(parser *, const exprtag);
+static stmt *CopyStmtToHeap(parser *, const stmt);
+static decl *CopyDeclToHeap(parser *, const decl);
 
-//parser utils
-static xerror parser_init(parser *self, options *opt, char *src);
-static xerror parser_free(parser *self);
-static void _usererror(const uint32_t line, const char *msg, ...);
-static void parser_advance(parser *self);
-static void synchronize(parser *self);
-static void lexcpy(parser *self, char **dest, char *src, uint32_t n);
-static void _check(parser *self, token_type type, char *msg, bool A, bool Z);
-static intmax_t extract_arrnum(parser *self);
+//declarations
+static file *RecursiveDescent(parser *self, const cstring *alias);
+static fiat RecFiat(parser *self);
+static decl RecStruct(parser *self);
+static vector(Member) RecParseMembers(parser *self);
+decl RecFunction(parser *self);
+static vector(Param) RecParseParameters(parser *self);
+type *RecType(parser *self);
+static decl RecVariable(parser *self);
 
-//node management
-static file *file_init(char *fname);
-static expr *expr_init(parser *self, exprtag tag);
-static stmt *stmt_init(parser *self, stmt src);
-static decl *decl_init(parser *self, decl src);
+//statements
+static stmt RecStmt(parser *self);
+static stmt RecExprStmt(parser *self);
+static stmt RecBlock(parser *self);
+static stmt RecLabel(parser *self);
+static stmt RecAnonymousTarget(parser *self);
+static stmt RecNamedTarget(parser *self);
+static stmt RecForLoop(parser *self);
+static stmt RecWhileLoop(parser *self);
+static stmt RecBranch(parser *self);
+static stmt RecSwitch(parser *self);
+static vector(Test) RecTests(parser *self);
 
-//recursive descent declarations
-static file *rec_parse(parser *self, char *fname);
-static fiat rec_fiat(parser *self);
-static decl rec_struct(parser *self);
-static member_vector rec_members(parser *self);
-decl rec_func(parser *self);
-static param_vector rec_params(parser *self);
-type *rec_type(parser *self);
-static decl rec_var(parser *self);
+//expressions
+static expr *RecAssignment(parser *self);
+static expr *RecLogicalOr(parser *self);
+static expr *RecLogicalAnd(parser *self);
+static expr *RecEquality(parser *self);
+static expr *RecTerm(parser *self);
+static expr *RecFactor(parser *self);
+static expr *RecUnary(parser *self);
+static expr *RecPrimary(parser *self);
+static expr *RecRvarOrIdentifier(parser *self);
+static expr *RecRvar(parser *self, bool seen_tilde);
+static vector(Expr) RecArguments(parser *self);
+static expr *RecArrayLiteral(parser *self);
+static expr *RecArrayLiteral(parser *self);
+static expr *RecIdentifier(parser *self);
+static expr *RecAccess(parser *self, expr *prev);
 
-//recursive descent statements
-static stmt rec_stmt(parser *self);
-static stmt rec_exprstmt(parser *self);
-static stmt rec_block(parser *self);
-static stmt rec_label(parser *self);
-static stmt rec_anonymous_target(parser *self);
-static stmt rec_named_target(parser *self);
-static stmt rec_forloop(parser *self);
-static stmt rec_whileloop(parser *self);
-static stmt rec_branch(parser *self);
-static stmt rec_switch(parser *self);
-static test_vector rec_tests(parser *self);
-
-//recursive descent expressions
-static expr *rec_assignment(parser *self);
-static expr *rec_logicalor(parser *self);
-static expr *rec_logicaland(parser *self);
-static expr *rec_equality(parser *self);
-static expr *rec_term(parser *self);
-static expr *rec_factor(parser *self);
-static expr *rec_unary(parser *self);
-static expr *rec_primary(parser *self);
-static expr *rec_rvar_or_ident(parser *self);
-static expr *rec_rvar(parser *self, token prev);
-static expr_vector rec_args(parser *self);
-static expr *rec_arraylit(parser *self);
-static expr *rec_arraylit(parser *self);
-static expr *rec_ident(parser *self, token tok);
-static expr *rec_access(parser *self, expr *prev);
-
-//parser entry point; configure parser members and launch recursive descent
-xerror parse(char *src, options *opt, char *fname, file **ast)
+file *SyntaxTreeInit(const cstring *src, const cstring *alias)
 {
 	assert(src);
-	assert(opt);
+	assert(alias);
 
-	parser prs = {0};
-	xerror err = parser_init(&prs, opt, src);
+	RAII(ParserFree) parser *prs = ParserInit(src);
 
-	if (err) {
-		xerror_issue("cannot initialize parser");
-		return err;
+	if (!prs) {
+		xerror_issue("cannot init parser");
+		return NULL;
 	}
 
-	*ast = rec_parse(&prs, fname);
+	file *syntax_tree = RecursiveDescent(prs, alias);
 
-	if (prs.errors > 1) {
-		_usererror(0, "\n%d syntax errors found.", prs.errors);
-	} else if (prs.errors == 1) {
-		_usererror(0, "\n1 syntax error found.");
-	}
+	return syntax_tree;
+}
 
-	err = parser_free(&prs);
-
-	if (err) {
-		xerror_issue("cannot free parser");
-		return err;
-	}
-
-	return XESUCCESS;
+void SyntaxTreeFree(file *ast)
+{
+	free(ast);
+	//TODO
 }
 
 //------------------------------------------------------------------------------
 // parser management
 
-/*******************************************************************************
- * @fn parser_init
- * @brief Initialize a parser and configure the tokenizer. The magic number 8
- * is just a heurstic, a typical node often makes less than approx 8 allocations
- * before encountering a syntax error, if any.
- ******************************************************************************/
-static xerror parser_init(parser *self, options *opt, char *src)
+make_vector(void *, Ptr, static)
+
+struct parser {
+	Token_channel *chan;
+	vector(Ptr) garbage;
+	token tok;
+	size_t errors;
+};
+
+static parser *ParserInit(const cstring *src)
 {
-	assert(opt);
 	assert(src);
 
-	xerror err = scanner_init(&self->scn, src, opt);
+	parser *prs = AbortMalloc(sizeof(parser));
+
+	prs->chan = AbortMalloc(sizeof(channel(Token)));
+	TokenChannelInit(prs->chan, KiB(1));
+
+	const size_t garbage_capacity = 32;
+	prs->garbage = PtrVectorInit(0, garbage_capacity);
+
+	prs->tok = INVALID_TOKEN;
+	prs->errors = 0;
+
+	xerror err = ScannerInit(src, prs->chan);
 
 	if (err) {
-		xerror_issue("cannot initialize scanner");
-		return err;
+		xerror_issue("cannot init scanner: %s", XerrorDescription(err));
+		ParserFree(&prs);
+		return NULL;
 	}
 
-	mem_vector_init(&self->mempool, 0, 8);
-
-	self->opt = opt;
-	self->tok = (token) { .type = _INVALID };
-	self->errors = 0;
-
-	return XESUCCESS;
+	return prs;
 }
 
-/*******************************************************************************
- * @fn parser_free
- * @brief Shutdown the tokenizer and release the parser (doesn't contain AST).
- ******************************************************************************/
-static xerror parser_free(parser *self)
+static void ParserFree(parser **self)
 {
 	assert(self);
 
-	xerror err = scanner_free(self->scn);
+	parser *prs = *self;
 
-	if (err) {
-		xerror_issue("cannot free scanner");
-		return err;
+	if (!prs) {
+		return;
 	}
 
-	mem_vector_free(&self->mempool, NULL);
+	(void) TokenChannelFree(prs->chan, NULL);
 
-	return XESUCCESS;
+	free(prs->chan);
+
+	PtrVectorFree(&prs->garbage, NULL);
+
+	free(prs);
 }
 
 //------------------------------------------------------------------------------
 //node management
 
-/*******************************************************************************
- * @fn file_init
- * @brief Initialize the fiat vector and add an import tag.
- * @remark The fiat vector needs an initial capacity, but if it is too small we
- * will dip into kernel mode too often. The magic number 128 is a heuristic.
- * For many REPL programs, it is large enough to never trigger a vector resize.
- ******************************************************************************/
-static file *file_init(char *fname)
+static file *FileInit(const cstring *alias)
 {
-	file *ast = NULL;
+	file *syntax_tree = AbortMalloc(sizeof(file));
 
-	kmalloc(ast, sizeof(file));
+	*syntax_tree = (file) {
+		.alias = alias,
+		.fiats = {0},
+		.errors = 0
+	};
 
-	ast->name = fname;
+	const size_t fiat_capacity = 64;
+	syntax_tree->fiats = FiatVectorInit(0, fiat_capacity);
 
-	fiat_vector_init(&ast->fiats, 0, 128);
-
-	return ast;
+	return syntax_tree;
 }
 
-/*******************************************************************************
- * @fn expr_init
- * @brief Create an expression node on heap and add the pointer to the mempool.
- ******************************************************************************/
-static expr *expr_init(parser *self, exprtag tag)
+static expr *ExprInit(parser *self, const exprtag tag)
 {
 	assert(self);
 	assert(tag >= NODE_ASSIGNMENT && tag <= NODE_IDENT);
 
-	expr *new = NULL;
-
-	kmalloc(new, sizeof(expr));
-
-	mem_vector_push(&self->mempool, new);
+	expr *new = AllocateAndMark(self, sizeof(expr));
 
 	new->tag = tag;
 
 	return new;
 }
 
-/*******************************************************************************
- * @fn decl_init
- * @brief Create a decl node on heap and copy the contents of the input decl
- * node to the new heap node. The new heap pointer is added to the parser
- * mempool.
- ******************************************************************************/
-static decl *decl_init(parser *self, decl src)
+static decl *CopyDeclToHeap(parser *self, const decl src)
 {
 	assert(self);
 
-	decl *new = NULL;
+	const size_t bytes = sizeof(decl);
 
-	kmalloc(new, sizeof(decl));
+	decl *new = AllocateAndMark(self, bytes);
 
-	mem_vector_push(&self->mempool, new);
-
-	memcpy(new, &src, sizeof(decl));
+	memcpy(new, &src, bytes);
 
 	return new;
 }
 
-/*******************************************************************************
- * @fn stmtcpy
- * @brief Create a statment node on heap and copy the contents of the input
- * statement node to the new heap node. The new heap pointer is added to the
- * parser mempool.
- ******************************************************************************/
-static stmt *stmt_init(parser *self, stmt src)
+static stmt *CopyStmtToHeap(parser *self, const stmt src)
 {
 	assert(self);
 
-	stmt *new = NULL;
+	const size_t bytes = sizeof(stmt);
 
-	kmalloc(new, sizeof(stmt));
+	stmt *new = AllocateAndMark(self, bytes);
 
-	mem_vector_push(&self->mempool, new);
-
-	memcpy(new, &src, sizeof(stmt));
+	memcpy(new, &src, bytes);
 
 	return new;
 }
@@ -277,84 +226,62 @@ static stmt *stmt_init(parser *self, stmt src)
 //------------------------------------------------------------------------------
 //helper functions
 
-/*******************************************************************************
- * @fn _usererror
- * @brief Send a formatted user error to stderr.
- * @param line If 0 then do not display line header.
- * @remark Use the usererror macro where possible.
- ******************************************************************************/
-static void _usererror(const uint32_t line, const char *msg, ...)
+static void Mark(parser *self, void *region)
 {
-	assert(msg);
-
-	va_list args;
-	va_start(args, msg);
-
-	//Note, the ANSI_RED macro does not reset the colour after it is
-	//applied. This allows the input msg to also be coloured red. RED()
-	//cannot be applied directly to the input msg because the macro relies
-	//on string concatenation.
-	if (line) {
-		fprintf(stderr, ANSI_RED "(line %d) ", line);
-	} else {
-		fprintf(stderr, ANSI_RED " \b");
-	}
-
-	vfprintf(stderr, msg, args);
-
-	//this final RED() causes the colours to reset after the statement
-	fprintf(stderr, RED("\n"));
-
-	va_end(args);
+	PtrVectorPush(&self->garbage, region);
 }
 
-/*******************************************************************************
- * @def usererror
- * @brief Wrapper over _usererror.
- * @remark Since the Lemon source code uses 'self' everywhere as a hacky OOP
- * receiver, we can guarantee that the source code line is always accessed as
- * self->tok.line.
- ******************************************************************************/
-#define usererror(msg, ...) _usererror(self->tok.line, msg, ##__VA_ARGS__)
-
-/*******************************************************************************
- * @fn lexcpy
- * @brief Copy a src lexeme of length n to the dest pointer and reformat it as
- * a valid C string.
- * @remark The dest pointer is added to the parser mempool
- ******************************************************************************/
-static void lexcpy(parser *self, char **dest, char *src, uint32_t n)
+static void *AllocateAndMark(parser *self, const size_t bytes)
 {
-	assert(src);
-	assert(n);
+	assert(self);
 
-	kmalloc(*dest, sizeof(char) * n + 1);
+	void *region = AbortMalloc(bytes);
 
-	mem_vector_push(&self->mempool, *dest);
+	Mark(self, region);
 
-	memcpy(*dest, src, sizeof(char) * n);
-
-	(*dest)[n] = '\0';
+	return region;
 }
 
-/*******************************************************************************
- * @fn extract_arrnum
- * @brief Extract a number from the non-null terminated lexeme held in the
- * current parser token.
- * @return If the number is not a simple nonnegitive integer less than LLONG_MAX
- * then a parse exception is thrown. Else, an intmax representation is given.
- ******************************************************************************/
-static intmax_t extract_arrnum(parser *self)
+#define alloc_mark_vector(VecInit, recv, len, cap)                             \
+	do {								       \
+		recv = VecInit(len, cap);				       \
+		Mark(self, recv.buffer);				       \
+	} while(0)
+
+static void CollectGarbage(parser *self)
+{
+	PtrVectorReset(&self->garbage, free);
+}
+
+//the parser always uses 'self' as a OOP receiver name, so the xerro API can
+//be simplified with a guaranteed access mechanism for the token line number.
+#define usererror(msg, ...) 					               \
+	do {								       \
+		XerrorUser(self->tok.line, msg, ##__VA_ARGS__);		       \
+		self->errors++;						       \
+	} while (0)
+
+static cstring *MarkedLexeme(parser *self)
+{
+	assert(self);
+
+	cstring *target = self->tok.lexeme;
+
+	Mark(self, target);
+
+	return target;
+}
+
+//if the extracted index is not a simple nonnegative integer less than LLONG_MAX
+//then a parser exception is thrown.
+static intmax_t ExtractArrayIndex(parser *self)
 {
 	assert(self);
 
 	long long int candidate = 0;
 	char *end = NULL;
-	char *tmp = NULL;
 
-	lexcpy(self, &tmp, self->tok.lexeme, self->tok.len);
-
-	candidate = strtoll(tmp, &end, 10);
+	candidate = strtoll(self->tok.lexeme, &end, 10);
 
 	if (candidate == LONG_MAX) {
 		usererror("array index is too large");
@@ -369,20 +296,21 @@ static intmax_t extract_arrnum(parser *self)
 	return (intmax_t) candidate;
 }
 
-/*******************************************************************************
- * @fn _check
- * @brief Advance to the next token if A is true. Check the token against the
- * input type and throw XEPARSE if it doesn't match. Advance again on a
- * successful match if Z is true.
- * @remark Use the check, move_check, check_move, and move_check_move macros.
- ******************************************************************************/
-static void  _check(parser *self, token_type type, char *msg, bool A, bool Z)
+static void CheckToken
+(
+	parser *self,
+	const token_type type,
+	const cstring *msg,
+	const bool move_before,
+	const bool move_after
+)
 {
 	assert(self);
+	assert(type >= _INVALID && type < _TOKEN_TYPE_COUNT);
 	assert(msg);
 
-	if (A) {
-		parser_advance(self);
+	if (move_before) {
+		GetNextValidToken(self);
 	}
 
 	if (self->tok.type != type) {
@@ -390,217 +318,160 @@ static void  _check(parser *self, token_type type, char *msg, bool A, bool Z)
 		Throw(XXPARSE);
 	}
 
-	if (Z) {
-		parser_advance(self);
+	if (move_after) {
+		GetNextValidToken(self);
 	}
 }
 
-//don't move to a new token, check the current one, and don't move afterwards
-#define check(self, type, msg) _check(self, type, msg, false, false)
+#define check(self, type, msg) \
+	CheckToken(self, type, msg, false, false)
 
-//move to a new token, check it, but don't move again
-#define move_check(self, type, msg) _check(self, type, msg, true, false)
+#define move_check(self, type, msg) \
+	CheckToken(self, type, msg, true, false)
 
-//check the current token, move on success
-#define check_move(self, type, msg) _check(self, type, msg, false, true)
+#define check_move(self, type, msg) \
+	CheckToken(self, type, msg, false, true)
 
-//move to a new token, check it, move again on success
-#define move_check_move(self, type, msg) _check(self, type, msg,  true, true)
+#define move_check_move(self, type, msg) \
+	CheckToken(self, type, msg,  true, true)
 
-/*******************************************************************************
- * @fn parser_advance
- * @brief Receive a token from the scanner channel.
- * @details If the token is invalid, this function will synchronize to a new
- * sequence point before it returns.
- ******************************************************************************/
-static void parser_advance(parser *self)
+//------------------------------------------------------------------------------
+//channel operations
+
+static void GetNextToken(parser *self)
 {
 	assert(self);
 
-	if (scanner_recv(self->scn, &self->tok)) {
-		//reading past EOF is an off-by-one bug in the second-to-last
-		//function in the call stack. Very easy fix: backtrace on gdb
-		//to locate the function. At least one call to parser_advance()
-		//in its body is occuring too early.
-		//
-		//This is relegated to an assertion as a tradeoff to improve
-		//readability and simplicity of the descent algorithm.
-		assert(0 != 0 && "attempted to read past EOF");
-	}
+	xerror err = TokenChannelRecv(self->chan, &self->tok);
 
-	if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
-		token_print(self->tok);
-	}
+	assert(!err && "attempted to read past EOF");
+}
+
+static void GetNextValidToken(parser *self)
+{
+	assert(self);
+
+	GetNextToken(self);
 
 	if (self->tok.type == _INVALID) {
-		synchronize(self);
+		(void) Synchronize(self);
 	}
 }
 
-/*******************************************************************************
- * @fn synchronize
- * @brief If the current token held by the parser is not a sequence point, then
- * throw it away. Receive new tokens from the scanner channel until a sequence
- * point is found.
- * @return This function guarantees on return that the token held by the parser
- * is a sequence point.
- ******************************************************************************/
-static void synchronize(parser *self)
+static void ReportInvalidToken(parser *self)
 {
-	static const char *fmt = "invalid syntax: %.*s";
+	assert(self);
+	assert(self->tok.type == _INVALID);
+
+	const cstring *lexeme = self->tok.lexeme;
+
+	if (self->tok.flags.bad_string == 1) {
+		usererror("unterminated string literal");
+	} else if (self->tok.flags.valid == 0) {
+		usererror("invalid syntax: %s", lexeme);
+	} else {
+		usererror("unspecified syntax error: %s", lexeme);
+		xerror_issue("invalid token is missing flags");
+	}
+}
+
+static size_t Synchronize(parser *self)
+{
+	size_t tokens_skipped = 0;
 
 	do {
 		switch(self->tok.type) {
+		case _EOF:
+			fallthrough;
 
-		//sequence points
-		case _STRUCT:
-			fallthrough;
-		case _FUNC:
-			fallthrough;
-		case _LET:
-			fallthrough;
-		case _RETURN:
-			fallthrough;
-		case _BREAK:
-			fallthrough;
-		case _CONTINUE:
-			fallthrough;
-		case _GOTO:
-			fallthrough;
-		case _IMPORT:
-			fallthrough;
 		case _LEFTBRACE:
 			fallthrough;
-		case _FOR:
-			fallthrough;
-		case _WHILE:
-			fallthrough;
-		case _IF:
-			fallthrough;
-		case _SWITCH:
-			fallthrough;
-		case _EOF:
-			goto exit_loop;
 
-		//non-sequence points
+		case _STRUCT ... _SWITCH:
+			goto found_sequence_point;
+
 		case _INVALID:
-			usererror(fmt, self->tok.len, self->tok.lexeme);
-			self->errors++;
+			ReportInvalidToken(self);
 			fallthrough;
+
 		default:
 			break;
 		}
 
-		//draw another token and try again
-		if (scanner_recv(self->scn, &self->tok)) {
-			assert(0 != 0 && "attempted to read past EOF");
-		}
-
-		if (self->opt->diagnostic & DIAGNOSTIC_TOKENS) {
-			token_print(self->tok);
-		}
+		GetNextToken(self);
+		tokens_skipped++;
 	} while (true);
 
-exit_loop:
-	return;
+found_sequence_point:
+	return tokens_skipped;
 }
 
 //------------------------------------------------------------------------------
-//recursive descent algorithm
+//parsing algorithm
 
-/*******************************************************************************
- * @fn rec_parse
- * @brief Recursive descent entry point; configure a root file node, load the
- * first token into the parser, and descend!
- * @return The returned root file node is erroneous if the errors member is
- * greater than zero.
- ******************************************************************************/
-static file *rec_parse(parser *self, char *fname)
-{
-	assert(self);
-
-	file *ast = file_init(fname);
-
-	parser_advance(self);
-
-	while (self->tok.type != _EOF) {
-		fiat node = rec_fiat(self);
-
-		if (node.tag == NODE_INVALID) {
-			self->errors++;
-		} else {
-			fiat_vector_push(&ast->fiats, node);
-		}
-	}
-
-	return ast;
-}
-
-/*******************************************************************************
- * @fn rec_fiat
- * @brief Dispatch to decl or stmt handler and then wrap the return node. Catch
- * any parser errors and synchronize before continuing.
- *
- * @remark The fiat node doesnt need be qualified with the volatile keyword. The
- * CException library dictates if you change a stack variable in the try block
- * and require its updated values after an exception is thrown, the stack var
- * must be volatile. In this situation, any updates made to the fiat node in the
- * try block are unimportant. All we care is that the catch block overwrites the
- * tag. The union contents are unimportant.
- *
- * @return If the returned fiat node has a tag equal to NODE_INVALID, then one
- * or more syntax errors occured and the syntax tree rooted at the node is ill
- * formed.
- ******************************************************************************/
-static fiat rec_fiat(parser *self)
+static file *RecursiveDescent(parser *self, const cstring *alias)
 {
 	assert(self);
 
 	CEXCEPTION_T exception;
-	fiat node = { .tag = NODE_INVALID };
 
-	Try {
-		switch (self->tok.type) {
-		case _STRUCT:
-			node.tag = NODE_DECL;
-			node.declaration = rec_struct(self);
-			break;
+	file *syntax_tree = FileInit(alias);
 
-		case _FUNC:
-			node.tag = NODE_DECL;
-			node.declaration= rec_func(self);
-			break;
+	GetNextValidToken(self);
 
-		case _LET:
-			node.tag = NODE_DECL;
-			node.declaration = rec_var(self);
-			break;
-
-		default:
-			node.tag = NODE_STMT;
-			node.statement = rec_stmt(self);
-			break;
+	while (self->tok.type != _EOF) {
+		Try {
+			fiat node = RecFiat(self);
+			FiatVectorPush(&syntax_tree->fiats, node);
+		} Catch (exception) {
+			(void) Synchronize(self);
+			CollectGarbage(self);
 		}
+	}
 
-		mem_vector_reset(&self->mempool, NULL);
-	} Catch (exception) {
-		synchronize(self);
-		node.tag = NODE_INVALID;
-		mem_vector_reset(&self->mempool, free);
+	syntax_tree->errors = self->errors;
+
+	return syntax_tree;
+}
+
+static fiat RecFiat(parser *self)
+{
+	assert(self);
+
+	fiat node = {0};
+
+	switch (self->tok.type) {
+	case _STRUCT:
+		node.tag = NODE_DECL;
+		node.declaration = RecStruct(self);
+		break;
+
+	case _FUNC:
+		node.tag = NODE_DECL;
+		node.declaration = RecFunction(self);
+		break;
+
+	case _LET:
+		node.tag = NODE_DECL;
+		node.declaration = RecVariable(self);
+		break;
+
+	default:
+		node.tag = NODE_STMT;
+		node.statement = RecStmt(self);
+		break;
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_struct
- * @brief Implementation of the <struct declaration> production.
- * @param self The token held by the parser on invocation must be _STRUCT.
- * @decl The returned UDT node is always valid. A parse exception may be thrown.
- ******************************************************************************/
-static decl rec_struct(parser *self)
+//------------------------------------------------------------------------------
+//declarations
+
+static decl RecStruct(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _STRUCT);
 
 	decl node = {
 		.tag = NODE_UDT,
@@ -612,48 +483,37 @@ static decl rec_struct(parser *self)
 		.line = self->tok.line
 	};
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	if (self->tok.type == _PUB) {
 		node.udt.public = true;
-		parser_advance(self);
+		GetNextValidToken(self);
 	}
 
-	if (self->tok.type != _IDENTIFIER) {
-		usererror("missing struct name");
-		Throw(XXPARSE);
-	}
+	check(self, _IDENTIFIER, "missing struct name after 'struct' keyword");
 
-	lexcpy(self, &node.udt.name, self->tok.lexeme, self->tok.len);
+	node.udt.name = MarkedLexeme(self);
 
-	move_check_move(self, _LEFTBRACE, "expected '{' after name");
+	move_check_move(self, _LEFTBRACE, "missing '{' after struct name");
 
-	node.udt.members = rec_members(self);
+	node.udt.members = RecParseMembers(self);
 
-	check_move(self, _RIGHTBRACE, "expected '}' after members");
+	check_move(self, _RIGHTBRACE, "missing '}' after struct members");
 
-	check_move(self, _SEMICOLON, "expected ';' after struct");
+	check_move(self, _SEMICOLON, "missing ';' after struct declaration");
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_members
- * @brief Process each scope:name:type triplet within a struct declaration.
- * @return Vector of valid member nodes. A parse exception may be thrown.
- * @remark The member capacity uses the magic number 4 as a heuristic. We assume
- * most structs are generally quite small.
- ******************************************************************************/
-static member_vector rec_members(parser *self)
+//<member list>
+//throws error if no members found
+static vector(Member) RecParseMembers(parser *self)
 {
 	assert(self);
 
-	member_vector vec = {0};
-	member_vector_init(&vec, 0, 4);
-
-	//vector<member> stores members directly, not their pointers, so the
-	//parser mempool only needs to track the single vector data pointer.
-	mem_vector_push(&self->mempool, vec.data);
+	vector(Member) vec = {0};
+	const size_t vec_capacity = 4;
+	alloc_mark_vector(MemberVectorInit, vec, 0, vec_capacity);
 
 	member attr = {
 		.name = NULL,
@@ -664,39 +524,36 @@ static member_vector rec_members(parser *self)
 	while (self->tok.type != _RIGHTBRACE) {
 		if (self->tok.type == _PUB) {
 			attr.public = true;
-			parser_advance(self);
+			GetNextValidToken(self);
 		}
 
-		if (self->tok.type != _IDENTIFIER) {
-			usererror("expected member name");
-			Throw(XXPARSE);
-		}
+		check(self, _IDENTIFIER, "missing struct member name");
 
-		lexcpy(self, &attr.name, self->tok.lexeme, self->tok.len);
+		attr.name = MarkedLexeme(self);
 
-		move_check_move(self, _COLON, "expected ':' after name");
+		move_check_move(self, _COLON, "missing ':' after name");
 
-		attr.typ = rec_type(self);
+		attr.typ = RecType(self);
 
-		check_move(self, _SEMICOLON, "expected ';' after type");
+		check_move(self, _SEMICOLON, "missing ';' after type");
 
-		member_vector_push(&vec, attr);
+		MemberVectorPush(&vec, attr);
 
 		memset(&attr, 0, sizeof(member));
+	}
+
+	if (vec.len == 0) {
+		usererror("cannot declare an empty struct");
+		Throw(XXPARSE);
 	}
 
 	return vec;
 }
 
-/*******************************************************************************
- * @fn rec_func
- * @brief Create a function declaration node.
- * @param self The token held by the parser on invocation must be _FUNC.
- * @return Function node is always valid. A parse exception may be thrown.
- ******************************************************************************/
-decl rec_func(parser *self)
+decl RecFunction(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _FUNC);
 
 	decl node = {
 		.tag = NODE_FUNCTION,
@@ -711,32 +568,24 @@ decl rec_func(parser *self)
 		.line = self->tok.line
 	};
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	if (self->tok.type == _PUB) {
 		node.function.public = true;
-		parser_advance(self);
+		GetNextValidToken(self);
 	}
 
-	if (self->tok.type != _IDENTIFIER) {
-		usererror("missing function name");
-		Throw(XXPARSE);
-	}
+	check(self, _IDENTIFIER, "missing function name in declaration");
 
-	lexcpy(self, &node.function.name, self->tok.lexeme, self->tok.len);
+	node.function.name = MarkedLexeme(self);
 
 	//parameter list
 	move_check_move(self, _LEFTPAREN, "missing '(' after function name");
 
 	if (self->tok.type == _VOID) {
-		parser_advance(self);
+		GetNextValidToken(self);
 	} else {
-		node.function.params = rec_params(self);
-
-		if (node.function.params.len == 0) {
-			usererror("empty parameter list must state 'void'");
-			Throw(XXPARSE);
-		}
+		node.function.params = RecParseParameters(self);
 	}
 
 	check_move(self, _RIGHTPAREN, "missing ')' after parameters");
@@ -745,41 +594,33 @@ decl rec_func(parser *self)
 	check_move(self, _RETURN, "missing 'return' after parameters");
 
 	if (self->tok.type == _VOID) {
-		parser_advance(self);
+		GetNextValidToken(self);
 	} else {
-		node.function.ret = rec_type(self);
+		node.function.ret = RecType(self);
 	}
 
 	//receiver
 	if (self->tok.type == _FOR) {
-		parser_advance(self);
-		node.function.recv = rec_type(self);
+		GetNextValidToken(self);
+		node.function.recv = RecType(self);
 	}
 
 	//body
-	check(self, _LEFTBRACE, "missing body in function declaration");
-	node.function.block = stmt_init(self, rec_block(self));
+	check(self, _LEFTBRACE, "cannot declare function without a body");
+	node.function.block = CopyStmtToHeap(self, RecBlock(self));
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_params
- * @brief Process each mutability:name:type triplet within a param declaration.
- * @return Vector of valid param nodes. A parse exception may be thrown.
- * @remark The param capacity uses the magic number 4 as a heuristic. We assume
- * most param lists are generally quite small.
- ******************************************************************************/
-static param_vector rec_params(parser *self)
+//<parameter list>
+//throws error if no parameters found
+static vector(Param) RecParseParameters(parser *self)
 {
 	assert(self);
 
-	param_vector vec = {0};
-	param_vector_init(&vec, 0, 4);
-
-	//vector<param> stores params directly instead of pointers to params,
-	//so the mempool only needs to track the vector data pointer.
-	mem_vector_push(&self->mempool, vec.data);
+	vector(Param) vec = {0};
+	const size_t vec_capacity = 4;
+	alloc_mark_vector(ParamVectorInit, vec, 0, vec_capacity);
 
 	param attr  = {
 		.name = NULL,
@@ -789,43 +630,39 @@ static param_vector rec_params(parser *self)
 
 	while (self->tok.type != _RIGHTPAREN) {
 		if (vec.len > 0) {
-			check_move(self, _COMMA,
-					"parameters must be comma separated");
+			check_move(self, _COMMA, "missing ',' after parameter");
 		}
 
 		if (self->tok.type == _MUT) {
 			attr.mutable = true;
-			parser_advance(self);
+			GetNextValidToken(self);
 		}
 
-		if (self->tok.type != _IDENTIFIER) {
-			usererror("expected parameter name");
-			Throw(XXPARSE);
-		}
+		check(self, _IDENTIFIER, "missing function parameter name");
 
-		lexcpy(self, &attr.name, self->tok.lexeme, self->tok.len);
+		attr.name = MarkedLexeme(self);
 
-		move_check_move(self, _COLON, "expected ':' after name");
+		move_check_move(self, _COLON, "missing ':' after name");
 
-		attr.typ = rec_type(self);
+		attr.typ = RecType(self);
 
-		param_vector_push(&vec, attr);
+		ParamVectorPush(&vec, attr);
 
 		memset(&attr, 0, sizeof(param));
+	}
+
+	if (vec.len == 0) {
+		usererror("empty parameter list; did you mean 'void'?");
+		Throw(XXPARSE);
 	}
 
 	return vec;
 }
 
-/*******************************************************************************
- * @fn rec_var
- * @brief Create a variable declaration node.
- * @param self The token held by the parser on invocation must be _VAR.
- * @return The return node is always valid. A parse exception may be thrown.
- ******************************************************************************/
-static decl rec_var(parser *self)
+static decl RecVariable(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _LET);
 
 	decl node = {
 		.tag = NODE_VARIABLE,
@@ -839,85 +676,64 @@ static decl rec_var(parser *self)
 		.line = self->tok.line
 	};
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	if (self->tok.type == _PUB) {
 		node.variable.public = true;
-		parser_advance(self);
+		GetNextValidToken(self);
 	}
 
 	if (self->tok.type == _MUT) {
 		node.variable.mutable = true;
-		parser_advance(self);
+		GetNextValidToken(self);
 	}
 
-	if (self->tok.type != _IDENTIFIER) {
-		usererror("expected lvalue in variable declaration");
-		Throw(XXPARSE);
-	}
+	check(self, _IDENTIFIER, "missing variable name in declaration");
 
-	lexcpy(self, &node.variable.name, self->tok.lexeme, self->tok.len);
+	node.variable.name = MarkedLexeme(self);
 
-	move_check_move(self, _COLON, "expected ':' before type");
+	move_check_move(self, _COLON, "missing ':' before type");
 
-	node.variable.vartype = rec_type(self);
+	node.variable.vartype = RecType(self);
 
-	check_move(self, _EQUAL, "declaration must have an initializer");
+	check_move(self, _EQUAL, "declared variables must be initialized");
 
-	if (self->tok.type == _SEMICOLON) {
-		usererror("missing rvalue in variable declaration");
-		Throw(XXPARSE);
-	}
-
-	node.variable.value = rec_assignment(self);
+	node.variable.value = RecAssignment(self);
 
 	check_move(self, _SEMICOLON, "missing ';' after declaration");
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_type
- * @brief Create a linked list of nodes representing a type
- * @return A singly linked list of nodes where the head represented the outer-
- * most composite type and the tail is the inner-most base type. A parse
- * exception may be thrown.
- ******************************************************************************/
-type *rec_type(parser *self)
+//guaranteed to be a singly linked list with a non-null head
+type *RecType(parser *self)
 {
 	assert(self);
 
-	type *node = NULL;
-	kmalloc(node, sizeof(type));
-	mem_vector_push(&self->mempool, node);
+	type *node = AllocateAndMark(self, sizeof(type));
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
 		node->tag = NODE_BASE;
-		lexcpy(self, &node->base, self->tok.lexeme, self->tok.len);
-		parser_advance(self);
+		node->base = MarkedLexeme(self);
+		GetNextValidToken(self);
 		break;
 
 	case _STAR:
 		node->tag = NODE_POINTER;
-		parser_advance(self);
-		node->pointer = rec_type(self);
+		GetNextValidToken(self);
+		node->pointer = RecType(self);
 		break;
 
 	case _LEFTBRACKET:
-		move_check(self, _LITERALINT, "expected array size");
-
-		//array length should not be zero, but this check is
-		//relegated to the context sensitive analyser.
-		node->array.len = extract_arrnum(self);
-
-		move_check_move(self, _RIGHTBRACKET, "expected ']'");
-		node->array.base = rec_type(self);
+		move_check(self, _LITERALINT, "missing array size");
+		node->array.len = ExtractArrayIndex(self);
+		move_check_move(self, _RIGHTBRACKET, "missing ']'");
+		node->array.base = RecType(self);
 		break;
 
 	default:
-		usererror("expected type but none found");
-
+		usererror("missing a data type");
 		Throw(XXPARSE);
 		break;
 	}
@@ -925,12 +741,11 @@ type *rec_type(parser *self)
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_stmt
- * @brief Jump table for statement handlers.
- * @return Always returns a valid node. May throw a parse exception.
- ******************************************************************************/
-static stmt rec_stmt(parser *self)
+//------------------------------------------------------------------------------
+//statements
+
+//master jump table
+static stmt RecStmt(parser *self)
 {
 	assert(self);
 
@@ -938,23 +753,23 @@ static stmt rec_stmt(parser *self)
 
 	switch(self->tok.type) {
 	case _LEFTBRACE:
-		node = rec_block(self);
+		node = RecBlock(self);
 		break;
 
 	case _FOR:
-		node = rec_forloop(self);
+		node = RecForLoop(self);
 		break;
 
 	case _WHILE:
-		node = rec_whileloop(self);
+		node = RecWhileLoop(self);
 		break;
 
 	case _SWITCH:
-		node = rec_switch(self);
+		node = RecSwitch(self);
 		break;
 
 	case _IF:
-		node = rec_branch(self);
+		node = RecBranch(self);
 		break;
 
 	case _RETURN:
@@ -964,7 +779,7 @@ static stmt rec_stmt(parser *self)
 		fallthrough;
 
 	case _IMPORT:
-		node = rec_named_target(self);
+		node = RecNamedTarget(self);
 		break;
 
 	case _BREAK:
@@ -974,29 +789,22 @@ static stmt rec_stmt(parser *self)
 		fallthrough;
 
 	case _FALLTHROUGH:
-		node = rec_anonymous_target(self);
+		node = RecAnonymousTarget(self);
 		break;
 
 	case _LABEL:
-		node = rec_label(self);
+		node = RecLabel(self);
 		break;
 
 	default:
-		node = rec_exprstmt(self);
+		node = RecExprStmt(self);
 		break;
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_block
- * @brief <block statement> ::= "{" <fiat>* "}" . The current token held in the
- * parser must be a _LEFTBRACE token.
- * @return Always returns a valid block node. May throw a parse exception. At
- * return the parser will have consumed the terminating right brace.
- ******************************************************************************/
-static stmt rec_block(parser *self)
+static stmt RecBlock(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _LEFTBRACE);
@@ -1009,28 +817,24 @@ static stmt rec_block(parser *self)
 		.line = self->tok.line
 	};
 
-	fiat_vector_init(&node.block.fiats, 0, 4);
+	const size_t vec_capacity = 4;
+	alloc_mark_vector(FiatVectorInit, node.block.fiats, 0, vec_capacity);
 
-	parser_advance(self); //move off left brace 
+	GetNextValidToken(self);
 
 	while (self->tok.type != _RIGHTBRACE) {
-		fiat_vector_push(&node.block.fiats, rec_fiat(self));
+		FiatVectorPush(&node.block.fiats, RecFiat(self));
 	}
 
-	parser_advance(self); //move off right brace
+	GetNextValidToken(self);
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_forloop
- * @brief <for statement> ::= "for" "(" (<short declaration> | <expression>) ";"
- * <expression> ";" <expression> ")" <block statement> . The token held
- * in the parser should be the _FOR keyword.
- ******************************************************************************/
-static stmt rec_forloop(parser *self)
+static stmt RecForLoop(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _FOR);
 
 	stmt node = {
 		.tag = NODE_FORLOOP,
@@ -1042,64 +846,55 @@ static stmt rec_forloop(parser *self)
 	//initial condition
 	if (self->tok.type == _LET) {
 		node.forloop.tag = FOR_DECL;
-		node.forloop.shortvar = decl_init(self, rec_var(self));
-		//rec_var consumes the terminating semicolon
+		node.forloop.shortvar = CopyDeclToHeap(self, RecVariable(self));
+		//RecVariable consumes the terminating semicolon
 	} else {
 		node.forloop.tag = FOR_INIT;
-		node.forloop.init = rec_assignment(self);
+		node.forloop.init = RecAssignment(self);
 		check_move(self, _SEMICOLON, "missing ';' after init");
 	}
 
-	node.forloop.cond = rec_assignment(self);
+	node.forloop.cond = RecAssignment(self);
 	check_move(self, _SEMICOLON, "missing ';' after condition");
 
-	node.forloop.post = rec_assignment(self);
+	node.forloop.post = RecAssignment(self);
 	check_move(self, _RIGHTPAREN, "missing ')' after post expression");
 
-	node.forloop.block = stmt_init(self, rec_block(self));
+	node.forloop.block = CopyStmtToHeap(self, RecBlock(self));
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_whileloop
- * @brief <while statement> ::= "while" "(" <expression> ")" <block statement> .
- * The current token in the parser should be the _WHILE keyword.
- ******************************************************************************/
-static stmt rec_whileloop(parser *self)
+static stmt RecWhileLoop(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _WHILE);
 
 	stmt node = {
 		.tag = NODE_WHILELOOP,
 		.line = self->tok.line
 	};
 
-	move_check_move(self, _LEFTPAREN, "expected '(' after 'while'");
+	move_check_move(self, _LEFTPAREN, "missing'(' after 'while'");
 
-	node.whileloop.cond = rec_assignment(self);
+	node.whileloop.cond = RecAssignment(self);
 
-	check_move(self, _RIGHTPAREN, "expected ')' after while condition");
+	check_move(self, _RIGHTPAREN, "missing ')' after while condition");
 
 	if (self->tok.type == _LEFTBRACE) {
-		node.whileloop.block = stmt_init(self, rec_block(self));
+		node.whileloop.block = CopyStmtToHeap(self, RecBlock(self));
 	} else {
-		usererror("expected block statement after while loop");
+		usererror("missing block statement after while loop");
 		Throw(XXPARSE);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_switch
- * @brief <switch statement> ::= "switch" "(" <expression> ")" "{" 
- * <case statement>* "}"
- * The token currently held by the parser should be the _SWITCH keyword.
- ******************************************************************************/
-static stmt rec_switch(parser *self)
+static stmt RecSwitch(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _SWITCH);
 
 	stmt node = {
 		.tag = NODE_SWITCHSTMT,
@@ -1108,29 +903,27 @@ static stmt rec_switch(parser *self)
 
 	move_check_move(self, _LEFTPAREN, "missing '(' after 'switch'");
 
-	node.switchstmt.controller = rec_assignment(self);
+	node.switchstmt.controller = RecAssignment(self);
 
 	check_move(self, _RIGHTPAREN, "missing ')' after switch condition");
 
 	check_move(self, _LEFTBRACE, "missing '{' to open switch body");
 
-	node.switchstmt.tests = rec_tests(self);
+	node.switchstmt.tests = RecTests(self);
 
 	check_move(self, _RIGHTBRACE, "missing '}' to close switch body");
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_tests
- * @brief <case statement> ::= ("case" <expression> | "default") <block stmt>
- ******************************************************************************/
-static test_vector rec_tests(parser *self)
+//<case statement>* within <switch statement> rule
+static vector(Test) RecTests(parser *self)
 {
 	assert(self);
 
-	test_vector vec = {0};
-	test_vector_init(&vec, 0, 4);
+	vector(Test) vec = {0};
+	const size_t vec_capacity = 4;
+	alloc_mark_vector(TestVectorInit, vec, 0, vec_capacity);
 
 	test t = {
 		.cond = NULL,
@@ -1140,63 +933,66 @@ static test_vector rec_tests(parser *self)
 	while (self->tok.type == _CASE || self->tok.type == _DEFAULT) {
 		switch (self->tok.type) {
 		case _CASE:
-			parser_advance(self);
-			t.cond = rec_assignment(self);
+			GetNextValidToken(self);
+			t.cond = RecAssignment(self);
 			break;
 
 		case _DEFAULT:
-			parser_advance(self);
+			GetNextValidToken(self);
 			t.cond = NULL;
 			break;
+
+		default:
+			assert(0 != 0);
 		}
 
 		if (self->tok.type != _LEFTBRACE) {
-			usererror("switch cases must use block statements");
+			usererror("switch cases must be block statements");
 			Throw(XXPARSE);
 		}
 
-		t.pass = stmt_init(self, rec_block(self));
-		test_vector_push(&vec, t);
+		t.pass = CopyStmtToHeap(self, RecBlock(self));
+		TestVectorPush(&vec, t);
 		memset(&t, 0, sizeof(test));
+	}
+
+	if (vec.len == 0) {
+		usererror("switch statement cannot be empty");
+		Throw(XXPARSE);
 	}
 
 	return vec;
 }
 
-/*******************************************************************************
- * @fn rec_branch
- * @brief <branch statement> ::=  "if" "(" <short declaration>? <expression> ")"
- * <block statement> ("else" (<branch statement> | <block statement>))? . The
- * current token in the parser should be the _IF keyword.
- ******************************************************************************/
-static stmt rec_branch(parser *self)
+static stmt RecBranch(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _IF);
 
 	stmt node = {
 		.tag = NODE_BRANCH,
 		.line = self->tok.line
 	};
 
-	//condition test
+	//condition
 	move_check_move(self, _LEFTPAREN, "missing '(' after 'if'");
 
 	if (self->tok.type == _LET) {
-		node.branch.shortvar = decl_init(self, rec_var(self));
-		//rec_var consumes terminating semicolon
+		node.branch.shortvar = CopyDeclToHeap(self, RecVariable(self));
+		//RecVariable consumes terminating semicolon
 	} else {
 		node.branch.shortvar = NULL;
 	}
 
-	node.branch.cond = rec_assignment(self);
+	node.branch.cond = RecAssignment(self);
 
 	check_move(self, _RIGHTPAREN, "missing ')' after if condition");
 
 	//if branch
 	if (self->tok.type == _LEFTBRACE) {
-		node.branch.pass = stmt_init(self, rec_block(self));
+		node.branch.pass = CopyStmtToHeap(self, RecBlock(self));
 	} else {
-		usererror("expected block statement after if condition");
+		usererror("missing block statement after if condition");
 		Throw(XXPARSE);
 	}
 
@@ -1206,17 +1002,17 @@ static stmt rec_branch(parser *self)
 		return node;
 	}
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	switch (self->tok.type) {
 	case _IF:
-		node.branch.fail = stmt_init(self, rec_branch(self));
+		node.branch.fail = CopyStmtToHeap(self, RecBranch(self));
 		break;
 
 	case _LEFTBRACE:
-		node.branch.fail = stmt_init(self, rec_block(self));
+		node.branch.fail = CopyStmtToHeap(self, RecBlock(self));
 		break;
-	
+
 	default:
 		usererror("expected 'else if' or 'else {...}' after block");
 		Throw(XXPARSE);
@@ -1225,14 +1021,12 @@ static stmt rec_branch(parser *self)
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_named_target
- * @brief goto, import, and return statments. The current token in the parser
- * should be the leading token of the statement.
- ******************************************************************************/
-static stmt rec_named_target(parser *self)
+static stmt RecNamedTarget(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _GOTO ||
+	       self->tok.type == _IMPORT ||
+	       self->tok.type == _RETURN);
 
 	stmt node = {
 		.line = self->tok.line
@@ -1242,45 +1036,45 @@ static stmt rec_named_target(parser *self)
 	case _GOTO:
 		node.tag = NODE_GOTOLABEL;
 		move_check(self, _IDENTIFIER, "missing goto target");
-		lexcpy(self, &node.gotolabel, self->tok.lexeme, self->tok.len);
+		node.gotolabel = MarkedLexeme(self);
 		move_check_move(self, _SEMICOLON, "missing ';' after goto");
 		break;
 
 	case _IMPORT:
 		node.tag = NODE_IMPORT;
 		move_check(self, _IDENTIFIER, "missing import name");
-		lexcpy(self, &node.import, self->tok.lexeme, self->tok.len);
+		node.import = MarkedLexeme(self);
 		move_check_move(self, _SEMICOLON, "missing ';' after import");
 		break;
 
 	case _RETURN:
 		node.tag = NODE_RETURNSTMT;
-		parser_advance(self);
+		GetNextValidToken(self);
 
-		//func returns nothing
 		if (self->tok.type == _SEMICOLON) {
 			node.returnstmt = NULL;
-			parser_advance(self);
+			GetNextValidToken(self);
 			break;
 		}
 
-		node.returnstmt = rec_assignment(self);
+		node.returnstmt = RecAssignment(self);
 		check_move(self, _SEMICOLON, "missing ';' after return");
 		break;
+
+	default:
+		assert(0 != 0);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_anonymous_target
- * @brief break, continue, and fallthrough statements. The current token in the
- * parser should be the leading token of the statement.
- ******************************************************************************/
-static stmt rec_anonymous_target(parser *self)
+static stmt RecAnonymousTarget(parser *self)
 {
 	assert(self);
-	
+	assert(self->tok.type == _BREAK ||
+	       self->tok.type == _CONTINUE ||
+	       self->tok.type == _FALLTHROUGH);
+
 	stmt node = {
 		.line = self->tok.line
 	};
@@ -1290,7 +1084,7 @@ static stmt rec_anonymous_target(parser *self)
 		node.tag = NODE_BREAKSTMT;
 		move_check_move(self, _SEMICOLON, "missing ';' after break");
 		break;
-	
+
 	case _CONTINUE:
 		node.tag = NODE_CONTINUESTMT;
 		move_check_move(self, _SEMICOLON, "missing ';' after continue");
@@ -1302,20 +1096,16 @@ static stmt rec_anonymous_target(parser *self)
 		break;
 
 	default:
-		assert(0 != 0 && "func called on non-anonymous token");
+		assert(0 != 0);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_label
- * @brief <label statement> ::= "label" IDENTIFIER ":" <statement> . The current
- * token in the parser must be the _LABEL keyword.
- ******************************************************************************/
-static stmt rec_label(parser *self)
+static stmt RecLabel(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _LABEL);
 
 	stmt node = {
 		.tag = NODE_LABEL,
@@ -1326,25 +1116,18 @@ static stmt rec_label(parser *self)
 		.line = self->tok.line
 	};
 
-	move_check(self, _IDENTIFIER, "label name is not an identifier");
+	move_check(self, _IDENTIFIER, "label name must be an identifier");
 
-	lexcpy(self, &node.label.name, self->tok.lexeme, self->tok.len);
+	node.label.name = MarkedLexeme(self);
 
 	move_check_move(self, _COLON, "missing ':' after label name");
 
-	node.label.target = stmt_init(self, rec_stmt(self));
+	node.label.target = CopyStmtToHeap(self, RecStmt(self));
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_exprstmt
- * @brief Create an expression statement node.
- * @param self The token held by the parser on invocation must be the first
- * token of the expression.
- * @return Always returns a valid node. May throw a parse exception.
- ******************************************************************************/
-static stmt rec_exprstmt(parser *self)
+static stmt RecExprStmt(parser *self)
 {
 	assert(self);
 
@@ -1354,97 +1137,83 @@ static stmt rec_exprstmt(parser *self)
 		.line = self->tok.line
 	};
 
-	node.exprstmt = rec_assignment(self);
+	node.exprstmt = RecAssignment(self);
 
 	check_move(self, _SEMICOLON, "missing ';' after expression");
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_assignment
- * @brief <assignment> ::= <logical or> ("=" <assignment>)?
- * @remark Note that Lemon does not allow chained assignments.
- ******************************************************************************/
-static expr *rec_assignment(parser *self)
+//------------------------------------------------------------------------------
+//expressions
+
+static expr *RecAssignment(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_logicalor(self);
+	expr *node = RecLogicalOr(self);
 
 	if (self->tok.type == _EQUAL) {
 		expr *tmp = node;
-		node = expr_init(self, NODE_ASSIGNMENT);
+		node = ExprInit(self, NODE_ASSIGNMENT);
 		node->assignment.lvalue = tmp;
 		node->line = self->tok.line;
 
-		parser_advance(self);
-		node->assignment.rvalue = rec_logicalor(self);
+		GetNextValidToken(self);
+		node->assignment.rvalue = RecLogicalOr(self);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_logicalor
- * @brief <logical or> ::= <logical and> ("||" <logical and>)*
- ******************************************************************************/
-static expr *rec_logicalor(parser *self)
+static expr *RecLogicalOr(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_logicaland(self);
+	expr *node = RecLogicalAnd(self);
 	expr *tmp = NULL;
 
 	while (self->tok.type == _OR) {
 		tmp = node;
-		node = expr_init(self, NODE_BINARY);
+		node = ExprInit(self, NODE_BINARY);
 
 		node->binary.left = tmp;
 		node->binary.operator = _OR;
 		node->line = self->tok.line;
 
-		parser_advance(self);
-		node->binary.right = rec_logicaland(self);
+		GetNextValidToken(self);
+		node->binary.right = RecLogicalAnd(self);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_logicaland
- * @brief <logical and> ::= <equality> ("&&" <equality>)*
- ******************************************************************************/
-static expr *rec_logicaland(parser *self)
+static expr *RecLogicalAnd(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_equality(self);
+	expr *node = RecEquality(self);
 
 	while (self->tok.type == _AND) {
 		expr *tmp = node;
-		node = expr_init(self, NODE_BINARY);
+		node = ExprInit(self, NODE_BINARY);
 
 		node->binary.left = tmp;
 		node->binary.operator = _AND;
 		node->line = self->tok.line;
 
-		parser_advance(self);
-		node->binary.right = rec_equality(self);
+		GetNextValidToken(self);
+		node->binary.right = RecEquality(self);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn equality
- * @brief <equality> ::= <term> ((">"|"<"|">="|"<="|"=="|"!=") <term>)*
- ******************************************************************************/
-static expr *rec_equality(parser *self)
+static expr *RecEquality(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_term(self);
+	expr *node = RecTerm(self);
 	expr *tmp = NULL;
 
 	while (true) {
@@ -1466,14 +1235,14 @@ static expr *rec_equality(parser *self)
 
 		case _NOTEQUAL:
 			tmp = node;
-			node = expr_init(self, NODE_BINARY);
+			node = ExprInit(self, NODE_BINARY);
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
 			node->line = self->tok.line;
 
-			parser_advance(self);
-			node->binary.right = rec_term(self);
+			GetNextValidToken(self);
+			node->binary.right = RecTerm(self);
 			break;
 
 		default:
@@ -1485,15 +1254,11 @@ exit_loop:
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_term
- * @brief249 <term> ::= <factor> (("+" | "-" | "|" | "^") <factor>)*
- ******************************************************************************/
-static expr *rec_term(parser *self)
+static expr *RecTerm(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_factor(self);
+	expr *node = RecFactor(self);
 	expr *tmp = NULL;
 
 	while (true) {
@@ -1509,14 +1274,14 @@ static expr *rec_term(parser *self)
 
 		case _BITXOR:
 			tmp = node;
-			node = expr_init(self, NODE_BINARY);
+			node = ExprInit(self, NODE_BINARY);
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
 			node->line = self->tok.line;
 
-			parser_advance(self);
-			node->binary.right = rec_factor(self);
+			GetNextValidToken(self);
+			node->binary.right = RecFactor(self);
 			break;
 
 		default:
@@ -1528,15 +1293,11 @@ exit_loop:
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_factor
- * @brief <factor> ::= <unary> (("*"|"/"|"%"|">>"|"<<"|"&") <unary>)*
- ******************************************************************************/
-static expr *rec_factor(parser *self)
+static expr *RecFactor(parser *self)
 {
 	assert(self);
 
-	expr *node = rec_unary(self);
+	expr *node = RecUnary(self);
 	expr *tmp = NULL;
 
 	while (true) {
@@ -1558,14 +1319,14 @@ static expr *rec_factor(parser *self)
 
 		case _AMPERSAND:
 			tmp = node;
-			node = expr_init(self, NODE_BINARY);
+			node = ExprInit(self, NODE_BINARY);
 
 			node->binary.left = tmp;
 			node->binary.operator = self->tok.type;
 			node->line = self->tok.line;
 
-			parser_advance(self);
-			node->binary.right = rec_unary(self);
+			GetNextValidToken(self);
+			node->binary.right = RecUnary(self);
 			break;
 
 		default:
@@ -1577,12 +1338,7 @@ exit_loop:
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_unary
- * @brief <unary> ::= ("-" | "+" | "'" | "!" | "*" | "&" | <cast>) <unary> 
- * | <primary>
- ******************************************************************************/
-static expr *rec_unary(parser *self)
+static expr *RecUnary(parser *self)
 {
 	assert(self);
 
@@ -1605,49 +1361,47 @@ static expr *rec_unary(parser *self)
 		fallthrough;
 
 	case _AMPERSAND:
-		node = expr_init(self, NODE_UNARY);
+		node = ExprInit(self, NODE_UNARY);
 		node->unary.operator = self->tok.type;
 		node->line = self->tok.line;
-		parser_advance(self);
-		node->unary.operand = rec_unary(self);
+		GetNextValidToken(self);
+		node->unary.operand = RecUnary(self);
 		break;
 
 	case _COLON:
-		node = expr_init(self, NODE_CAST);
+		node = ExprInit(self, NODE_CAST);
 		node->line = self->tok.line;
-		parser_advance(self);
-		node->cast.casttype = rec_type(self);
-		check_move(self, _COLON, "expected ':' after type casting");
-		node->cast.operand = rec_unary(self);
+		GetNextValidToken(self);
+		node->cast.casttype = RecType(self);
+		check_move(self, _COLON, "missing ':' after type cast");
+		node->cast.operand = RecUnary(self);
 		break;
 
 	default:
-		node = rec_primary(self);
+		node = RecPrimary(self);
 	}
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_primary
- * @brief <primary> ::= <atom> (<call> | <selector> | <index>)*
- * @remark <atom> production is expanded and implemented in rec_primary while
- * optional calls, selectors, and indicies are implemented in rec_access.
- ******************************************************************************/
-static expr *rec_primary(parser *self)
+//the <atom> grammar rule is expanded and implemented within RecPrimary while
+//the optional call, selector, and index rules are relegated to RecAccess.
+static expr *RecPrimary(parser *self)
 {
 	assert(self);
 
-	static const char *errfmt = "expression is ill-formed at '%.*s'";
+	static const cstring *fmt = "expression is ill-formed at '%s'";
+	const cstring *msg = self->tok.lexeme;
+
 	expr *node = NULL;
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
-		node = rec_rvar_or_ident(self);
+		node = RecRvarOrIdentifier(self);
 		break;
 
 	case _LEFTBRACKET:
-		node = rec_arraylit(self);
+		node = RecArrayLiteral(self);
 		break;
 
 	case _LITERALINT:
@@ -1669,32 +1423,37 @@ static expr *rec_primary(parser *self)
 		fallthrough;
 
 	case _FALSE:
-		node = expr_init(self, NODE_LIT);
+		node = ExprInit(self, NODE_LIT);
 		node->line = self->tok.line;
-		lexcpy(self, &node->lit.rep, self->tok.lexeme, self->tok.len);
+		node->lit.rep = MarkedLexeme(self);
 		node->lit.littype = self->tok.type;
-		parser_advance(self);
+		GetNextValidToken(self);
 		break;
 
 	case _LEFTPAREN:
-		parser_advance(self);
-		node = rec_assignment(self);
-		check_move(self, _RIGHTPAREN, "expected ')' after grouping");
+		GetNextValidToken(self);
+		node = RecAssignment(self);
+		check_move(self, _RIGHTPAREN, "missing ')' after grouping");
 		break;
 
 	default:
-		usererror(errfmt, self->tok.len, self->tok.lexeme);
+		usererror(fmt, msg);
 		Throw(XXPARSE);
 	}
 
-	return rec_access(self, node);
+	return RecAccess(self, node);
 }
 
-/*******************************************************************************
- * @fn rec_access
- * @brief <call> | <selector> | <index>
- ******************************************************************************/
-static expr *rec_access(parser *self, expr *prev)
+//RecAccess recursively wraps the previous expression within another expression
+//tree. The previous expression always binds tighter than the expression it is
+//wrapped in, and this is enforced by a post-order traversal.
+//
+//example: x.y.z wraps the atom node x in a selector node for y. the selector
+//node for y is again wrapped in another selector node for z.
+//
+//example: foo().bar wraps the atom node foo in a call node. The call node is
+//wrapped again in a selector node for bar.
+static expr *RecAccess(parser *self, expr *prev)
 {
 	assert(self);
 	assert(prev);
@@ -1703,34 +1462,34 @@ static expr *rec_access(parser *self, expr *prev)
 
 	switch (self->tok.type) {
 	case _DOT:
-		node = expr_init(self, NODE_SELECTOR);
+		node = ExprInit(self, NODE_SELECTOR);
 		node->line = self->tok.line;
-		
+
 		move_check(self, _IDENTIFIER, "missing attribute after '.'");
-		
+
 		node->selector.name = prev;
-		node->selector.attr = rec_ident(self, self->tok);
-		
-		parser_advance(self);
+		node->selector.attr = RecIdentifier(self);
+
+		GetNextValidToken(self);
 		break;
 
 	case _LEFTPAREN:
-		node = expr_init(self, NODE_CALL);
+		node = ExprInit(self, NODE_CALL);
 		node->line = self->tok.line;
 
 		node->call.name = prev;
-		node->call.args = rec_args(self);
+		node->call.args = RecArguments(self);
 
 		break;
 
 	case _LEFTBRACKET:
-		node = expr_init(self, NODE_INDEX);
+		node = ExprInit(self, NODE_INDEX);
 		node->line = self->tok.line;
 
-		parser_advance(self);
+		GetNextValidToken(self);
 
 		node->index.name = prev;
-		node->index.key = rec_assignment(self);
+		node->index.key = RecAssignment(self);
 
 		check_move(self, _RIGHTBRACKET, "missing ']' after index");
 
@@ -1741,149 +1500,136 @@ static expr *rec_access(parser *self, expr *prev)
 		return prev;
 	}
 
-	return rec_access(self, node);
+	return RecAccess(self, node);
 }
 
-/*******************************************************************************
- * @fn rec_rvar_or_ident
- * @brief Distinguish a leading identifier as a simple identifier node or as a
- * complex rvar literal.
- * @return Always returns a valid node. May throw a parse exception.
- ******************************************************************************/
-static expr *rec_rvar_or_ident(parser *self)
+static expr *RecRvarOrIdentifier(parser *self)
 {
 	assert(self);
+	assert(self->tok.type == _IDENTIFIER);
 
-	token tmp = self->tok;
+	expr *node = NULL;
+	token prev = self->tok;
 
-	parser_advance(self);
+	GetNextValidToken(self);
 
 	if (self->tok.type == _TILDE) {
-		return rec_rvar(self, tmp);
+		self->tok = prev;
+		node = RecRvar(self, true);
 	} else {
-		return rec_ident(self, tmp);
+		token tmp = self->tok;
+		self->tok = prev;
+		node = RecIdentifier(self);
+		self->tok = tmp;
 	}
-}
-
-/*******************************************************************************
- * @fn rec_ident
- * @brief Simple identifier nodes. Creates an identifier from the token input
- * rather than from the parser.
- ******************************************************************************/
-static expr *rec_ident(parser *self, token tok)
-{
-	assert(self);
-
-	expr *node = expr_init(self, NODE_IDENT);
-	node->line = tok.line;
-	lexcpy(self, &node->ident.name, tok.lexeme, tok.len);
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_rvar
- * @brief Create a random variable literal expression node. The current token
- * held by the parser must be the tilde.
- * @param prev The leading identifier representing the random distribution
- * @return Always returns a valid node. May throw a parse exception.
- ******************************************************************************/
-static expr *rec_rvar(parser *self, token prev)
+static expr *RecIdentifier(parser *self)
 {
 	assert(self);
-	assert(self->tok.type == _TILDE);
+	assert(self->tok.type == _IDENTIFIER);
 
-	expr *node = expr_init(self, NODE_RVARLIT);
-	
-	node->line = prev.line;
-
-	lexcpy(self, &node->rvarlit.dist, prev.lexeme, prev.len);
-
-	parser_advance(self);
-
-	node->rvarlit.args = rec_args(self); 
+	expr *node = ExprInit(self, NODE_IDENT);
+	node->line = self->tok.line;
+	node->ident.name = MarkedLexeme(self);
 
 	return node;
 }
 
-/*******************************************************************************
- * @fn rec_args
- * @brief Process an argument list into an expr_vector. The current token held
- * in the parser must be a _LEFTPAREN.
- * @return On return the node is always valid and the right parenthesis will
- * have been consumed by the parser. A parse exception may be thrown.
- * @remark Vector capacity is set heuristically.
- ******************************************************************************/
-static expr_vector rec_args(parser *self)
+//lookahead might strip the tilde from the token channel
+static expr *RecRvar(parser *self, bool seen_tilde)
+{
+	assert(self);
+	assert(self->tok.type == _IDENTIFIER);
+
+	expr *node = ExprInit(self, NODE_RVARLIT);
+
+	node->line = self->tok.line;
+	node->rvarlit.dist = MarkedLexeme(self);
+
+	if (!seen_tilde) {
+		move_check(self, _TILDE, "missing '~' after distribution");
+	}
+
+	GetNextValidToken(self);
+
+	node->rvarlit.args = RecArguments(self);
+
+	return node;
+}
+
+static vector(Expr) RecArguments(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _LEFTPAREN);
 
-	expr_vector vec = {0};
-	expr_vector_init(&vec, 0, 4);
+	vector(Expr) vec = {0};
+	const size_t vec_capacity = 4;
+	alloc_mark_vector(ExprVectorInit, vec, 0, vec_capacity);
 
-	parser_advance(self); //move off left parenthesis
+	GetNextValidToken(self);
 
 	while (self->tok.type != _RIGHTPAREN) {
 		if (vec.len > 0) {
-			check_move(self, _COMMA, "expected ',' after arg");
+			check_move(self, _COMMA, "missing ',' after arg");
 		}
 
-		expr_vector_push(&vec, rec_assignment(self));
+		ExprVectorPush(&vec, RecAssignment(self));
 	}
 
-	parser_advance(self); //move off right parenthesis
+	GetNextValidToken(self);
 
 	return vec;
 }
 
-/*******************************************************************************
- * @fn rec_arraylit
- * @brief Process an array literal into an expression node. The current token
- * held by the parser must be a _LEFTBRACKET.
- * @return Always returns a valid node. May throw a parse exception. Every
- * value in the values vector has an associated value in the indicies vector
- * at the same vector index. When the associated value in the indicies vector
- * is -1, then the value in the values vector does not have a tagged index.
- ******************************************************************************/
-static expr *rec_arraylit(parser *self)
+//for each key-value pair in the array literal the key is kept in an idx_vector
+//and the value is kept in an expr_vector at the same index. If a value in the
+//array literal is not tagged with a key, then the associated value in the
+//idx_vector is -1.
+static expr *RecArrayLiteral(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _LEFTBRACKET);
 
-	static char *tagerr = "tagged array index must be an integer";
-	static char *closeerr = "missing ']' after tagged index";
-	static char *eqerr = "missing '=' after tagged index";
+	static cstring *tagerr = "tagged array index must be an integer";
+	static cstring *closeerr = "missing ']' after tagged index";
+	static cstring *eqerr = "missing '=' after tagged index";
 
-	expr *node = expr_init(self, NODE_ARRAYLIT);
+	expr *node = ExprInit(self, NODE_ARRAYLIT);
 
 	node->line = self->tok.line;
-	idx_vector_init(&node->arraylit.indicies, 0, 4);
-	expr_vector_init(&node->arraylit.values, 0, 4);
 
-	parser_advance(self); //move off left bracket
+	const size_t idx_cap = 4;
+	alloc_mark_vector(IndexVectorInit, node->arraylit.indicies, 0,idx_cap);
+
+	const size_t expr_cap = 4;
+	alloc_mark_vector(ExprVectorInit, node->arraylit.values, 0, expr_cap);
+
+	GetNextValidToken(self);
 
 	while (self->tok.type != _RIGHTBRACKET) {
 		if (node->arraylit.values.len > 0) {
-			check_move(self, _COMMA, "expected ',' after value");
+			check_move(self, _COMMA, "missing ',' after value");
 		}
 
 		if (self->tok.type == _LEFTBRACKET) {
 			move_check(self, _LITERALINT, tagerr);
 
-			intmax_t idx = extract_arrnum(self);
-			idx_vector_push(&node->arraylit.indicies, idx);
-			
+			intmax_t idx = ExtractArrayIndex(self);
+			IndexVectorPush(&node->arraylit.indicies, idx);
+
 			move_check_move(self, _RIGHTBRACKET, closeerr);
 			check_move(self, _EQUAL, eqerr);
 		} else {
-			idx_vector_push(&node->arraylit.indicies, -1);
+			IndexVectorPush(&node->arraylit.indicies, -1);
 		}
 
-		expr_vector_push(&node->arraylit.values, rec_assignment(self));
+		ExprVectorPush(&node->arraylit.values, RecAssignment(self));
 	}
 
-	parser_advance(self); //move off right bracket
+	GetNextValidToken(self);
 
 	assert(node->arraylit.indicies.len == node->arraylit.values.len);
 

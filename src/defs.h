@@ -1,38 +1,51 @@
-/**
- * @file defs.h
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Miscellaneous definitions.
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #pragma once
 
-//lemon compiler info
-#define LEMON_VERSION "6.0.0.0 (alpha)"
+#include <stdlib.h>
 
-//allocation helpers
-#define KiB(x) ((size_t) x * (size_t) 1024)
+//------------------------------------------------------------------------------
+// versioning
 
-//wrapper for gcc fallthrough extension
+#define LEMON_VERSION "Alpha"
+
+//5 digit version code; e.g., 100908 is version 10.9.8 (maj.min.patch)
+#ifdef __GNUC__
+	#define GCC_VERSION_MAJ (__GNUC__ * 10000)
+	#define GCC_VERSION_MIN (__GNUC_MINOR__ * 100)
+	#define GCC_VERSION_PCH (__GNUC_PATCHLEVEL__)
+	#define GCC_VERSION GCC_VERSION_MAJ + GCC_VERSION_MIN + GCC_VERSION_PCH
+#else
+	#define GCC_VERSION 0
+#endif
+
+//------------------------------------------------------------------------------
+//language extensions
+
 #define fallthrough __attribute__((fallthrough))
 
-/*******************************************************************************
- * @def kmalloc
- *
- * @details For the Lemon compiler, there is no situation where the program
- * will enter a recovery path and successfully sidestep an allocation failure.
- * If we checked the alloc return code, in all cases it would get passed up the 
- * call stack to main where a fatal buffer flush in xerror would be triggered.
- *
- * In many areas of the compiler (i.e., the parser), allocs are used so often
- * that checking the return value absolutely destroys code readability. It
- * offers very, very little benefit in return.
- *
- * I learned the following trick from Jens Gustedt's blog. If an alloc fails,
- * memset attempts to write a 0 to the first byte at NULL. It fails fast and
- * it fails early. Since the return value of an alloc is not known at compile
- * time, it also avoids triggering a -Wnonull warning from the GCC compiler.
- *
- * Also, note that this header doesn't automatically include the strings.h and
- * stdlib.h headers.
- ******************************************************************************/
-#define kmalloc(target, bytes) memset((target = malloc(bytes)), 0, 1)
+#define RAII(free) __attribute__((__cleanup__(free)))
+
+//------------------------------------------------------------------------------
+//allocation utils
+
+static size_t KiB(const double kilobytes)
+{
+	return (size_t) (1024 * kilobytes);
+}
+
+static size_t MiB(const double megabytes)
+{
+	return (size_t) (1048576 * megabytes);
+}
+
+__attribute__((malloc)) static void *AbortMalloc(const size_t bytes)
+{
+	void *region = malloc(bytes);
+
+	if (!region) {
+		abort();
+	}
+
+	return region;
+}

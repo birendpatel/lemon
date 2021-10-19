@@ -1,124 +1,89 @@
-/**
- * @file xerror.h
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v.3.0.
- * @brief Error handling API.
- * @details
- *
- *
- *                Thread   Level  File      Line
- *                   |       |     |          |
- *                   |       |     |          |
- *                   |       |     |          |
- *               (1234567) TRACE main.c:main:123 hello, world!
- *                                       |       \___________/
- *                                       |             |
- *                                       |             |
- *                                      Func         Message
- *
- *
- * The xerror logger stores messages in an internal buffer and flushes to stderr
- * when full or when fatal messages are passed. If the macro XERROR_DEBUG is
- * defined, then all log levels on all log calls will trigger an immediate
- * flush.
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v.3.0.
+//
+//
+//                Thread   Level  File      Line
+//                   |       |     |          |
+//                   |       |     |          |
+//                   |       |     |          |
+//               (1234567) TRACE main.c:main:123 hello, world!
+//                                       |       \___________/
+//                                       |             |
+//                                       |             |
+//                                      Func         Message
+//
+// Xerror is a suite of tools. For compiler errors, xerror provide a logging
+// mechanism, error codes, and exceptions. For user errors, xerror provides
+// formatting capabilities for error messages.
 
 #pragma once
 
-#include "../extern/cexception/CException.h"
+#include <stddef.h>
 
-/*******************************************************************************
- * @typedef xerror
- * @brief Error codes used in C Lemon for handling errors such as syscalls. Note
- * that the API guarantees for backwards and C library compatibility that the
- * error type will always be an alias for the int type.
- ******************************************************************************/
+#include "../extern/cexception/CException.h"
+#include "lib/str.h"
+
 typedef int xerror;
 
-/*******************************************************************************
- * @fn __xerror_log
- * @brief Log a message to an in-memory buffer.
- * @details This function will automatically flush its buffer to stderr when
- * full or when the level is XFATAL. All messages are guaranteed to be newline
- * terminated.
- ******************************************************************************/
+//this function enqueues a new error message to an internal thread-safe buffer.
+//The buffer will automatically flush to stderr when full or when the level is 
+//XFATAL. All messages are guaranteed to be newline terminated.
 __attribute__((__format__(__printf__, 5, 6)))
-void __xerror_log
+void XerrorLog
 (
-	const char *file,
-	const char *func,
+	const cstring *file,
+	const cstring *func,
 	const int line,
 	const int level,
-	const char *msg,
+	const cstring *msg,
 	...
 );
 
-//level codes
 #define XFATAL 0
+
+#define xerror_fatal(msg, ...) \
+XerrorLog(__FILE__, __func__, __LINE__, XFATAL, msg, ##__VA_ARGS__)
+
 #define XERROR 1
+
+#define xerror_issue(msg, ...) \
+XerrorLog(__FILE__, __func__, __LINE__, XERROR, msg, ##__VA_ARGS__)
+
 #define XTRACE 2
 
-/*******************************************************************************
- * @def xerror_fatal
- * @brief Convenience wrapper over __xerror_log for level XFATAL. This triggers
- * a buffer IO flush.
- ******************************************************************************/
-#define xerror_fatal(msg, ...) 				               \
-__xerror_log(__FILE__, __func__, __LINE__, XFATAL, msg, ##__VA_ARGS__)
+#define xerror_trace(msg, ...) \
+XerrorLog(__FILE__, __func__, __LINE__, XTRACE, msg, ##__VA_ARGS__)
 
-/*******************************************************************************
-* @def xerror_issue
-* @brief Convenience wrapper over __xerror_log for level XERROR
-******************************************************************************/
-#define xerror_issue(msg, ...) 				               \
-__xerror_log(__FILE__, __func__, __LINE__, XERROR, msg, ##__VA_ARGS__)
-
-/*******************************************************************************
- * @def xerror_trace
- * @brief Convenience wrapper over __xerror_log for level XTRACE
- ******************************************************************************/
-#define xerror_trace(msg, ...) 				               \
-__xerror_log(__FILE__, __func__, __LINE__, XTRACE, msg, ##__VA_ARGS__)
-
-/*******************************************************************************
- * @fn xerror_flush
- * @brief Manually flush the xerror buffer to stderr.
- * @details The xerror buffer will automatically flush when full or when the
- * __xerror_report function is invoked with a XFATAL level. You might want to
- * manually flush before running a tight loop or calling time-sensitive code.
- ******************************************************************************/
-void xerror_flush(void);
-
-/*******************************************************************************
- * @fn xerror_str
- * @brief Provides an error description given a suitable API error code.
- * @details This function is constructivist. If the user provides an invalid
- * error code, a dummy description will be returned.
- ******************************************************************************/
-const char *xerror_str(const xerror err);
+//manual stderr flush
+void XerrorFlush(void);
 
 //error codes
-#define XESUCCESS     0 /**< @brief Function returned successfully. */
-#define XENOMEM	      1 /**< @brief Allocation in 3rd party library failed. */
-#define XEOPTION      2 /**< @brief Options parsing failed. */
-#define XEFULL        3 /**< @brief A container is at capacity. */
-#define XEFILE        4 /**< @brief IO failure. */
-#define XEBUSY        5 /**< @brief A thread is waiting on a condition. */
-#define XECLOSED      6 /**< @brief Attempted to use a closed channel. */
-#define XETHREAD      7 /**< @brief A Multithreading issue has occured. */
-#define XEUNDEFINED   8 /**< @brief A generic unspecified error has occured. */
+#define XESUCCESS     0 //function returned successfully
+#define XENOMEM	      1 //dynamic allocation failed
+#define XEOPTION      2 //options parsing failed
+#define XEFULL        3 //data structure is at capacity
+#define XEFILE        4 //IO failure
+#define XEBUSY        5 //thread is waiting on a condition
+#define XECLOSED      6 //communication channel is closed
+#define XETHREAD      7 //multithreading issue has occured
+#define XESHELL	      8 //shell error
+#define XEPARSE	      9 //parsing to AST failed
+#define XEUNDEFINED  10 //unspecified error
 
-//mapping between channel codes and xerror codes
+//code map for lib/channel.h
 #define CHANNEL_ESUCCESS XESUCCESS
 #define CHANNEL_EBUSY	 XEBUSY
 #define CHANNEL_ECLOSED  XECLOSED
 
-//exceptions
-#define XXPARSE ((CEXCEPTION_T) 1) /**< @brief Cannot parse current token */
+const cstring *XerrorDescription(const xerror err);
 
-//colour macros provided by @gon1332 at stackoverflow.com/questions/2616906/
-//note several changes: 1) macro names are expanded 2) no-op wrapper where
-//the macro must be defined on the makefile (so that we don't have to check
-//the terminfo database on behalf of the user).
+//exceptions
+#define XXPARSE ((CEXCEPTION_T) 1) // cannot parse the current token
+
+//print a stderr message in red font; does not log to the internal buffer. If 
+//line > 0 then the message is prefixed with "line #:"
+void XerrorUser(const size_t line, const cstring *msg, ...); 
+
+//colours provided by @gon1332 at stackoverflow.com/questions/2616906/
 #ifdef COLOURS
 	#define COLOUR_RESET	"\x1B[0m"
 	#define ANSI_RED  	"\x1B[31m"
@@ -137,8 +102,8 @@ const char *xerror_str(const xerror err);
 	#define CYAN(str)	(ANSI_CYAN str COLOUR_RESET)
 	#define WHITE(str)	(ANSI_WHITE str COLOUR_RESET)
 
-	#define BOLD(srt) 	"\x1B[1m" str COLOUR_RESET
-	#define UNDERLINE(x) 	"\x1B[4m" str COLOUR_RESET
+	#define BOLD(str) 	"\x1B[1m" str COLOUR_RESET
+	#define UNDERLINE(str) 	"\x1B[4m" str COLOUR_RESET
 #else
 	#define COLOUR_RESET
 	#define ANSI_RED

@@ -1,184 +1,326 @@
-/**
- * @file options.c
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Lemon command line options implementation.
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <argp.h>
 #include <assert.h>
 #include <errno.h>
+#include <pthread.h>
+#include <stdint.h>
 #include <stdio.h>
 
 #include "defs.h"
 #include "options.h"
+#include "xerror.h"
 
-//argp options keys; options without a short name begin at 256
-#define DIAGNOSTIC_ALL_KEY	256
-#define DIAGNOSTIC_OPT_KEY	257
-#define DIAGNOSTIC_PASS_KEY	258
-#define DIAGNOSTIC_TOKENS_KEY	259
-#define DIAGNOSTIC_THREAD_KEY	260
-#define IR_DISASSEMBLE_KEY	'S'
-#define MACHINE_NORUN_KEY	'k'
-#define USER_INTERACTIVE_KEY	'i'
+typedef struct options options;
 
-//argp global parameters and docs
-const char *argp_program_version = LEMON_VERSION;
-const char *argp_program_bug_address = "https://github.com/birendpatel/lemon/issues";
+error_t UnsafeParser(int, __attribute__((unused)) char *, struct argp_state *);
+static const options *AcquireReadOnly(void);
+static void ReleaseReadOnly(void);
+static void UnsafePrint(void);
+//------------------------------------------------------------------------------
+
+struct options {
+	pthread_mutex_t mutex;
+	struct {
+		unsigned int options_state : 1;
+		unsigned int compiler_passes : 1;
+		unsigned int lexical_tokens : 1;
+		unsigned int multithreading : 1;
+	} diagnostic;
+	struct {
+		unsigned int disassemble : 1;
+	} ir;
+	struct {
+		unsigned int no_run : 1;
+	} vm;
+	struct {
+		unsigned int interactive : 1;
+	} user;
+};
+
+static options opt = {
+	.mutex = PTHREAD_MUTEX_INITIALIZER,
+	.diagnostic = {
+		.options_state = 0,
+		.compiler_passes = 0,
+		.lexical_tokens = 0,
+		.multithreading = 0
+	},
+	.ir = {
+		.disassemble = 0
+	},
+	.vm = {
+		.no_run = 0
+	},
+	.user = {
+		.interactive = 0
+	}
+};
+
+//------------------------------------------------------------------------------
+//gnu argp
+
+enum argp_keys {
+	diagnostic_all_key = 256,
+	diagnostic_options_state_key = 257,
+	diagnostic_compiler_passes_key = 258,
+	diagnostic_lexical_tokens_key = 259,
+	diagnostic_multithreading_key = 260,
+	ir_disassemble_key = 'S',
+	vm_no_run_key = 'k',
+	user_interactive_key = 'i',
+};
+
+const cstring *argp_program_version = LEMON_VERSION;
+const cstring *argp_program_bug_address = "github.com/birendpatel/lemon/issues";
 static char args_doc[] = "<file 1> ... <file n>";
 static char doc[] = "\nThis is the C Lemon interpreter for the Lemon language.";
 
-//argp options descriptions
 static struct argp_option options_info[] = {
 	{
 		.name = "Dall",
-		.key  = DIAGNOSTIC_ALL_KEY,
+		.key  = diagnostic_all_key,
 		.doc  = "Enable all diagnostics."
 	},
 	{
 		.name = "Dopt",
-		.key  = DIAGNOSTIC_OPT_KEY,
-		.doc  = "Display the options state before compilation begins."
+		.key  = diagnostic_options_state_key,
+		.doc  = "Print the options state before compilation begins."
 	},
 	{
 		.name = "Dpass",
-		.key  = DIAGNOSTIC_PASS_KEY,
-		.doc  = "Notify on all entry and exit points for all compiler passes."
+		.key  = diagnostic_compiler_passes_key,
+		.doc  = "Signal the entry/exit points for each compiler pass."
 	},
 	{
 		.name = "Dtokens",
-		.key  = DIAGNOSTIC_TOKENS_KEY,
-		.doc  = "Display tokens on stderr once lexical analysis is complete."
+		.key  = diagnostic_lexical_tokens_key,
+		.doc  = "Print tokens as they are found during tokenization."
 	},
 	{
 		.name = "Dthread",
-		.key  = DIAGNOSTIC_THREAD_KEY,
-		.doc  = "Notify on all thread creation, detachment, exits, and joins."
+		.key  = diagnostic_multithreading_key,
+		.doc  = "Signal when threads are created and destroyed."
 	},
 	{
 		.name = "Iasm",
-		.key  = IR_DISASSEMBLE_KEY,
-		.doc  = "Output disassembled bytecode from the final pass to stderr."
+		.key  = ir_disassemble_key,
+		.doc  = "Disassemble and print the bytecode."
 	},
 	{
 		.name = "Mkill",
-		.key = MACHINE_NORUN_KEY,
-		.doc = "Compile to bytecode but do not run the virtual machine."
+		.key = vm_no_run_key,
+		.doc = "Do not load and execute the compiled bytecode."
 	},
 	{
-		.key = USER_INTERACTIVE_KEY,
+		.key = user_interactive_key,
 		.doc = "Launch the REPL after the input files have executed."
 	},
-	{0} //terminator required by argp, otherwise nonprintables will appear in -?
+
+	{0} //terminator required by GNU argp
 };
 
-//argp parser actions
-error_t parser(int key, __attribute__((unused)) char *arg, struct argp_state *state)
+error_t UnsafeParser
+(
+	int key,
+	__attribute__((unused)) char *arg,
+	struct argp_state *state
+)
 {
 	options *opt = (options *) state->input;
 
 	switch (key) {
-	case DIAGNOSTIC_ALL_KEY:
-		opt->diagnostic = 0xFF;
+	case diagnostic_all_key:
+		opt->diagnostic.options_state = 1;
+		opt->diagnostic.compiler_passes = 1;
+		opt->diagnostic.lexical_tokens = 1;
+		opt->diagnostic.multithreading = 1;
 		break;
 
-	case DIAGNOSTIC_OPT_KEY:
-		opt->diagnostic |= DIAGNOSTIC_OPT;
+	case diagnostic_options_state_key:
+		opt->diagnostic.options_state = 1;
 		break;
 
-	case DIAGNOSTIC_PASS_KEY:
-		opt->diagnostic |= DIAGNOSTIC_PASS;
+	case diagnostic_compiler_passes_key:
+		opt->diagnostic.compiler_passes = 1;
 		break;
 
-	case DIAGNOSTIC_TOKENS_KEY:
-		opt->diagnostic |= DIAGNOSTIC_TOKENS;
+	case diagnostic_lexical_tokens_key:
+		opt->diagnostic.lexical_tokens = 1;
 		break;
 
-	case DIAGNOSTIC_THREAD_KEY:
-		opt->diagnostic |= DIAGNOSTIC_THREAD;
+	case diagnostic_multithreading_key:
+		opt->diagnostic.multithreading = 1;
 		break;
 
-	case IR_DISASSEMBLE_KEY:
-		opt->ir |= IR_DISASSEMBLE;
+	case ir_disassemble_key:
+		opt->ir.disassemble = 1;
 		break;
 
-	case MACHINE_NORUN_KEY:
-		opt->machine |= MACHINE_NORUN;
+	case vm_no_run_key:
+		opt->vm.no_run = 1;
 		break;
 
-	case USER_INTERACTIVE_KEY:
-		opt->user |= USER_INTERACTIVE;
+	case user_interactive_key:
+		opt->user.interactive = 1;
 		break;
 
 	default:
 		return ARGP_ERR_UNKNOWN;
+		break;
 	}
 
 	return 0;
 }
 
-options options_init(void) {
-	options opt = {
-		.diagnostic = 0,
-		.ir = 0,
-		.machine = 0,
-		.user = 0
-	};
-
-	return opt;
-}
-
-xerror options_parse(options *self, int argc, char **argv, int *argi)
+void OptionsParse(int *argc, char ***argv)
 {
-	assert(self);
-	assert(argc > 0);
+	assert(argc);
+	assert(*argc);
 	assert(argv);
-	assert(argi);
+	assert(*argv);
+
+	static bool called = false;
+
+	if (called) {
+		xerror_issue("attempted to parse options more than once");
+		XerrorFlush();
+		return;
+	}
 
 	struct argp args_data = {
 		.options = options_info,
-		.parser = parser,
+		.parser = UnsafeParser,
 		.args_doc = args_doc,
 		.doc = doc
 	};
 
-	error_t err = argp_parse(&args_data, argc, argv, 0, argi, self);
+	int unparsed_index = 0;
+	error_t err = 0;
 
-	if (err == ENOMEM) {
-		return XENOMEM;
-	} else if (err == EINVAL) {
-		return XEOPTION;
-	} else {
-		//catch unknown errnos in debug mode.
-		//argp documentation only lists ENOMEM and EINVAL
-		//but suggests other error codes could appear.
-		assert(err == 0);
+	pthread_mutex_lock(&opt.mutex);
+
+	err = argp_parse(&args_data, *argc, *argv, 0, &unparsed_index, &opt);
+
+	switch (err) {
+	case 0:
+		*argc = *argc - unparsed_index;
+		*argv = *argv + unparsed_index;
+		break;
+
+	case ENOMEM:
+		xerror_fatal("dynamic allocation failed");
+		break;
+
+	case EINVAL:
+		XerrorUser(0, "invalid option or option argument");
+		break;
+
+	default:
+		//argp docs only list ENOMEM and EINVAL but suggest that other
+		//error codes could appear depending on the implementation.
+		xerror_fatal("unknown argp error");
+		break;
 	}
 
-	return XESUCCESS;
+	if (err) {
+		abort();
+	}
+
+	if (opt.diagnostic.options_state) {
+		UnsafePrint();
+	}
+
+	called = true;
+
+	pthread_mutex_unlock(&opt.mutex);
 }
 
-#define TO_BOOL(x) ((x) ? 1 : 0)
-
-void options_display(options *self)
+static void UnsafePrint(void)
 {
-	fprintf(stderr, "OPTIONS\n\n");
+	static const cstring *fmt =
+		"diagnostic\n"
+		"\toptions state: %d\n"
+		"\tcompiler passes: %d\n"
+		"\tlexical tokens: %d\n"
+		"\tmultithreading: %d\n"
+		"\nintermediate representation\n"
+		"\tdisassemble: %d\n"
+		"\nvirtual machine\n"
+		"\tno run: %d\n"
+		"\nuser preferences\n"
+		"\tinteractive: %d\n"
+		"\n";
 
-	fprintf(stderr, "diagnostic\n");
-	fprintf(stderr, "\tall: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_ALL));
-	fprintf(stderr, "\topt: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_OPT));
-	fprintf(stderr, "\tpass: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_PASS));
-	fprintf(stderr, "\ttokens: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_TOKENS));
-	fprintf(stderr, "\tthread: %d\n", TO_BOOL(self->diagnostic & DIAGNOSTIC_THREAD));
+	const int dopt = opt.diagnostic.options_state;
+	const int dpass = opt.diagnostic.compiler_passes;
+	const int dtokens = opt.diagnostic.lexical_tokens;
+	const int dthread = opt.diagnostic.multithreading;
+	const int irdasm = opt.ir.disassemble;
+	const int mnorun = opt.vm.no_run;
+	const int uinteractive = opt.user.interactive;
 
-	fprintf(stderr, "\nintermediate representation\n");
-	fprintf(stderr, "\tdisassemble: %d\n", TO_BOOL(self->ir & IR_DISASSEMBLE));
+	fprintf(stderr, fmt, dopt, dpass, dtokens, dthread, irdasm, mnorun,
+		uinteractive);
+}
 
-	fprintf(stderr, "\nvirtual machine\n");
-	fprintf(stderr, "\tnorun: %d\n", TO_BOOL(self->machine & MACHINE_NORUN));
+//------------------------------------------------------------------------------
+//read-only functions
 
-	fprintf(stderr, "\nuser preferences\n");
-	fprintf(stderr, "\tinteractive: %d\n", TO_BOOL(self->user & USER_INTERACTIVE));
+//generate compiler cast warning if read-only contract isn't enforced by caller
+static const options *AcquireReadOnly(void)
+{
+	pthread_mutex_lock(&opt.mutex);
 
-	fprintf(stderr, "\nEND OPTIONS\n\n");
+	return (const options *) &opt;
+}
+
+static void ReleaseReadOnly(void)
+{
+	pthread_mutex_unlock(&opt.mutex);
+}
+
+bool OptionsGetFlag(const options_flag flag)
+{
+	bool status = false;
+
+	const options *ro_opt = AcquireReadOnly();
+
+	switch(flag) {
+	case DIAGNOSTIC_OPTIONS_STATE:
+		status = ro_opt->diagnostic.options_state;
+		break;
+
+	case DIAGNOSTIC_COMPILER_PASSES:
+		status = ro_opt->diagnostic.compiler_passes;
+		break;
+
+	case DIAGNOSTIC_LEXICAL_TOKENS:
+		status = ro_opt->diagnostic.lexical_tokens;
+		break;
+
+	case DIAGNOSTIC_MULTITHREADING:
+		status = ro_opt->diagnostic.multithreading;
+		break;
+
+	case IR_DISASSEMBLE:
+		status = ro_opt->ir.disassemble;
+		break;
+
+	case VM_NO_RUN:
+		status = ro_opt->vm.no_run;
+		break;
+
+	case USER_INTERACTIVE:
+		status = ro_opt->user.interactive;
+		break;
+
+	default:
+		xerror_issue("invalid flag argument: %d", flag);
+		break;
+	}
+
+	ReleaseReadOnly();
+
+	return status;
 }
