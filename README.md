@@ -29,13 +29,8 @@ By default, Lemon will be installed in the `/usr/local/bin` directory. You can c
 
 This project is licensed under the GNU General Public License v3.0. You may find a copy of this license in this project's root directory.
 
-# Internals
-
-The Lemon bytecode compiler and virtual machine are written in C with the GNU dialect of the ISO C17 standard. Auxiliary programs, such as for unit testing and metaprogramming, are written in Python 3.
-
 # Todo
 
-- [ ] Refactor shell handler to include waitpid and robust error handling (EASY)
 - [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Write vector unit tests (MEDIUM)
 - [ ] Write channel unit tests (HARD)
@@ -45,9 +40,8 @@ The Lemon bytecode compiler and virtual machine are written in C with the GNU di
 - [ ] Add arrow key support for REPL (MEDIUM)
 - [ ] Add support for escape characters in string literals (HARD)
 - [ ] Remove the private keyword from the scanner, grammar, and kmap (MEDIUM)
-- [ ] Rename 'for loop' token name to 'for' due to func declarations (EASY)
 - [ ] Refactor the makefile (MEDIUM)
 - [ ] Update makefile dependencies for headers (EASY)
 - [ ] Convert all diagnostic output to JSON (HARD)
-- [ ] Fix parser bug; infinite loop when statement not terminated in block (HARD)
 - [ ] Add flags to token printer (EASY)
+- [ ] Update function grammar to swap 'return' with '->' (EASY)
