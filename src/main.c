@@ -63,13 +63,13 @@ int main(int argc, char **argv)
 
 xerror ExecuteFromRepl(void)
 {
+	ShowHeader();
+
 	xerror err = XEUNDEFINED;
 	const xerror fatal_errors = ~(XESHELL | XEPARSE);
 
 	RAII(cStringFree) cstring *alias = GenerateUniqueAlias();
 	RAII(cStringFree) cstring *input = ReadStandardInput();
-
-	ShowHeader();
 
 	while (input) {
 		if (input[0] == '$') {
