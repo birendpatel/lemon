@@ -11,14 +11,16 @@
 #include "options.h"
 #include "xerror.h"
 
+typedef struct options options;
+
 error_t UnsafeParser(int, __attribute__((unused)) char *, struct argp_state *);
 static const options *AcquireReadOnly(void);
 static void ReleaseReadOnly(void);
 static void UnsafePrint(void);
 //------------------------------------------------------------------------------
 
-typedef struct options {
-	pthread mutex_t mutex;
+struct options {
+	pthread_mutex_t mutex;
 	struct {
 		unsigned int options_state : 1;
 		unsigned int compiler_passes : 1;
@@ -34,9 +36,9 @@ typedef struct options {
 	struct {
 		unsigned int interactive : 1;
 	} user;
-} options;
+};
 
-static options opt {
+static options opt = {
 	.mutex = PTHREAD_MUTEX_INITIALIZER,
 	.diagnostic = {
 		.options_state = 0,
@@ -63,7 +65,7 @@ enum argp_keys {
 	diagnostic_options_state_key = 257,
 	diagnostic_compiler_passes_key = 258,
 	diagnostic_lexical_tokens_key = 259,
-	diagnostic_multithreading_Key = 260,
+	diagnostic_multithreading_key = 260,
 	ir_disassemble_key = 'S',
 	vm_no_run_key = 'k',
 	user_interactive_key = 'i',
@@ -129,7 +131,7 @@ error_t UnsafeParser
 
 	switch (key) {
 	case diagnostic_all_key:
-		opt->diagnostic.option_state = 1;
+		opt->diagnostic.options_state = 1;
 		opt->diagnostic.compiler_passes = 1;
 		opt->diagnostic.lexical_tokens = 1;
 		opt->diagnostic.multithreading = 1;
@@ -198,7 +200,7 @@ void OptionsParse(int *argc, char ***argv)
 
 	pthread_mutex_lock(&opt.mutex);
 
-	err = argp_parse(&args_data, *argc, *argv, 0, &unparsed_index, opt);
+	err = argp_parse(&args_data, *argc, *argv, 0, &unparsed_index, &opt);
 
 	switch (err) {
 	case 0:
@@ -238,7 +240,6 @@ static void UnsafePrint(void)
 {
 	static const cstring *fmt =
 		"diagnostic\n"
-		"\tall: %d\n"
 		"\toptions state: %d\n"
 		"\tcompiler passes: %d\n"
 		"\tlexical tokens: %d\n"
@@ -251,7 +252,6 @@ static void UnsafePrint(void)
 		"\tinteractive: %d\n"
 		"\n";
 
-	const int dall = opt.diagnostic.all;
 	const int dopt = opt.diagnostic.options_state;
 	const int dpass = opt.diagnostic.compiler_passes;
 	const int dtokens = opt.diagnostic.lexical_tokens;
@@ -260,8 +260,8 @@ static void UnsafePrint(void)
 	const int mnorun = opt.vm.no_run;
 	const int uinteractive = opt.user.interactive;
 
-	fprintf(stderr, fmt, dall, dopt, dpass, dtokens, dthread, irdasm,
-		mnorun, uinteractive);
+	fprintf(stderr, fmt, dopt, dpass, dtokens, dthread, irdasm, mnorun,
+		uinteractive);
 }
 
 //------------------------------------------------------------------------------
@@ -287,10 +287,6 @@ bool OptionsGetFlag(const options_flag flag)
 	const options *ro_opt = AcquireReadOnly();
 
 	switch(flag) {
-	case DIAGNOSTIC_ALL:
-		status = ro_opt->diagnostic.all;
-		break;
-
 	case DIAGNOSTIC_OPTIONS_STATE:
 		status = ro_opt->diagnostic.options_state;
 		break;

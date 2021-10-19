@@ -33,25 +33,26 @@ static void ParserFree(parser **);
 static void Mark(parser *, void *);
 static void *AllocateAndMark(parser *, const size_t);
 static void CollectGarbage(parser *);
-static cstring MarkedLexeme(parser *);
+static cstring *MarkedLexeme(parser *);
 static void GetNextToken(parser *);
 static void GetNextValidToken(parser *);
 static void ReportInvalidToken(parser *);
 static size_t Synchronize(parser *);
-static void CheckToken(parser *, token_type, cstring *, bool, bool);
+static void CheckToken
+(parser *, const token_type, const cstring *, const bool, const bool);
 static intmax_t ExtractArrayIndex(parser *);
 static file *FileInit(const cstring *);
-static expr *ExprInit(parser *, const);
-static stmt *CopyStmtToHeap(parser *, const);
-static decl *CopyDeclToHeap(parser *, const);
+static expr *ExprInit(parser *, const exprtag);
+static stmt *CopyStmtToHeap(parser *, const stmt);
+static decl *CopyDeclToHeap(parser *, const decl);
 
 //declarations
 static file *RecursiveDescent(parser *self, const cstring *alias);
 static fiat RecFiat(parser *self);
 static decl RecStruct(parser *self);
-static member_vector RecParseMembers(parser *self);
+static vector(Member) RecParseMembers(parser *self);
 decl RecFunction(parser *self);
-static param_vector RecParseParameters(parser *self);
+static vector(Param) RecParseParameters(parser *self);
 type *RecType(parser *self);
 static decl RecVariable(parser *self);
 
@@ -66,7 +67,7 @@ static stmt RecForLoop(parser *self);
 static stmt RecWhileLoop(parser *self);
 static stmt RecBranch(parser *self);
 static stmt RecSwitch(parser *self);
-static test_vector RecTests(parser *self);
+static vector(Test) RecTests(parser *self);
 
 //expressions
 static expr *RecAssignment(parser *self);
@@ -79,7 +80,7 @@ static expr *RecUnary(parser *self);
 static expr *RecPrimary(parser *self);
 static expr *RecRvarOrIdentifier(parser *self);
 static expr *RecRvar(parser *self, bool seen_tilde);
-static expr_vector RecArguments(parser *self);
+static vector(Expr) RecArguments(parser *self);
 static expr *RecArrayLiteral(parser *self);
 static expr *RecArrayLiteral(parser *self);
 static expr *RecIdentifier(parser *self);
@@ -90,7 +91,7 @@ file *SyntaxTreeInit(const cstring *src, const cstring *alias)
 	assert(src);
 	assert(alias);
 
-	RAII(ParserFree) parser *prs = ParserInit(opt, src);
+	RAII(ParserFree) parser *prs = ParserInit(src);
 
 	if (!prs) {
 		xerror_issue("cannot init parser");
@@ -130,7 +131,7 @@ static parser *ParserInit(const cstring *src)
 	TokenChannelInit(prs->chan, KiB(1));
 
 	const size_t garbage_capacity = 32;
-	PtrVectorInit(&prs->garbage, 0, garbage_capacity);
+	prs->garbage = PtrVectorInit(0, garbage_capacity);
 
 	prs->tok = INVALID_TOKEN;
 	prs->errors = 0;
@@ -160,7 +161,7 @@ static void ParserFree(parser **self)
 
 	free(prs->chan);
 
-	ptr_vector_free(&prs->garbage, NULL);
+	PtrVectorFree(&prs->garbage, NULL);
 
 	free(prs);
 }
@@ -179,7 +180,7 @@ static file *FileInit(const cstring *alias)
 	};
 
 	const size_t fiat_capacity = 64;
-	fiat_vector_init(&syntax_tree->fiats, 0, fiat_capacity);
+	syntax_tree->fiats = FiatVectorInit(0, fiat_capacity);
 
 	return syntax_tree;
 }
@@ -202,7 +203,7 @@ static decl *CopyDeclToHeap(parser *self, const decl src)
 
 	const size_t bytes = sizeof(decl);
 
-	decl *new = AllocateAndMark(self, bytes); 
+	decl *new = AllocateAndMark(self, bytes);
 
 	memcpy(new, &src, bytes);
 
@@ -241,15 +242,15 @@ static void *AllocateAndMark(parser *self, const size_t bytes)
 	return region;
 }
 
-#define alloc_mark_vector(vec_init, recv, len, cap)                            \
+#define alloc_mark_vector(VecInit, recv, len, cap)                             \
 	do {								       \
-		vec_init(&recv, len, cap);				       \
-		Mark(self, recv.data);					       \
+		recv = VecInit(len, cap);				       \
+		Mark(self, recv.buffer);				       \
 	} while(0)
 
 static void CollectGarbage(parser *self)
 {
-	ptr_vector_reset(&self->garbage, free);
+	PtrVectorReset(&self->garbage, free);
 }
 
 //the parser always uses 'self' as a OOP receiver name, so the xerro API can
@@ -260,7 +261,7 @@ static void CollectGarbage(parser *self)
 		self->errors++;						       \
 	} while (0)
 
-static cstring MarkedLexeme(parser *self)
+static cstring *MarkedLexeme(parser *self)
 {
 	assert(self);
 
@@ -413,7 +414,7 @@ static file *RecursiveDescent(parser *self, const cstring *alias)
 	assert(self);
 
 	CEXCEPTION_T exception;
-	
+
 	file *syntax_tree = FileInit(alias);
 
 	GetNextValidToken(self);
@@ -506,13 +507,13 @@ static decl RecStruct(parser *self)
 
 //<member list>
 //throws error if no members found
-static member_vector RecParseMembers(parser *self)
+static vector(Member) RecParseMembers(parser *self)
 {
 	assert(self);
 
-	member_vector vec = {0};
+	vector(Member) vec = {0};
 	const size_t vec_capacity = 4;
-	alloc_mark_vector(member_vector_init, vec, 0, vec_capacity);
+	alloc_mark_vector(MemberVectorInit, vec, 0, vec_capacity);
 
 	member attr = {
 		.name = NULL,
@@ -536,7 +537,7 @@ static member_vector RecParseMembers(parser *self)
 
 		check_move(self, _SEMICOLON, "missing ';' after type");
 
-		member_vector_push(&vec, attr);
+		MemberVectorPush(&vec, attr);
 
 		memset(&attr, 0, sizeof(member));
 	}
@@ -613,13 +614,13 @@ decl RecFunction(parser *self)
 
 //<parameter list>
 //throws error if no parameters found
-static param_vector RecParseParameters(parser *self)
+static vector(Param) RecParseParameters(parser *self)
 {
 	assert(self);
 
-	param_vector vec = {0};
+	vector(Param) vec = {0};
 	const size_t vec_capacity = 4;
-	alloc_mark_vector(param_vector_init, vec, 0, vec_capacity);
+	alloc_mark_vector(ParamVectorInit, vec, 0, vec_capacity);
 
 	param attr  = {
 		.name = NULL,
@@ -645,7 +646,7 @@ static param_vector RecParseParameters(parser *self)
 
 		attr.typ = RecType(self);
 
-		param_vector_push(&vec, attr);
+		ParamVectorPush(&vec, attr);
 
 		memset(&attr, 0, sizeof(param));
 	}
@@ -817,12 +818,12 @@ static stmt RecBlock(parser *self)
 	};
 
 	const size_t vec_capacity = 4;
-	alloc_mark_vector(fiat_vector_init, node.block.fiats, 0, vec_capacity);
+	alloc_mark_vector(FiatVectorInit, node.block.fiats, 0, vec_capacity);
 
 	GetNextValidToken(self);
 
 	while (self->tok.type != _RIGHTBRACE) {
-		fiat_vector_push(&node.block.fiats, RecFiat(self));
+		FiatVectorPush(&node.block.fiats, RecFiat(self));
 	}
 
 	GetNextValidToken(self);
@@ -916,13 +917,13 @@ static stmt RecSwitch(parser *self)
 }
 
 //<case statement>* within <switch statement> rule
-static test_vector RecTests(parser *self)
+static vector(Test) RecTests(parser *self)
 {
 	assert(self);
 
-	test_vector vec = {0};
+	vector(Test) vec = {0};
 	const size_t vec_capacity = 4;
-	alloc_mark_vector(test_vector_init, vec, 0, vec_capacity);
+	alloc_mark_vector(TestVectorInit, vec, 0, vec_capacity);
 
 	test t = {
 		.cond = NULL,
@@ -951,7 +952,7 @@ static test_vector RecTests(parser *self)
 		}
 
 		t.pass = CopyStmtToHeap(self, RecBlock(self));
-		test_vector_push(&vec, t);
+		TestVectorPush(&vec, t);
 		memset(&t, 0, sizeof(test));
 	}
 
@@ -1095,7 +1096,7 @@ static stmt RecAnonymousTarget(parser *self)
 		break;
 
 	default:
-		assert(0 != 0); 
+		assert(0 != 0);
 	}
 
 	return node;
@@ -1389,9 +1390,8 @@ static expr *RecPrimary(parser *self)
 {
 	assert(self);
 
-	static const string fmt = "expression is ill-formed at '%.*s'";
-	const char *msg = self->tok.lexeme.data;
-	const size_t len = self->tok.lexeme.len;
+	static const cstring *fmt = "expression is ill-formed at '%s'";
+	const cstring *msg = self->tok.lexeme;
 
 	expr *node = NULL;
 
@@ -1437,7 +1437,7 @@ static expr *RecPrimary(parser *self)
 		break;
 
 	default:
-		usererror(fmt, len, msg);
+		usererror(fmt, msg);
 		Throw(XXPARSE);
 	}
 
@@ -1560,23 +1560,23 @@ static expr *RecRvar(parser *self, bool seen_tilde)
 	return node;
 }
 
-static expr_vector RecArguments(parser *self)
+static vector(Expr) RecArguments(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _LEFTPAREN);
 
-	expr_vector vec = {0};
+	vector(Expr) vec = {0};
 	const size_t vec_capacity = 4;
-	alloc_mark_vector(expr_vector_init, vec, 0, vec_capacity);
+	alloc_mark_vector(ExprVectorInit, vec, 0, vec_capacity);
 
-	GetNextValidToken(self); 
+	GetNextValidToken(self);
 
 	while (self->tok.type != _RIGHTPAREN) {
 		if (vec.len > 0) {
 			check_move(self, _COMMA, "missing ',' after arg");
 		}
 
-		expr_vector_push(&vec, RecAssignment(self));
+		ExprVectorPush(&vec, RecAssignment(self));
 	}
 
 	GetNextValidToken(self);
@@ -1593,21 +1593,21 @@ static expr *RecArrayLiteral(parser *self)
 	assert(self);
 	assert(self->tok.type == _LEFTBRACKET);
 
-	static string tagerr = "tagged array index must be an integer";
-	static string closeerr = "missing ']' after tagged index";
-	static string eqerr = "missing '=' after tagged index";
+	static cstring *tagerr = "tagged array index must be an integer";
+	static cstring *closeerr = "missing ']' after tagged index";
+	static cstring *eqerr = "missing '=' after tagged index";
 
 	expr *node = ExprInit(self, NODE_ARRAYLIT);
 
 	node->line = self->tok.line;
 
 	const size_t idx_cap = 4;
-	alloc_mark_vector(idx_vector_init, node->arraylit.indicies, 0,idx_cap);
-	
-	const size_t expr_cap = 4;
-	alloc_mark_vector(expr_vector_init, node->arraylit.values, 0, expr_cap);
+	alloc_mark_vector(IndexVectorInit, node->arraylit.indicies, 0,idx_cap);
 
-	GetNextValidToken(self); 
+	const size_t expr_cap = 4;
+	alloc_mark_vector(ExprVectorInit, node->arraylit.values, 0, expr_cap);
+
+	GetNextValidToken(self);
 
 	while (self->tok.type != _RIGHTBRACKET) {
 		if (node->arraylit.values.len > 0) {
@@ -1618,15 +1618,15 @@ static expr *RecArrayLiteral(parser *self)
 			move_check(self, _LITERALINT, tagerr);
 
 			intmax_t idx = ExtractArrayIndex(self);
-			idx_vector_push(&node->arraylit.indicies, idx);
+			IndexVectorPush(&node->arraylit.indicies, idx);
 
 			move_check_move(self, _RIGHTBRACKET, closeerr);
 			check_move(self, _EQUAL, eqerr);
 		} else {
-			idx_vector_push(&node->arraylit.indicies, -1);
+			IndexVectorPush(&node->arraylit.indicies, -1);
 		}
 
-		expr_vector_push(&node->arraylit.values, RecAssignment(self));
+		ExprVectorPush(&node->arraylit.values, RecAssignment(self));
 	}
 
 	GetNextValidToken(self);

@@ -39,7 +39,7 @@ static size_t MiB(const double megabytes)
 	return (size_t) (1048576 * megabytes);
 }
 
-static void *AbortMalloc(const size_t bytes) __attribute__((malloc))
+__attribute__((malloc)) static void *AbortMalloc(const size_t bytes)
 {
 	void *region = malloc(bytes);
 
@@ -48,10 +48,4 @@ static void *AbortMalloc(const size_t bytes) __attribute__((malloc))
 	}
 
 	return region;
-}
-
-//for use with RAII
-static void StdlibFree(void **ptr)
-{
-	free(*ptr);
 }

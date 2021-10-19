@@ -14,10 +14,9 @@
 #include "lib/channel.h"
 
 typedef struct scanner {
-	options *opt;
 	Token_channel *chan;
-	char *pos; //current byte being analysed
-	char *curr; //works with pos to process multi-char lexemes
+	const char *pos; //current byte being analysed
+	const char *curr; //works with pos to process multi-char lexemes
 	const cstring *src;
 	size_t line;
 	token tok;
@@ -41,7 +40,7 @@ static bool IsLetter(char);
 static bool IsSpaceEOF(char);
 static void SendToken(scanner *);
 static void SendEOF(scanner *);
-static cstring *GetTokenName(token_type);
+static const cstring *GetTokenName(token_type);
 static void TokenPrint(scanner *);
 static _Noreturn void Hang(void);
 
@@ -54,7 +53,6 @@ xerror ScannerInit(const cstring *src, Token_channel *chan)
 	kmalloc(scn, sizeof(scanner));
 
 	*scn = (scanner) {
-		.opt = opt,
 		.chan = chan,
 		.pos = src,
 		.curr = NULL,
@@ -114,6 +112,11 @@ static void *StartRoutine(void *pthread_payload)
 static void Scan(scanner *self)
 {
 	assert(self);
+
+	const token_flags invalid_state = {
+		.valid = 0,
+		.bad_string = 0
+	};
 
 	while (true) {
 		switch (*self->pos) {
@@ -256,12 +259,7 @@ static void Scan(scanner *self)
 			break;
 
 		default:
-			const token_flags flags = {
-				.valid = 0,
-				.bad_string = 0
-			};
-
-			ConsumeInvalid(self, flags);
+			ConsumeInvalid(self, invalid_state);
 		}
 	}
 
@@ -271,9 +269,9 @@ exit:
 	return;
 }
 
-static cstring *GetTokenName(token_type type)
+static const cstring *GetTokenName(token_type type)
 {
-	static const cstring *lookup = {
+	static const cstring *lookup[] = {
 		[_INVALID] = "INVALID",
 		[_EOF] = "EOF",
 		[_IDENTIFIER] = "IDENTIFIER",
@@ -339,7 +337,7 @@ static cstring *GetTokenName(token_type type)
 		[_FALSE] = "FALSE",
 	};
 
-	if (type <= _INVALID && _type >= TOKEN_TYPE_COUNT) {
+	if (type <= _INVALID && type >= _TOKEN_TYPE_COUNT) {
 		return lookup[type];
 	}
 
@@ -351,9 +349,9 @@ static void TokenPrint(scanner *self)
 	const cstring *lexfmt = "TOKEN { line %-10zu: %-20s: %s }\n";
 	const cstring *nolexfmt = "TOKEN { line %-10zu: %-20s }\n";
 
-	const size_t line = self->line;
-	const cstring *name = GetTokenName(self->type);
-	const cstring *lexeme  = self->lexeme;
+	const size_t line = self->tok.line;
+	const cstring *name = GetTokenName(self->tok.type);
+	const cstring *lexeme  = self->tok.lexeme;
 
 	if (lexeme) {
 		fprintf(stderr, lexfmt, line, name, lexeme);
@@ -391,7 +389,7 @@ static void SendEOF(scanner *self)
 	assert(self);
 
 	self->tok = (token) {
-		.lexeme = NULL
+		.lexeme = NULL,
 		.type = _EOF,
 		.line = self->line,
 		.flags = {
@@ -469,7 +467,7 @@ static void Consume(scanner *self, token_type type, size_t n)
 	assert(type < _TOKEN_TYPE_COUNT);
 
 	self->tok = (token) {
-		.lexeme = cStringFromView(self->pos, n);
+		.lexeme = cStringFromView(self->pos, n),
 		.type = type,
 		.line = self->line,
 		.flags = {
@@ -485,7 +483,7 @@ static void ConsumeInvalid(scanner *self, token_flags flags)
 {
 	assert(self);
 
-	char *start = self->pos;
+	const char *start = self->pos;
 
 	//synchronization implies that valid chars will be lost if they are
 	//next to the invalid char without intermediate whitespace. Any grammar
@@ -494,7 +492,7 @@ static void ConsumeInvalid(scanner *self, token_flags flags)
 	size_t total_invalid_chars = Synchronize(self);
 
 	self->tok = (token) {
-		.lexeme = cStringFromView(start, total_invalid_chars);
+		.lexeme = cStringFromView(start, total_invalid_chars),
 		.type = _INVALID,
 		.line = self->line,
 		.flags = flags
@@ -575,7 +573,7 @@ static void ConsumeNumber(scanner *self)
 	delta = self->curr - self->pos;
 
 	self->tok = (token) {
-		.lexeme = cStringFromView(self->pos, (size_t) delta);
+		.lexeme = cStringFromView(self->pos, (size_t) delta),
 		.type = guess,
 		.line = self->line,
 		.flags = {

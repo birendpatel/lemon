@@ -104,9 +104,9 @@ typedef struct pfix##_vector pfix##_vector;
 #define api_vector(T, pfix, cls)					       \
 cls pfix##_vector pfix##VectorInit(const size_t, const size_t);	               \
 cls void pfix##VectorFree(pfix##_vector *, void (*)(T));           	       \
-cls void pfix##VectorPush(pfix##_vector *, const T);	                       \
-cls T pfix##VectorGet(pfix##_vector *, const size_t index);                    \
-cls T pfix##VectorSet(pfix##_vector *, const size_t , const T);                \
+cls void pfix##VectorPush(pfix##_vector *, T);   	                       \
+cls T pfix##VectorGet(const pfix##_vector *, const size_t);                    \
+cls T pfix##VectorSet(pfix##_vector *, const size_t , T);                      \
 cls void pfix##VectorReset(pfix##_vector *, void (*) (T));	               \
 
 #define impl_vector_init(T, pfix, cls)				               \
@@ -124,6 +124,8 @@ cls pfix##_vector pfix##VectorInit(const size_t len, const size_t cap)         \
 	v.buffer = VectorMalloc(bytes);  				       \
 									       \
 	VectorTrace("initialized");				               \
+								               \
+	return v;							       \
 }
 
 //this function may be used with GCC __attribute__((cleanup(f))). If the pointer
@@ -137,7 +139,6 @@ cls void pfix##VectorFree(pfix##_vector *self, void (*vfree) (T))	       \
 {									       \
 	assert(self);							       \
 	assert(self->len <= self->cap);					       \
-	assert(sizeof(self->buffer)/sizeof(T) == self->cap);		       \
 									       \
 	if (self->buffer) {						       \
 		if (vfree) {						       \
@@ -161,13 +162,17 @@ cls void pfix##VectorFree(pfix##_vector *self, void (*vfree) (T))	       \
 }
 
 //elements pushed to a vector are always copied to the internal buffer by value
+//
+//the datum paramater cannot be qualified with 'const' because if T is a pointer
+//then the macro expands such that a pointer to a const will be pushed to the
+//buffer. But the buffer contains non-const elements. Therefore the compiler may
+//trigger a -Wdiscarded-qualifiers warning.
 #define impl_vector_push(T, pfix, cls)					       \
-cls void pfix##VectorPush(pfix##_vector *self, const T datum)                  \
+cls void pfix##VectorPush(pfix##_vector *self, T datum)                        \
 {									       \
 	assert(self);							       \
 	assert(self->len <= self->cap);                                        \
 	assert(self->buffer);						       \
-	assert(sizeof(self->buffer)/sizeof(T) == self->cap);	               \
                                                                                \
 	if (self->len == SIZE_MAX) {                                           \
 		VectorTrace("reached absolute capacity; aborting program");    \
@@ -190,24 +195,22 @@ cls void pfix##VectorPush(pfix##_vector *self, const T datum)                  \
 }
 
 #define impl_vector_get(T, pfix, cls)					       \
-cls T pfix##VectorGet(pfix##_vector *self, const size_t index)                 \
+cls T pfix##VectorGet(const pfix##_vector *self, const size_t index)           \
 {									       \
 	assert(self);                                                          \
 	assert(self->buffer);                                                  \
 	assert(self->len <= self->cap);					       \
-	assert(sizeof(self->buffer)/sizeof(T) == self->cap);		       \
 	assert(index < self->len);                                             \
 									       \
 	return self->buffer[index];					       \
 }
 
 #define impl_vector_set(T, pfix, cls)					       \
-cls T pfix##VectorSet(pfix##_vector *self, const size_t index, const T datum)  \
+cls T pfix##VectorSet(pfix##_vector *self, const size_t index, T datum)        \
 {									       \
 	assert(self);                                                          \
 	assert(self->buffer);						       \
 	assert(self->len <= self->cap);					       \
-	assert(sizeof(self->buffer)/sizeof(T) == self->cap);		       \
 	assert(index < self->len);                                             \
 									       \
 	T old_element = self->buffer[index];				       \
@@ -225,7 +228,6 @@ cls void pfix##VectorReset(pfix##_vector *self, void (*vfree) (T))	       \
 	assert(self);                                                          \
 	assert(self->buffer);                                                  \
 	assert(self->len <= self->cap);					       \
-	assert(sizeof(self->buffer)/sizeof(T) == self->cap);		       \
 									       \
 	if (vfree) {							       \
 		for (size_t i = 0; i < self->len; i++) {		       \

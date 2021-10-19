@@ -19,7 +19,7 @@ make_vector(char, Char, static)
 
 typedef char cstring;
 
-static cstring cStringDuplicate(const cstring *cstr)
+static cstring *cStringDuplicate(const cstring *cstr)
 {
 	cstring *new = strdup(cstr);
 
@@ -43,13 +43,19 @@ static cstring *cStringFromView(const char *data, size_t len)
 	return new;
 }
 
+//for use with gcc cleanup
+static void cStringFree(cstring **cstr)
+{
+	free(*cstr);
+}
+
 //-----------------------------------------------------------------------------
 //vstring
 
 typedef Char_vector vstring;
 
 static vstring vStringInit(const size_t);
-static void vStringTerminate__internal(string *);
+static void vStringTerminate__internal(vstring *);
 static void vStringFree(vstring *);
 static size_t vStringLength(vstring *);
 static void vStringAppend(vstring *, const char);
@@ -62,14 +68,14 @@ static vstring vStringInit(const size_t capacity)
 {
 	const size_t default_length = 0;
 
-	string vstr = CharVectorInit(default_length, capacity);
+	vstring vstr = CharVectorInit(default_length, capacity);
 
 	vStringTerminate__internal(&vstr);
 
 	return vstr;
 }
 
-static void vStringTerminate__internal(string *vstr)
+static void vStringTerminate__internal(vstring *vstr)
 {
 	assert(vstr);
 
@@ -95,12 +101,14 @@ static size_t vStringLength(vstring *vstr)
 	return vstr->len - 1;
 }
 
-static void vStringAppend(vtring *vstr, const char ch)
+static void vStringAppend(vstring *vstr, const char ch)
 {
 	assert(vstr);
 	assert(vstr->len != 0);
 
-	(void) CharVectorSet(vstr vstr->len - 1, ch);
+	size_t null_index = vstr->len - 1;
+
+	(void) CharVectorSet(vstr, null_index, ch);
 
 	vStringTerminate__internal(vstr);
 }
@@ -124,7 +132,7 @@ static void vStringTrim(vstring *vstr, const char ch)
 	size_t null_index = vstr->len;
 
 	while (test_index != SIZE_MAX) {
-		const current_char = vstr->buffer[test_index];
+		const char current_char = vstr->buffer[test_index];
 
 		if (current_char != ch) {
 			break;
@@ -148,16 +156,16 @@ static void vStringReset(vstring *vstr)
 	vStringTerminate__internal(vstr);
 }
 
-//the vstr is transformed t to a dynamically allocated cstr. If the vstr must
+//the vstr is transformed to a dynamically allocated cstr. If the vstr must
 //be used after this call, it must be reinitialized with vStringInit.
 static cstring *cStringFromvString(vstring *vstr)
 {
 	assert(vstr);
 	assert(vstr->len != 0);
 
-	cstring buffer = vstr->buffer;
+	cstring *buffer = vstr->buffer;
 
-	vstr = (vstring) {
+	*vstr = (vstring) {
 		.len = 0,
 		.cap = 0,
 		.buffer = NULL

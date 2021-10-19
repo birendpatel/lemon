@@ -14,7 +14,7 @@ static void FlushBuffer(bool);
 
 enum xqueue_properties {
 	buffer_capacity = (uint8_t) 64,
-	message_max_length = (uint8_t 128)
+	message_max_length = (uint8_t) 128
 };
 
 struct xqueue {

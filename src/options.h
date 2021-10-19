@@ -14,7 +14,6 @@
 void OptionsParse(int *argc, char ***argv);
 
 typedef enum options_flag {
-	DIAGNOSTIC_ALL,
 	DIAGNOSTIC_OPTIONS_STATE,
 	DIAGNOSTIC_COMPILER_PASSES,
 	DIAGNOSTIC_LEXICAL_TOKENS,

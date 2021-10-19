@@ -26,10 +26,10 @@ xerror ExecuteFromRepl(void);
 cstring *ReadStandardInput(void);
 xerror ExecuteShell(const cstring *);
 void FileCleanup(FILE **);
-void ExecuteFromFiles(const int, char **); 
-string FileToString(FILE *, xerror *);
+xerror ExecuteFromFiles(const int, char **); 
 cstring *cStringFromFile(FILE *, xerror *);
-xerror Compile(const options *, string *, const cstring *);
+xerror GetFilesize(FILE *, size_t *);
+xerror Compile(const cstring *, const cstring *);
 file *CreateSyntaxTree(const cstring *, const cstring *);
 
 //------------------------------------------------------------------------------
@@ -141,8 +141,8 @@ xerror ExecuteShell(const cstring *cstr)
 	assert(cstr);
 	assert(cstr[0] == '$');
 
-	cstring *cmd = NULL;
-	const cstring *santized_input = cstr + 1;
+	const cstring *cmd = NULL;
+	const cstring *sanitized_input = cstr + 1;
 
 	if (*sanitized_input) {
 		cmd = sanitized_input;
@@ -168,7 +168,7 @@ void FileCleanup(FILE **handle)
 	}
 }
 
-void ExecuteFromFiles(const int argc, char **argv)
+xerror ExecuteFromFiles(const int argc, char **argv)
 {
 	assert(argc);
 	assert(argv);
@@ -184,14 +184,14 @@ void ExecuteFromFiles(const int argc, char **argv)
 			return XEFILE;
 		}
 	
-		RAII(StdlibFree) cstring *src = cStringFromFile(fhandle, &err);
+		RAII(cStringFree) cstring *src = cStringFromFile(fhandle, &err);
 
 		if (err) {
 			xerror_issue("%s: cannot copy file to memory", fname);
 			return XEFILE;
 		}
 
-		err = Compile(&src, fname);
+		err = Compile(src, fname);
 
 		if (err) {
 			xerror_issue("%s: cannot compile from file", fname);

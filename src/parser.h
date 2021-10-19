@@ -7,7 +7,7 @@
 // The documentation in this header makes references to the Lemon language
 // specification and the EBNF grammar located at ../langspec.txt. The grammar
 // metasyntax operations '+' and '*' are implemented via vectors. The '|'
-// operator is implemented via tagged anonymous unions. 
+// operator is implemented via tagged anonymous unions.
 
 #pragma once
 
@@ -21,7 +21,7 @@
 #include "lib/vector.h"
 
 //AST nodes
-typedef struct file file; 
+typedef struct file file;
 typedef struct fiat fiat;
 typedef struct type type;
 typedef struct decl decl;
@@ -29,8 +29,8 @@ typedef struct stmt stmt;
 typedef struct expr expr;
 
 //If initialisation fails, return NULL. If initialisation succeeds, the parsing
-//algorithm will return a non-null pointer to the root node of an abstract 
-//syntax tree. But, if file.errors > 0, then the tree is not a complete and 
+//algorithm will return a non-null pointer to the root node of an abstract
+//syntax tree. But, if file.errors > 0, then the tree is not a complete and
 //accurate representation of the input source code.
 file *SyntaxTreeInit(const cstring *src, const cstring *alias);
 
@@ -124,7 +124,7 @@ struct decl {
 			type *ret;
 			type *recv;
 			stmt *block;
-			Vector(Param) params;
+			vector(Param) params;
 			bool public;
 		} function;
 
@@ -204,7 +204,7 @@ struct stmt {
 
 		struct {
 			expr *controller;
-			Vector(Test) tests;
+			vector(Test) tests;
 		} switchstmt;
 
 		struct {
