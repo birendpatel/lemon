@@ -6,6 +6,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +23,8 @@
 #endif
 
 void ShowHeader(void);
+uint64_t Xorshift64(const uint64_t);
+cstring *GenerateUniqueAlias(void);
 xerror ExecuteFromRepl(void);
 cstring *ReadStandardInput(void);
 xerror ExecuteShell(const cstring *);
@@ -43,7 +46,6 @@ int main(int argc, char **argv)
 	if (argv[argc]) {
 		err = ExecuteFromFiles(argc, argv);
 	} else {
-		ShowHeader();
 		err = ExecuteFromRepl();
 	}
 
@@ -59,34 +61,22 @@ int main(int argc, char **argv)
 //------------------------------------------------------------------------------
 //repl management
 
-void ShowHeader(void)
-{
-	static const cstring *msg =
-		"Lemon (%s) (Compiled %s %s)\n"
-		"Copyright (C) 2021 Biren Patel.\n"
-		"GNU General Public License v3.0.\n\n"
-		"- Double tap 'return' to execute source code.\n"
-		"- Prefix input with '$' to execute a shell command.\n"
-		"- Exit with Ctrl-C.\n\n";
-
-	fprintf(stdout, msg, LEMON_VERSION, __DATE__, __TIME__);
-}
-
 xerror ExecuteFromRepl(void)
 {
 	xerror err = XEUNDEFINED;
 	const xerror fatal_errors = ~(XESHELL | XEPARSE);
 
-	cstring *input = ReadStandardInput();
+	RAII(cStringFree) cstring *alias = GenerateUniqueAlias();
+	RAII(cStringFree) cstring *input = ReadStandardInput();
+
+	ShowHeader();
 
 	while (input) {
 		if (input[0] == '$') {
 			err = ExecuteShell(input);
 		} else {
-			err = Compile(input, NULL);
+			err = Compile(input, alias);
 		}
-
-		free(input);
 
 		if (err & fatal_errors) {
 			xerror_issue("cannot execute via REPL");
@@ -99,7 +89,7 @@ xerror ExecuteFromRepl(void)
 	return XESUCCESS;
 }
 
-//if encountered SIGINT return NULL, else return a dynamically allocated pointer
+//signal interrupt returns NULL, else returns a dynamically allocated cstring
 cstring *ReadStandardInput(void)
 {
 	vstring buffer = vStringInit(KiB(1));
@@ -135,6 +125,54 @@ cstring *ReadStandardInput(void)
 		}
 	}
 }
+
+void ShowHeader(void)
+{
+	static const cstring *msg =
+		"Lemon (%s) (Compiled %s %s)\n"
+		"Copyright (C) 2021 Biren Patel.\n"
+		"GNU General Public License v3.0.\n\n"
+		"- Double tap 'return' to execute source code.\n"
+		"- Prefix input with '$' to execute a shell command.\n"
+		"- Exit with Ctrl-C.\n\n";
+
+	fprintf(stdout, msg, LEMON_VERSION, __DATE__, __TIME__);
+}
+
+//Marsaglia, G. (2003). Xorshift RNGs. Journal of Statistical Software, 8(14),
+//1–6. https://doi.org/10.18637/jss.v008.i14
+uint64_t Xorshift64(const uint64_t curr)
+{
+	uint64_t next = curr;
+
+	next = next  << 13;
+	next = next  >> 7;
+	next = next  << 17;
+
+	return next;
+}
+
+//returns a dynamically allocated cstring
+cstring *GenerateUniqueAlias(void)
+{
+	enum {
+		max_digits = 64,
+		seed = 0xCAFEBEEF
+	};
+
+	static cstring template[max_digits] = "";
+	
+	static uint64_t random_number = seed;
+
+	random_number = Xorshift64(random_number);
+
+	int total = sprintf(template, "%" PRIu64, random_number);
+
+	template[total] = '\0';
+
+	return cStringDuplicate(template);
+}
+
 
 xerror ExecuteShell(const cstring *cstr)
 {
@@ -202,7 +240,7 @@ xerror ExecuteFromFiles(const int argc, char **argv)
 	return XESUCCESS;
 }
 
-//on failure return NULL, else return a dynamically allocated pointer
+//on failure returns NULL, else returns a dynamically allocated cstring
 cstring *cStringFromFile(FILE *openfile, xerror *err)
 {
 	assert(openfile);
@@ -273,8 +311,10 @@ xerror Compile(const cstring *src, const cstring *alias)
 	assert(src);
 	assert(alias);
 
-	if (OptionsGetFlag(DIAGNOSTIC_COMPILER_PASSES)) {
-		fprintf(stderr, "compiler pass: echo\n");
+	bool trace = OptionsGetFlag(DIAGNOSTIC_COMPILER_PASSES);
+
+	if (trace) {
+		fprintf(stderr, "compiler pass: parsing\n");
 	}
 
 	file *ast = CreateSyntaxTree(src, alias);
@@ -282,6 +322,22 @@ xerror Compile(const cstring *src, const cstring *alias)
 	if (!ast) {
 		xerror_issue("cannot create abstract syntax tree");
 		return XEPARSE;
+	}
+
+	if (trace) {
+		fprintf(stderr, "compiler pass: symbol table");
+	}
+
+	if (trace) {
+		fprintf(stderr, "compiler pass: semantic analysis");
+	}
+
+	if (trace) {
+		fprintf(stderr, "compiler pass: optimisation");
+	}
+
+	if (trace) {
+		fprintf(stderr, "compiler pass: code generation");
 	}
 
 	return XESUCCESS;

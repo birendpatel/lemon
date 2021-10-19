@@ -128,8 +128,10 @@ static void vStringTrim(vstring *vstr, const char ch)
 	assert(vstr);
 	assert(vstr->len != 0);
 
-	size_t test_index = vStringLength(vstr) - 1;
-	size_t null_index = vstr->len;
+	size_t null_index = vStringLength(vstr);
+	size_t test_index = null_index - 1;
+
+	assert(null_index == vstr->len - 1);
 
 	while (test_index != SIZE_MAX) {
 		const char current_char = vstr->buffer[test_index];
@@ -142,7 +144,7 @@ static void vStringTrim(vstring *vstr, const char ch)
 		null_index--;
 	}
 
-	vstr->len = null_index;
+	vstr->len = null_index + 1;
 	(void) CharVectorSet(vstr, null_index, '\0');
 }
 
