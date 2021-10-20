@@ -29,7 +29,7 @@
 		const void *thread_id = ((void *) pthread_self());
 		const cstring *fmt = "map: thread %p: %s\n";
 
-		fprintf(stderr, fmt, thread_id, msg);
+		(void) fprintf(stderr, fmt, thread_id, msg);
 	}
 #else
 	static void MapTrace(__attribute__((unused)) const cstring *msg)
