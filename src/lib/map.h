@@ -1,40 +1,219 @@
-/**
- * @file map.h
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Templated associative array implemented via a hash table.
- *
- * @details This file is plug and play, but with a few words of advice. Maps use
- * a memset trick to immediately induce a segmentation violation whenever stdlib
- * allocs fail. You must remove the kmalloc wrapper and introduce error codes
- * where appropriate if you want to avoid this behavior.
- *
- * It is recommended that you run initially with assertions enabled as most
- * API calls use assertions to validate preconditions.
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+//
+// Associative array from string keys to any type T, implemented as a linear 
+// probing hash table.
 
 #pragma once
 
 #include <assert.h>
-#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
-#include <string.h>
 
-//tracing provides Thread IDs but they may collide. The opaque pthread_t struct
-//uses a void cast for portability, but this is not an injective function.
+#include "str.h"
+
+#ifdef __SIZEOF_INT128__
+	#define uint128_t __uint128_t
+#else
+	#error "map.h requires 128-bit integer support"
+#endif
+
+//-----------------------------------------------------------------------------
+
+//thread IDs may collide; the pthread_t transformation is not injective
 #ifdef MAP_TRACE_STDERR
 	#include <pthread.h>
 	#include <stdio.h>
 
-	#define TID ((void *) pthread_self())
-	static const char *fmt = "map: thread %p: %s\n";
-	#define MAP_TRACE(msg) fprintf(stderr, fmt, TID, msg)
+	static void MapTrace(const cstring *msg)
+	{
+		const void *thread_id = ((void *) pthread_self());
+		const cstring *fmt = "map: thread %p: %s\n";
+
+		fprintf(stderr, fmt, thread_id, msg);
+	}
 #else
-	#define MAP_TRACE(msg) do { } while (0)
+	static void MapTrace(__attribute__((unused)) const cstring *msg)
+	{
+		return;
+	}
 #endif
 
-//kmalloc; induce a segfault if malloc fails
-#define kmalloc(target, bytes) memset((target = malloc(bytes)), 0, 1)
+__attribute__((malloc)) static void *MapMalloc(const size_t bytes)
+{
+	void *region = malloc(bytes);
+
+	if (!region) {
+		MapTrace("malloc failed; aborting program");
+		abort();
+	}
+
+	return region;
+}
+
+__attribute__((calloc)) static void *MapCalloc(const size_t bytes)
+{
+	void *region = calloc(bytes, sizeof(char));
+
+	if (!region) {
+		MapTrace("calloc failed; aborting program");
+		abort();
+	}
+
+	return region;
+}
+
+//------------------------------------------------------------------------------
+
+//the public domain Fowler-Noll-Vo 1-Alternate 64-bit hash function.
+//reference: http://www.isthe.com/chongo/tech/comp/fnv/index.html#FNV-1a
+static uint64_t MapFNV1a(const cstring *cstr)
+{
+	assert(cstr);
+	
+	const uint64_t fnv_offset = (uint64_t) 14695981039346656037ULL;
+	const uint64_t fnv_prime  = (uint64_t) 1099511628211ULL;
+
+	uint64_t hash = fnv_offset;
+
+	const uint8_t *buffer = (uint8_t *) ctr;
+
+	while (*buffer) {
+		hash ^= (uint64_t) *buffer;
+		hash *= fnv_prime;
+		buffer++;
+	}
+
+	return hash;
+}
+
+//tranform value to [0, upper_bound) via an optimized multiply + divide
+static uint64_t MapScale(const uint64_t value, const uint64_t upper_bound)
+{
+	const uint128_t mult = (uint128_t) value * (uint128_t) upper_bound;
+
+	return (uint64_t) (mult >> 64);
+}
+
+__attribute__((always_inline))
+static uint64_t MapGetSlotIndex(const cstring *cstr, const uint64_t upper_bound)
+{
+	return MapScale(MapFNV1a(cstr), upper_bound);
+}
+
+//------------------------------------------------------------------------------
+
+#define alias_slot(pfix)						       \
+typedef struct pfix##_slot pfix##_slot;
+
+enum slot_status {
+	SLOT_OPEN = 0,
+	SLOT_CLOSED = 1,
+	SLOT_REMOVED = 2,
+}
+
+//read-only
+#define declare_slot(T, pfix)						       \
+struct pfix##_slot {							       \
+	cstring *key;						               \
+	T value;							       \
+	enum slot_status status;				               \
+}
+
+#define alias_map(pfix)                                                        \
+typedef struct pfix##_map pfix##_map;
+
+//read-only
+//map.len is the total closed and removed slots
+#define declare_map(T, pfix)						       \
+struct pfix##_map {						               \
+	uint64_t len;							       \
+	uint64_t cap;							       \
+	pfix##_slot *buffer;						       \
+}
+
+//------------------------------------------------------------------------------
+
+#define api_map(T, pfix, cls)					               \
+cls pfix##_map pfix##MapInit(void);				               \
+cls void pfix##MapFree(pfix##_map *, void (*)(void *));			       \
+
+//------------------------------------------------------------------------------
+
+#define impl_map_init(T, pfix, cls)					       \
+cls pfix##_map pfix##MapInit(void)					       \
+{								               \
+	assert(SLOT_OPEN == 0 && "MapInit uses calloc to set SLOT_OPEN");      \
+									       \
+	const size_t initial_capacity = 8;				       \
+	const size_t bufsize = initial_capacity * sizeof(pfix##_slot);	       \
+									       \
+	struct pfix##_map new = {					       \
+		.len = 0,						       \
+		.cap = initial_capacity,				       \
+		.buffer = MapCalloc(bufsize);     			       \
+	}								       \
+								               \
+	for (uint64_t i = 0; i < initial_capacity; i++) {		       \
+		assert(new.buffer[i].status == SLOT_OPEN)		       \
+	}								       \
+									       \
+	MapTrace("map initialized");					       \
+									       \
+	return new;							       \
+}
+
+//if mfree is non-null, it is invoked on every closed or removed element.
+#define impl_map_free(T, pfix, cls)					       \
+cls void pfix##MapFree(pfix##_map *self, void (*mfree)(void *ptr))             \
+{									       \
+	if (!self) {							       \
+		MapTrace("null input; nothing to free");		       \
+		return;							       \
+	}								       \
+									       \
+	if (!self->buffer) {						       \
+		MapTrace("map buffer is null; nothing to free");	       \
+		return;							       \
+	}								       \
+									       \
+	if (!mfree) {							       \
+		MapTrace("freeing map elements");			       \
+									       \
+		const int conditions = SLOT_CLOSED | SLOT_OPEN;		       \
+									       \
+		for (uint64_t i = 0; i < self->cap; i++) {		       \
+			const pfix##_slot slot = self->buffer[i];	       \
+									       \
+			if (slot.status & conditions) {			       \
+				mfree(slot.value);			       \
+			}						       \
+		}							       \
+									       \
+		MapTrace("freed map elements");				       \
+	}								       \
+									       \
+	free(self->buffer);						       \
+									       \
+	MapTrace("freed map buffer");					       \
+}
+
+//------------------------------------------------------------------------------
+
+//make_map declares a map<T> type named pfix_map which may contain values of
+//type T, and only type T, associated with cstring (char *) keys. Map operations
+//have storage class cls. If sizeof(T) is not available at compile time before 
+//make_map then each component macro must be expanded separately. 
+#define make_map(T, pfix, cls)						       \
+	alias_slot(pfix)						       \
+	declare_slot(pfix)					               \
+	alias_map(pfix)							       \
+	declare_map(T, pfix)						       \
+	api_map(T, pfix, cls)					               \
+	impl_map_init(T, pfix, cls)
+
+#define map(pfix) pfix##_map
+
+//&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
 
 #ifndef MAP_ESUCCESS
 	#error "user must implement the MAP_ESUCCESS integer error code"
@@ -304,3 +483,4 @@ cls void pfix##_map_resize(pfix##_map *self)
 	impl_map_insert(K, V, pfix, cls)		                       \
 	impl_map_probe(K, V, pfix, cls)					       \
 	impl_map_resize(K, V, pfix, cls)
+

@@ -45,3 +45,5 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Convert all diagnostic output to JSON (HARD)
 - [ ] Add flags to token printer (EASY)
 - [ ] Update function grammar to swap 'return' with '->' (EASY)
+- [ ] Refactor string implementation to not use vector.h (HARD)
+- [ ] Update channel.h to use function malloc (EASY)

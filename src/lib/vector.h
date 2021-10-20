@@ -32,7 +32,7 @@
 	}
 #endif
 
-static void *VectorMalloc(size_t bytes)
+__attribute__((malloc)) static void *VectorMalloc(const size_t bytes)
 {
 	void *region = malloc(bytes);
 
@@ -82,15 +82,13 @@ static size_t VectorGrow(size_t curr_capacity)
 //restrictions must be met:
 //
 //1. buffer != NULL
-//2. sizeof(buffer)/sizeof(buffer[0]) == cap
+//2. maximum elements in buffer == cap
 //3. len <= cap
 //4. buffer is compatible with stdlib free and (m)(re)alloc
 //
 //Provided these restrictions are met, any convert modification or reassignment
 //will not hinder subsequent vector operations. If the vector is the default
 //then no subsequent operation is well-defined other than VectorInit.
-//
-//these restrictions are enforced during vector operations by stdlib assertions.
 #define declare_vector(T, pfix) 					       \
 struct pfix##_vector {					                       \
 	size_t len;					                       \
@@ -245,11 +243,9 @@ cls void pfix##VectorReset(pfix##_vector *self, void (*vfree) (T))	       \
 //------------------------------------------------------------------------------
 
 //make_vector declares a vector<T> type named pfix_vector which may contain
-//elements of type T and only type T. Vector operations have storage class cls.
-//
-//like any C code, the abstraction has its limitations. make_vector may only
-//be used where sizeof(T) is available at compile time before make_vector. When
-//this is not possible each component macro must be expanded separately.
+//values of type T, and only type T. Vector operations have storage class cls.
+//If sizeof(T) is not available at compile time before make_vector then each
+//component macro must be expanded separately.
 #define make_vector(T, pfix, cls)					       \
 	alias_vector(pfix)  					               \
 	declare_vector(T, pfix)					               \
@@ -261,8 +257,4 @@ cls void pfix##VectorReset(pfix##_vector *self, void (*vfree) (T))	       \
 	impl_vector_set(T, pfix, cls)					       \
 	impl_vector_reset(T, pfix, cls)
 
-//where the application code requires functions names to be PascalCase, the
-//make_vector macro creates type names as 'Type_vector' not 'type_vector'. The
-//awkward capital letter can be obscured with this macro. The macro also
-//provides some similarity to templating syntax in other languages like C++.
 #define vector(pfix) pfix##_vector
