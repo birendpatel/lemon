@@ -75,7 +75,7 @@ static uint64_t MapFNV1a(const cstring *cstr)
 
 	uint64_t hash = fnv_offset;
 
-	const uint8_t *buffer = (uint8_t *) ctr;
+	const uint8_t *buffer = (uint8_t *) cstr;
 
 	while (*buffer) {
 		hash ^= (uint64_t) *buffer;

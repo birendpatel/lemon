@@ -1,10 +1,7 @@
-# lib
-This directory contains data structures used by the Lemon compiler. Each file is standalone and has no dependencies beyond the GNU glibc library. Each data structure is written using C-style templates.
+# Data Structures Library
 
-The unit tests depend on the Unity software located in `/extern/unity` or found at [ThrowtheSwitch](http://www.throwtheswitch.org/unity).
+Each header file located within this directory is standalone and has no dependencies beyond the GNU glibc library. Like Lemon, each file is licensed under the GNU General Public License v3.0.
 
-`vector.h`: Dynamic array with a doubling growth rate. It only performs shallow copying. It is not thread-safe.
+If you wish to use any of these data structures in your own projects, just copy over the header file and you're good to go! If you're missing anything a preprocessor error will let you know what to do when you attempt to compile.
 
-`channel.h`: Thread-safe multi-producer multi-consumer FIFO queue. All read/write operations are blocking. The queue is fixed-length.
-
-`map.h`: Associative array mapping any hashable key to any shallow-copyable value.Implemented as a linear probing hash table.
+All of these data structures abort the application program whenever a dynamic allocation request fails. Since they are templated using preprocessor token pasting, the underlying structs are not opaque. However, you should never read and write directly to struct members. Use only the provided API.
