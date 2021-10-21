@@ -435,7 +435,7 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 		slot = self->buffer + i;				       \
 	} while (i != start);						       \
 									       \
-	/* reach here whewn key doesn't exist and map.len == map.cap */	       \
+	/* reach here when key doesn't exist and map.len == map.cap */	       \
 	return false;							       \
 }
 
@@ -445,7 +445,7 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 //type T, and only type T, associated with cstring (char *) keys. Map operations
 //have storage class cls. If sizeof(T) is not available at compile time before 
 //make_map then each component macro must be expanded separately.
-#define make_map(T, pfix, cls, vfree)					       \
+#define make_map(T, pfix, cls)					       	       \
 	alias_slot(pfix)						       \
 	declare_slot(pfix)					               \
 	alias_map(pfix)							       \
