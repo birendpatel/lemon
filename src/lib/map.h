@@ -6,6 +6,7 @@
 #pragma once
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -173,7 +174,8 @@ cls void pfix##MapFree(pfix##_map *, void (*)(void *));			       \
 cls int pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
 cls void pfix##MapResize_internal(pfix##_map *);			       \
 cls int pfix##MapProbe_internal(pfix##_map *, const cstring *, T);	       \
-cls int pfix##MapRemove(pfix##_map *, cstring *, void (*)(void *));
+cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(void *));     \
+cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);
 
 //------------------------------------------------------------------------------
 
@@ -340,10 +342,101 @@ cls int pfix##MapProbe_internal(pfix##_map *self, const cstring *key, T value) \
 	return MAP_ESUCCESS;						       \
 }
 
+//if vfree is not null, it is called on the value associated with the key before
+//the pair is removed from the buffer.
+//
+//internal note; removed slots count towards the load factor, so they do not
+//decrease map.len.
 #define impl_map_remove(T, pfix, cls)					       \
-cls int pfix##MapRemove(pfix##_map *self, cstring *key, void (*vfree)(void *))
-{
-	;
+cls bool pfix##MapRemove						       \
+(									       \
+	pfix##_map *self,						       \
+	const cstring *key,						       \
+	void (*vfree)(void *))						       \
+{								               \
+	assert(self);							       \
+	assert(self->buffer);						       \
+	assert(key);							       \
+									       \
+	uint64_t i = MapGetSlotIndex(self, self->cap);			       \
+	const uint64_t start = i;					       \
+	pfix##_slot *slot = self->buffer + i;				       \
+									       \
+	MapTrace("searching for removal slot");				       \
+									       \
+	do {								       \
+		switch (slot->status) {					       \
+		case SLOT_OPEN:						       \
+			return false;					       \
+									       \
+		case SLOT_CLOSED:					       \
+			if (MapMatch(slot->key, key)) {			       \
+				if (vfree) {				       \
+					vfree(slot->value);		       \
+				}					       \
+								               \
+				slot->status = SLOT_REMOVED;		       \
+									       \
+				MapTrace("key-value pair removed");	       \
+									       \
+				return true;				       \
+			}						       \
+									       \
+			break;						       \
+									       \
+		case SLOT_REMOVED:					       \
+			break;						       \
+									       \
+		default:					 	       \
+			assert(0 != 0 && "bad status flag");		       \
+		}							       \
+									       \
+		i = (i + 1) % self->cap;				       \
+		slot = self->buffer + i;				       \
+	} while (i != start);						       \
+								               \
+	/* reach here when key doesn't exist and map.len == map.cap */	       \
+	return false;							       \
+}
+
+#define impl_map_get(T, pfix, cls)					       \
+cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
+{									       \
+	assert(self);							       \
+	assert(self->buffer);						       \
+	assert(key);							       \
+	assert(value);							       \
+									       \
+	uint64_t i = MapGetSlotIndex(self, self->cap);			       \
+	const uint64_t start = i;					       \
+	pfix##_slot *slot = self->buffer + i;				       \
+									       \
+	do {								       \
+		switch (slot->status) {					       \
+		case SLOT_OPEN:						       \
+			return false;					       \
+									       \
+		case SLOT_CLOSED:					       \
+			if (MapMatch(slot->key, key)) {			       \
+				*value = slot->value;			       \
+				return true;				       \
+			}						       \
+									       \
+			break;						       \
+								               \
+		case SLOT_REMOVED:					       \
+			break;						       \
+									       \
+		default:						       \
+			assert(0 != 0 && "bad status flag");		       \
+		}							       \
+									       \
+		i = (i + 1) % self->cap;				       \
+		slot = self->buffer + i;				       \
+	} while (i != start);						       \
+									       \
+	/* reach here whewn key doesn't exist and map.len == map.cap */	       \
+	return false;							       \
 }
 
 //------------------------------------------------------------------------------
@@ -363,6 +456,7 @@ cls int pfix##MapRemove(pfix##_map *self, cstring *key, void (*vfree)(void *))
 	impl_map_insert(T, pfix, cls)					       \
 	impl_map_resize_internal(T, pfix, cls)				       \
 	impl_map_linear_probe_internal(T, pfix, cls)			       \
-	impl_map_remove(T, pfix, cls)
+	impl_map_remove(T, pfix, cls)				               \
+	impl_map_get(T, pfix, cls)
 
 #define map(pfix) pfix##_map
