@@ -2,3 +2,9 @@
 
 #include "symtab.h"
 #include "lib/map.h"
+
+make_map(int, int, static)
+
+void SymTabInit(void) {
+	return;
+}

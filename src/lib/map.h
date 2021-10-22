@@ -11,13 +11,13 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "str.h"
-
 #ifdef __SIZEOF_INT128__
 	#define uint128_t __uint128_t
 #else
 	#error "map.h requires 128-bit integer support"
 #endif
+
+typedef char cstring;
 
 //-----------------------------------------------------------------------------
 
@@ -40,19 +40,7 @@
 	}
 #endif
 
-__attribute__((malloc)) static void *MapMalloc(const size_t bytes)
-{
-	void *region = malloc(bytes);
-
-	if (!region) {
-		MapTrace("malloc failed; aborting program");
-		abort();
-	}
-
-	return region;
-}
-
-__attribute__((calloc)) static void *MapCalloc(const size_t bytes)
+__attribute__((malloc)) static void *MapCalloc(const size_t bytes)
 {
 	void *region = calloc(bytes, sizeof(char));
 
@@ -80,7 +68,7 @@ static uint64_t MapGrow(uint64_t curr_capacity)
 	return curr_capacity * growth_rate;
 }
 
-static bool MapMatch(cstring *a, cstring *b)
+static bool MapMatch(const cstring *a, const cstring *b)
 {
 	return !strcmp(a, b);
 }
@@ -98,7 +86,7 @@ static uint64_t MapFNV1a(const cstring *cstr)
 
 	uint64_t hash = fnv_offset;
 
-	const uint8_t *buffer = (uint8_t *) cstr;
+	const uint8_t *buffer = (const uint8_t *) cstr;
 
 	while (*buffer) {
 		hash ^= (uint64_t) *buffer;
@@ -117,7 +105,7 @@ static uint64_t MapScale(const uint64_t value, const uint64_t upper_bound)
 	return (uint64_t) (mult >> 64);
 }
 
-__attribute__((always_inline))
+__attribute__((always_inline)) inline
 static uint64_t MapGetSlotIndex(const cstring *cstr, const uint64_t upper_bound)
 {
 	return MapScale(MapFNV1a(cstr), upper_bound);
@@ -132,15 +120,15 @@ enum slot_status {
 	SLOT_OPEN = 0,
 	SLOT_CLOSED = 1,
 	SLOT_REMOVED = 2,
-}
+};
 
 //read-only
 #define declare_slot(T, pfix)						       \
 struct pfix##_slot {							       \
-	cstring *key;						               \
+	const cstring *key;						       \
 	T value;							       \
 	enum slot_status status;				               \
-}
+};
 
 #define alias_map(pfix)                                                        \
 typedef struct pfix##_map pfix##_map;
@@ -152,17 +140,17 @@ struct pfix##_map {						               \
 	uint64_t len;							       \
 	uint64_t cap;							       \
 	pfix##_slot *buffer;						       \
-}
+};
 
 //------------------------------------------------------------------------------
 
 #define api_map(T, pfix, cls)					               \
 cls pfix##_map pfix##MapInit(const uint64_t capacity);			       \
-cls void pfix##MapFree(pfix##_map *, void (*)(void *));			       \
+cls void pfix##MapFree(pfix##_map *, void (*)(T));		               \
 cls bool pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
 cls void pfix##MapResize_private(pfix##_map *);			               \
 cls bool pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
-cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(void *));     \
+cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(T));          \
 cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);
 
 //------------------------------------------------------------------------------
@@ -177,11 +165,11 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 	struct pfix##_map new = {					       \
 		.len = 0,						       \
 		.cap = capacity,					       \
-		.buffer = MapCalloc(bufsize);     			       \
-	}								       \
+		.buffer = MapCalloc(bufsize)     			       \
+	};								       \
 								               \
 	for (uint64_t i = 0; i < capacity; i++) {			       \
-		assert(new.buffer[i].status == SLOT_OPEN)		       \
+		assert(new.buffer[i].status == SLOT_OPEN);		       \
 	}								       \
 									       \
 	MapTrace("map initialized");					       \
@@ -191,7 +179,7 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 
 //if vfree is non-null, it is invoked on every closed or removed element.
 #define impl_map_free(T, pfix, cls)					       \
-cls void pfix##MapFree(pfix##_map *self, void (*vfree)(void *ptr))             \
+cls void pfix##MapFree(pfix##_map *self, void (*vfree)(T))	               \
 {									       \
 	if (!self) {							       \
 		MapTrace("null input; nothing to free");		       \
@@ -206,13 +194,9 @@ cls void pfix##MapFree(pfix##_map *self, void (*vfree)(void *ptr))             \
 	if (vfree) {							       \
 		MapTrace("freeing map elements");			       \
 									       \
-		const int conditions = SLOT_CLOSED | SLOT_OPEN;		       \
-									       \
 		for (uint64_t i = 0; i < self->cap; i++) {		       \
-			const pfix##_slot slot = self->buffer[i];	       \
-									       \
-			if (slot.status & conditions) {			       \
-				vfree(slot.value);			       \
+			if (self->buffer[i].status == SLOT_OPEN) {	       \
+				vfree(self->buffer[i].value);		       \
 			}						       \
 		}							       \
 									       \
@@ -239,7 +223,7 @@ cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 	}								       \
 									       \
 	const double load_factor_threshold = 0.5;			       \
-	const double load_factor = self->len / (double) self->cap;	       \
+	const double load_factor = (double) self->len / (double) self->cap;    \
 									       \
 	if (load_factor > load_factor_threshold) {			       \
 		MapTrace("load factor exceeds threshold");		       \
@@ -248,7 +232,7 @@ cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 								               \
 	MapTrace("inserting key value pair");			               \
 									       \
-	return pfix##MapProbe_private(self);				       \
+	return pfix##MapProbe_private(self, key, value);		       \
 }
 
 //no-op if capacity cannot expand 
@@ -272,9 +256,9 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 		const pfix##_slot slot = self->buffer[i];		       \
 									       \
 		if (slot.status == SLOT_CLOSED) {		               \
-			cstring *k = slot.key;				       \
+			const cstring *k = slot.key;			       \
 			T v = slot.value;				       \
-			int err = pfix##MapProbe_private(new_map, k, v);       \
+			int err = pfix##MapProbe_private(&new_map, k, v);      \
 									       \
 			assert(!err && "key already exists in new buffer");    \
 		}							       \
@@ -341,13 +325,13 @@ cls bool pfix##MapRemove						       \
 (									       \
 	pfix##_map *self,						       \
 	const cstring *key,						       \
-	void (*vfree)(void *))						       \
+	void (*vfree)(T))						       \
 {								               \
 	assert(self);							       \
 	assert(self->buffer);						       \
 	assert(key);							       \
 									       \
-	uint64_t i = MapGetSlotIndex(self, self->cap);			       \
+	uint64_t i = MapGetSlotIndex(key, self->cap);			       \
 	const uint64_t start = i;					       \
 	pfix##_slot *slot = self->buffer + i;				       \
 									       \
@@ -396,7 +380,7 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 	assert(key);							       \
 	assert(value);							       \
 									       \
-	uint64_t i = MapGetSlotIndex(self, self->cap);			       \
+	uint64_t i = MapGetSlotIndex(key, self->cap);			       \
 	const uint64_t start = i;					       \
 	pfix##_slot *slot = self->buffer + i;				       \
 									       \
@@ -436,7 +420,7 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 //make_map then each component macro must be expanded separately.
 #define make_map(T, pfix, cls)					       	       \
 	alias_slot(pfix)						       \
-	declare_slot(pfix)					               \
+	declare_slot(T, pfix)					               \
 	alias_map(pfix)							       \
 	declare_map(T, pfix)						       \
 	api_map(T, pfix, cls)					               \

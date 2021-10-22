@@ -4,3 +4,5 @@
 // and destroying symbol tables.
 
 #pragma once
+
+void SymTabInit(void);
