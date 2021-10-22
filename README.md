@@ -47,3 +47,4 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Update function grammar to swap 'return' with '->' (EASY)
 - [ ] Refactor string implementation to not use vector.h (HARD)
 - [ ] Update channel.h to use function malloc (EASY)
+- [ ] Update map.h insertions to recycle removed slots before aborting (MEDIUM)
