@@ -19,18 +19,6 @@
 	#error "map.h requires 128-bit integer support"
 #endif
 
-#ifndef MAP_ESUCCESS
-	#error "map.h requires user to implement the MAP_ESUCCESS int code"
-#endif
-
-#ifndef MAP_EFULL
-	#error "map.h requires user to implement the MAP_EFULL int code"
-#endif
-
-#ifndef MAP_EEXISTS
-	#error "map.h requires user to implement the MAP_EEXISTS int code"
-#endif
-
 //-----------------------------------------------------------------------------
 
 //thread IDs may collide; the pthread_t transformation is not injective
@@ -171,9 +159,9 @@ struct pfix##_map {						               \
 #define api_map(T, pfix, cls)					               \
 cls pfix##_map pfix##MapInit(const uint64_t capacity);			       \
 cls void pfix##MapFree(pfix##_map *, void (*)(void *));			       \
-cls int pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
-cls void pfix##MapResize_internal(pfix##_map *);			       \
-cls int pfix##MapProbe_internal(pfix##_map *, const cstring *, T);	       \
+cls bool pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
+cls void pfix##MapResize_private(pfix##_map *);			               \
+cls bool pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
 cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(void *));     \
 cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);
 
@@ -236,8 +224,10 @@ cls void pfix##MapFree(pfix##_map *self, void (*vfree)(void *ptr))             \
 	MapTrace("freed map buffer");					       \
 }
 
+//abort if map.len == UINT64_MAX
+//return false if key already exists; it must be removed before a new insertion
 #define impl_map_insert(T, pfix, cls)					       \
-cls int pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
+cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 {									       \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -245,7 +235,7 @@ cls int pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 									       \
 	if (self->len == UINT64_MAX) {					       \
 		MapTrace("fail; map is full");				       \
-		return MAP_EFULL;					       \
+		abort();						       \
 	}								       \
 									       \
 	const double load_factor_threshold = 0.5;			       \
@@ -253,17 +243,17 @@ cls int pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 									       \
 	if (load_factor > load_factor_threshold) {			       \
 		MapTrace("load factor exceeds threshold");		       \
-		pfix##MapResize_internal(self);				       \
+		pfix##MapResize_private(self);				       \
 	}								       \
 								               \
 	MapTrace("inserting key value pair");			               \
 									       \
-	return pfix##MapProbe_internal(self);				       \
+	return pfix##MapProbe_private(self);				       \
 }
 
 //no-op if capacity cannot expand 
-#define impl_map_resize_internal(T, pfix, cls)			               \
-cls void pfix##MapResize_internal(pfix##_map *self)			       \
+#define impl_map_resize_private(T, pfix, cls)			               \
+cls void pfix##MapResize_private(pfix##_map *self)			       \
 {								               \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -284,7 +274,7 @@ cls void pfix##MapResize_internal(pfix##_map *self)			       \
 		if (slot.status == SLOT_CLOSED) {		               \
 			cstring *k = slot.key;				       \
 			T v = slot.value;				       \
-			int err = pfix##MapProbe_internal(new_map, k, v);      \
+			int err = pfix##MapProbe_private(new_map, k, v);       \
 									       \
 			assert(!err && "key already exists in new buffer");    \
 		}							       \
@@ -306,10 +296,9 @@ cls void pfix##MapResize_internal(pfix##_map *self)			       \
 }
 
 //this function assumes there is at least one open slot in the map buffer.
-//if the key already exists in a closed slot (but not removed) then do nothing
-//and return MAP_EEXISTS.
-#define impl_map_linear_probe_internal(T, pfix, cls)  			       \
-cls int pfix##MapProbe_internal(pfix##_map *self, const cstring *key, T value) \
+//if the key already exists in a closed slot then do nothing and return false.
+#define impl_map_linear_probe_private(T, pfix, cls)  			       \
+cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 {									       \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -322,7 +311,7 @@ cls int pfix##MapProbe_internal(pfix##_map *self, const cstring *key, T value) \
 	while (slot->status != SLOT_OPEN) {				       \
 		if (slot->status == SLOT_CLOSED && MapMatch(key, slot->key)) { \
 			MapTrace("fail; key already exists in closed slot");   \
-			return MAP_EEXISTS;				       \
+			return false;					       \
 		}							       \
 									       \
 		i = (i + 1) % self->cap;				       \
@@ -339,7 +328,7 @@ cls int pfix##MapProbe_internal(pfix##_map *self, const cstring *key, T value) \
 									       \
 	MapTrace("linear probe succeeded");			               \
 									       \
-	return MAP_ESUCCESS;						       \
+	return true;							       \
 }
 
 //if vfree is not null, it is called on the value associated with the key before
@@ -454,8 +443,8 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 	impl_map_init(T, pfix, cls)				               \
 	impl_map_free(T, pfix, cls)					       \
 	impl_map_insert(T, pfix, cls)					       \
-	impl_map_resize_internal(T, pfix, cls)				       \
-	impl_map_linear_probe_internal(T, pfix, cls)			       \
+	impl_map_resize_private(T, pfix, cls)				       \
+	impl_map_linear_probe_private(T, pfix, cls)			       \
 	impl_map_remove(T, pfix, cls)				               \
 	impl_map_get(T, pfix, cls)
 
