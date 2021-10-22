@@ -1,10 +1,7 @@
-# lib 
-This directory contains source code used by, but completely decoupled from, the Lemon compiler. This includes data structures and generic functions. 
+# Data Structures Library
 
-The unit tests depend on the Unity software located in `/extern/unity` or found at [ThrowtheSwitch](http://www.throwtheswitch.org/unity).
+Each header file located within this directory is standalone and has no dependencies beyond the GNU glibc library. Like Lemon, each file is licensed under the GNU General Public License v3.0.
 
-In general, `/extern` contains decoupled 3rd party software while `/src/lib` contains decoupled in-house software.
+If you wish to use any of these data structures in your own projects, just copy over the header file and you're good to go! If you're missing anything a preprocessor error will let you know what to do when you attempt to compile.
 
-`vector.h`: Templated dynamic array which appends and sets shallow copies. Lemon uses vectors to implement the REPL and for program sections like .text and .data.
-
-`channel.h`: Templated thread-safe FIFO queue. It supports multiple producers and consumers. All read/write operations are blocking. Lemon uses a channel to enable the scanner and parser to run concurrently. The scanner sends tokens onto the channel and the parser collects them on an as-needed basis.
+All of these data structures abort the application program whenever a dynamic allocation request fails. Since they are templated using preprocessor token pasting, the underlying structs are not opaque. However, you should never read and write directly to struct members. Use only the provided API.

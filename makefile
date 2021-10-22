@@ -4,9 +4,9 @@
 
 CC = gcc
 
-CFLAGS = -std=gnu17 -Wall -Wextra -Werror -Wpedantic -Wnull-dereference
-CFLAGS += -Wdouble-promotion -Wconversion -Wcast-qual
-CFLAGS += -march=native
+CFLAGS = -std=gnu17 -Wall -Wextra -Werror
+CFLAGS += -Wdouble-promotion -Wconversion -Wcast-qual -Wnull-dereference
+CFLAGS += -DCOLOURS
 
 # disable unused function warnings so that they don't interfere with C-style
 # templating for vectors, channels, and maps.
@@ -28,8 +28,8 @@ vpath %.c ./src/assets
 vpath %.c ./extern/unity
 vpath %.c ./extern/cexception
 
-objects_raw := main.o xerror.o options.o compile.o parser.o scanner.o kmap.o \
-	cexception.o
+objects_raw := main.o xerror.o options.o scanner.o parser.o symtab.o kmap.o \
+	cexception.o 
 
 DEBUG_DIR = ./debug/
 objects_debug := $(addprefix $(DEBUG_DIR), $(objects_raw))
@@ -41,21 +41,22 @@ objects_release := $(addprefix $(RELEASE_DIR), $(objects_raw))
 # source dependencies
 #-------------------------------------------------------------------------------
 
-main_deps := xerror.h compile.h options.h vector.h
+main_deps := defs.h options.h parser.h xerror.h str.h
 
-xerror_deps := xerror.h CException.h
+xerror_deps := CException.h str.h xerror.h
 
-options_deps := xerror.h options.h
+options_deps := xerror.h defs.h options.h
 
-compile_deps := xerror.h compile.h parser.h
+scanner_deps := options.h xerror.h channel.h str.h scanner.h defs.h kmap.h
 
-parser_deps := xerror.h parser.h channel.h scanner.h nodes.h defs.h options.h
+parser_deps := options.h scanner.h xerror.h str.h vector.h parser.h defs.h \
+	channel.h
 
-scanner_deps := xerror.h scanner.h channel.h kmap.h
-
-kmap_deps := kmap.h scanner.h
+kmap_deps := scanner.h kmap.h
 
 cexception_deps := CException.c
+
+symtab_deps := symtab.h map.h
 
 #-------------------------------------------------------------------------------
 # debug build
@@ -86,13 +87,13 @@ $(DEBUG_DIR)xerror.o: xerror.c $(xerror_deps)
 $(DEBUG_DIR)options.o : options.c $(options_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(DEBUG_DIR)compile.o : compile.c $(compile_deps)
+$(DEBUG_DIR)scanner.o : scanner.c $(scanner_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(DEBUG_DIR)parser.o : parser.c $(parser_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(DEBUG_DIR)scanner.o : scanner.c $(scanner_deps)
+$(DEBUG_DIR)symtab.o : symtab.c $(symtab_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(DEBUG_DIR)kmap.o : kmap.c $(kmap_deps)
@@ -107,7 +108,7 @@ $(DEBUG_DIR)cexception.o : CException.c $(cexception_deps)
 
 .PHONY: release release_deps
 
-release: CFLAGS += -O3
+release: CFLAGS += -O3 -march=native
 release: release_deps $(RELEASE_DIR)lemon
 	@echo "\nBuild finished successfully."
 	@echo "Lemon was compiled in release mode."
@@ -128,13 +129,13 @@ $(RELEASE_DIR)xerror.o: xerror.c $(xerror_deps)
 $(RELEASE_DIR)options.o : options.c $(options_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(RELEASE_DIR)compile.o : compile.c $(compile_deps)
+$(RELEASE_DIR)scanner.o : scanner.c $(scanner_deps) 
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(RELEASE_DIR)parser.o : parser.c $(parser_deps) 
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(RELEASE_DIR)scanner.o : scanner.c $(scanner_deps) 
+$(RELEASE_DIR)symtab.o : symtab.c $(symtab_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(RELEASE_DIR)kmap.o : kmap.c $(kmap_deps)
@@ -158,20 +159,6 @@ install: release
 uninstall:
 	rm -f $(INSTALL_PATH)/lemon
 	@echo "\nLemon uninstalled successfully."
-
-#-------------------------------------------------------------------------------
-# docs
-#-------------------------------------------------------------------------------
-
-.PHONY: docs
-
-docs:
-	rm -rf ./docs
-	doxygen
-	mkdir -p ./docs
-	mv ./html/* ./docs
-	rm -rf ./html ./latex
-	@echo "\ndocumentation generated, see ./docs/index.html."
 
 #-------------------------------------------------------------------------------
 # memory checks

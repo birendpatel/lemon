@@ -224,7 +224,7 @@ LITERAL ::= INT_LITERAL
 	"if" "(" <short declaration>? <expression> ")" <block statement>
 	("else" (<branch statement> | <block statement>))?
 
-<switch statement> ::= "switch" "(" <expression> ")" "{" <case statement>* "}"
+<switch statement> ::= "switch" "(" <expression> ")" "{" <case statement>+ "}"
 
 <case statement> ::= ("case" <expression> | "default") <block statement>
 
