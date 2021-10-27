@@ -5,4 +5,5 @@
 
 #pragma once
 
+// an AST (file node) goes in, and what comes out? the root hash table?
 void SymTabInit(void);
