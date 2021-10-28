@@ -33,6 +33,7 @@ static void ParserFree(parser **);
 static void Mark(parser *, void *);
 static void *AllocateAndMark(parser *, const size_t);
 static void CollectGarbage(parser *);
+static void ForgetGarbage(parser *);
 static cstring *MarkedLexeme(parser *);
 static void GetNextToken(parser *);
 static void GetNextValidToken(parser *);
@@ -256,6 +257,11 @@ static void CollectGarbage(parser *self)
 	PtrVectorReset(&self->garbage, free);
 }
 
+static void ForgetGarbage(parser *self)
+{
+	PtrVectorReset(&self->garbage, NULL);
+}
+
 //the parser always uses 'self' as a OOP receiver name, so the xerror API can
 //be simplified with a guaranteed access mechanism for the token file name and
 //line number.
@@ -427,6 +433,7 @@ static file *RecursiveDescent(parser *self)
 		Try {
 			fiat node = RecFiat(self);
 			FiatVectorPush(&syntax_tree->fiats, node);
+			ForgetGarbage(self);
 		} Catch (exception) {
 			(void) Synchronize(self);
 			CollectGarbage(self);
@@ -828,6 +835,11 @@ static stmt RecBlock(parser *self)
 
 	while (self->tok.type != _RIGHTBRACE) {
 		FiatVectorPush(&node.block.fiats, RecFiat(self));
+
+		if (self->tok.type == _EOF) {
+			usererror("missing closing '}' at end of file");
+			Throw(XXPARSE);
+		}
 	}
 
 	GetNextValidToken(self);
