@@ -164,7 +164,7 @@ void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
  	//applied. This allows the inputs to also be coloured red. RED()
  	//cannot be applied directly to the inputs because the ANSI_RED macro
 	//relies on string concatenation.
-	fprintf(stderr, ANSI_RED, "error: ");
+	fprintf(stderr, ANSI_RED "error: ");
 
 	if (fname) {
 		fprintf(stderr, "%s: ", fname);

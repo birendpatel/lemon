@@ -115,7 +115,7 @@ void SyntaxTreeFree(file *ast)
 make_vector(void *, Ptr, static)
 
 struct parser {
-	const *cstring alias;
+	const cstring *alias;
 	Token_channel *chan;
 	vector(Ptr) garbage;
 	token tok;
