@@ -79,9 +79,9 @@ const cstring *XerrorDescription(const xerror err);
 //exceptions
 #define XXPARSE ((CEXCEPTION_T) 1) // cannot parse the current token
 
-//print a stderr message in red font; does not log to the internal buffer. If 
-//line > 0 then the message is prefixed with "line #:"
-void XerrorUser(const size_t line, const cstring *msg, ...); 
+//print a stderr message in red font; does not log to the internal buffer. Prefix
+//a line number when ln > 0 and a file name when fname != NULL.
+void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...);
 
 //colours provided by @gon1332 at stackoverflow.com/questions/2616906/
 #ifdef COLOURS
