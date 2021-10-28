@@ -54,7 +54,7 @@ int main(int argc, char **argv)
 
 	if (!input_file) {
 		const cstring *msg = "no input files; nothing to compile";
-		XerrorUser(0, msg);
+		XerrorUser(NULL, 0, msg);
 		return EXIT_FAILURE;
 	}
 
@@ -62,7 +62,7 @@ int main(int argc, char **argv)
 
 	if (sentinel != NULL) {
 		const cstring *msg = "all input files except %s were ignored";
-		XerrorUser(0, msg, input_file);
+		XerrorUser(NULL, 0, msg, input_file);
 	}
 
 	xerror err = LoadFile(input_file);
@@ -211,9 +211,11 @@ file *CreateSyntaxTree(const cstring *src, const cstring *alias)
 
 	if (ast->errors) {
 		if (ast->errors > 1) {
-			XerrorUser(0, "%zu syntax errors found\n", ast->errors);
+			const cstring *msg = "%zu syntax errors found\n";
+			XerrorUser(alias, 0, msg, ast->errors);
 		} else {
-			XerrorUser(0, "1 syntax error found\n");
+			const cstring *msg = "1 syntax error found\n";
+			XerrorUser(alias, 0, msg); 
 		}
 
 		SyntaxTreeFree(ast);
