@@ -213,7 +213,7 @@ void OptionsParse(int *argc, char ***argv)
 		break;
 
 	case EINVAL:
-		XerrorUser(0, "invalid option or option argument");
+		XerrorUser(NULL, 0, "invalid option or option argument");
 		break;
 
 	default:
