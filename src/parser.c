@@ -28,7 +28,7 @@
 typedef struct parser parser;
 
 //utils
-static parser *ParserInit(const cstring *);
+static parser *ParserInit(const cstring *, const cstring *);
 static void ParserFree(parser **);
 static void Mark(parser *, void *);
 static void *AllocateAndMark(parser *, const size_t);
@@ -41,64 +41,64 @@ static size_t Synchronize(parser *);
 static void CheckToken
 (parser *, const token_type, const cstring *, const bool, const bool);
 static intmax_t ExtractArrayIndex(parser *);
-static file *FileInit(const cstring *);
+static file *FileInit(void);
 static expr *ExprInit(parser *, const exprtag);
 static stmt *CopyStmtToHeap(parser *, const stmt);
 static decl *CopyDeclToHeap(parser *, const decl);
 
 //declarations
-static file *RecursiveDescent(parser *self, const cstring *alias);
-static fiat RecFiat(parser *self);
-static decl RecStruct(parser *self);
-static vector(Member) RecParseMembers(parser *self);
-decl RecFunction(parser *self);
-static vector(Param) RecParseParameters(parser *self);
-type *RecType(parser *self);
-static decl RecVariable(parser *self);
+static file *RecursiveDescent(parser *);
+static fiat RecFiat(parser *);
+static decl RecStruct(parser *);
+static vector(Member) RecParseMembers(parser *);
+decl RecFunction(parser *);
+static vector(Param) RecParseParameters(parser *);
+type *RecType(parser *);
+static decl RecVariable(parser *);
 
 //statements
-static stmt RecStmt(parser *self);
-static stmt RecExprStmt(parser *self);
-static stmt RecBlock(parser *self);
-static stmt RecLabel(parser *self);
-static stmt RecAnonymousTarget(parser *self);
-static stmt RecNamedTarget(parser *self);
-static stmt RecForLoop(parser *self);
-static stmt RecWhileLoop(parser *self);
-static stmt RecBranch(parser *self);
-static stmt RecSwitch(parser *self);
-static vector(Test) RecTests(parser *self);
+static stmt RecStmt(parser *);
+static stmt RecExprStmt(parser *);
+static stmt RecBlock(parser *);
+static stmt RecLabel(parser *);
+static stmt RecAnonymousTarget(parser *);
+static stmt RecNamedTarget(parser *);
+static stmt RecForLoop(parser *);
+static stmt RecWhileLoop(parser *);
+static stmt RecBranch(parser *);
+static stmt RecSwitch(parser *);
+static vector(Test) RecTests(parser *);
 
 //expressions
-static expr *RecAssignment(parser *self);
-static expr *RecLogicalOr(parser *self);
-static expr *RecLogicalAnd(parser *self);
-static expr *RecEquality(parser *self);
-static expr *RecTerm(parser *self);
-static expr *RecFactor(parser *self);
-static expr *RecUnary(parser *self);
-static expr *RecPrimary(parser *self);
-static expr *RecRvarOrIdentifier(parser *self);
-static expr *RecRvar(parser *self, bool seen_tilde);
-static vector(Expr) RecArguments(parser *self);
-static expr *RecArrayLiteral(parser *self);
-static expr *RecArrayLiteral(parser *self);
-static expr *RecIdentifier(parser *self);
-static expr *RecAccess(parser *self, expr *prev);
+static expr *RecAssignment(parser *);
+static expr *RecLogicalOr(parser *);
+static expr *RecLogicalAnd(parser *);
+static expr *RecEquality(parser *);
+static expr *RecTerm(parser *);
+static expr *RecFactor(parser *);
+static expr *RecUnary(parser *);
+static expr *RecPrimary(parser *);
+static expr *RecRvarOrIdentifier(parser *);
+static expr *RecRvar(parser *, bool);
+static vector(Expr) RecArguments(parser *);
+static expr *RecArrayLiteral(parser *);
+static expr *RecArrayLiteral(parser *);
+static expr *RecIdentifier(parser *);
+static expr *RecAccess(parser *, expr *);
 
 file *SyntaxTreeInit(const cstring *src, const cstring *alias)
 {
 	assert(src);
 	assert(alias);
 
-	RAII(ParserFree) parser *prs = ParserInit(src);
+	RAII(ParserFree) parser *prs = ParserInit(src, alias);
 
 	if (!prs) {
 		xerror_issue("cannot init parser");
 		return NULL;
 	}
 
-	file *syntax_tree = RecursiveDescent(prs, alias);
+	file *syntax_tree = RecursiveDescent(prs);
 
 	return syntax_tree;
 }
@@ -115,17 +115,21 @@ void SyntaxTreeFree(file *ast)
 make_vector(void *, Ptr, static)
 
 struct parser {
+	const *cstring alias;
 	Token_channel *chan;
 	vector(Ptr) garbage;
 	token tok;
 	size_t errors;
 };
 
-static parser *ParserInit(const cstring *src)
+static parser *ParserInit(const cstring *src, const cstring *alias)
 {
 	assert(src);
+	assert(alias);
 
 	parser *prs = AbortMalloc(sizeof(parser));
+
+	prs->alias = alias;
 
 	prs->chan = AbortMalloc(sizeof(channel(Token)));
 	TokenChannelInit(prs->chan, KiB(1));
@@ -169,12 +173,11 @@ static void ParserFree(parser **self)
 //------------------------------------------------------------------------------
 //node management
 
-static file *FileInit(const cstring *alias)
+static file *FileInit(void)
 {
 	file *syntax_tree = AbortMalloc(sizeof(file));
 
 	*syntax_tree = (file) {
-		.alias = alias,
 		.fiats = {0},
 		.errors = 0
 	};
@@ -253,11 +256,12 @@ static void CollectGarbage(parser *self)
 	PtrVectorReset(&self->garbage, free);
 }
 
-//the parser always uses 'self' as a OOP receiver name, so the xerro API can
-//be simplified with a guaranteed access mechanism for the token line number.
+//the parser always uses 'self' as a OOP receiver name, so the xerror API can
+//be simplified with a guaranteed access mechanism for the token file name and
+//line number.
 #define usererror(msg, ...) 					               \
 	do {								       \
-		XerrorUser(self->tok.line, msg, ##__VA_ARGS__);		       \
+		XerrorUser(self->alias, self->tok.line, msg, ##__VA_ARGS__);   \
 		self->errors++;						       \
 	} while (0)
 
@@ -409,13 +413,13 @@ found_sequence_point:
 //------------------------------------------------------------------------------
 //parsing algorithm
 
-static file *RecursiveDescent(parser *self, const cstring *alias)
+static file *RecursiveDescent(parser *self)
 {
 	assert(self);
 
 	CEXCEPTION_T exception;
 
-	file *syntax_tree = FileInit(alias);
+	file *syntax_tree = FileInit();
 
 	GetNextValidToken(self);
 

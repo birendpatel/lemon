@@ -322,7 +322,6 @@ impl_vector_set(fiat, Fiat, static)
 impl_vector_reset(fiat, Fiat, static)
 
 struct file {
-	const cstring *alias;
 	vector(Fiat) fiats;
 	size_t errors;
 };
