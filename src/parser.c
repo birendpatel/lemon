@@ -32,7 +32,7 @@ static parser *ParserInit(const cstring *, const cstring *);
 static void ParserFree(parser **);
 static void Mark(parser *, void *);
 static void *AllocateAndMark(parser *, const size_t);
-static void CollectGarbage(parser *);
+static void RemoveGarbage(parser *);
 static void ForgetGarbage(parser *);
 static cstring *MarkedLexeme(parser *);
 static void GetNextToken(parser *);
@@ -49,6 +49,7 @@ static decl *CopyDeclToHeap(parser *, const decl);
 
 //declarations
 static file *RecursiveDescent(parser *);
+static cstring *RecImport(parser *);
 static fiat RecFiat(parser *);
 static decl RecStruct(parser *);
 static vector(Member) RecParseMembers(parser *);
@@ -179,9 +180,13 @@ static file *FileInit(void)
 	file *syntax_tree = AbortMalloc(sizeof(file));
 
 	*syntax_tree = (file) {
+		.imports = {0},
 		.fiats = {0},
 		.errors = 0
 	};
+
+	const size_t import_capacity = 4;
+	syntax_tree->imports = ImportVectorInit(0, import_capacity);
 
 	const size_t fiat_capacity = 64;
 	syntax_tree->fiats = FiatVectorInit(0, fiat_capacity);
@@ -252,7 +257,7 @@ static void *AllocateAndMark(parser *self, const size_t bytes)
 		Mark(self, recv.buffer);				       \
 	} while(0)
 
-static void CollectGarbage(parser *self)
+static void RemoveGarbage(parser *self)
 {
 	PtrVectorReset(&self->garbage, free);
 }
@@ -429,6 +434,17 @@ static file *RecursiveDescent(parser *self)
 
 	GetNextValidToken(self);
 
+	while (self->tok.type == _IMPORT) {
+		Try {
+			cstring *path = RecImport(self);
+			ImportVectorPush(&syntax_tree->imports, path);
+			ForgetGarbage(self);
+		} Catch (exception) {
+			(void) Synchronize(self);
+			RemoveGarbage(self);
+		}
+	}
+
 	while (self->tok.type != _EOF) {
 		Try {
 			fiat node = RecFiat(self);
@@ -436,13 +452,31 @@ static file *RecursiveDescent(parser *self)
 			ForgetGarbage(self);
 		} Catch (exception) {
 			(void) Synchronize(self);
-			CollectGarbage(self);
+			RemoveGarbage(self);
 		}
 	}
 
 	syntax_tree->errors = self->errors;
 
 	return syntax_tree;
+}
+
+static cstring *RecImport(parser *self)
+{
+	assert(self);
+	assert(self->tok.type == _IMPORT);
+
+	move_check(self, _LITERALSTR, "missing import path string");
+
+	cstring *import_path = NULL;
+
+	if (self->tok.lexeme != NULL) {
+		import_path = MarkedLexeme(self);
+	}
+
+	move_check_move(self, _SEMICOLON, "missing ';' after import path");
+
+	return import_path;
 }
 
 static fiat RecFiat(parser *self)
@@ -602,7 +636,8 @@ decl RecFunction(parser *self)
 	check_move(self, _RIGHTPAREN, "missing ')' after parameters");
 
 	//return
-	check_move(self, _RETURN, "missing 'return' after parameters");
+	check_move(self, _MINUS, "missing '->' after parameter list");
+	check_move(self, _GREATER, "missing ->' after parameter list");
 
 	if (self->tok.type == _VOID) {
 		GetNextValidToken(self);
@@ -787,9 +822,6 @@ static stmt RecStmt(parser *self)
 		fallthrough;
 
 	case _GOTO:
-		fallthrough;
-
-	case _IMPORT:
 		node = RecNamedTarget(self);
 		break;
 
@@ -1041,7 +1073,6 @@ static stmt RecNamedTarget(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _GOTO ||
-	       self->tok.type == _IMPORT ||
 	       self->tok.type == _RETURN);
 
 	stmt node = {
@@ -1054,13 +1085,6 @@ static stmt RecNamedTarget(parser *self)
 		move_check(self, _IDENTIFIER, "missing goto target");
 		node.gotolabel = MarkedLexeme(self);
 		move_check_move(self, _SEMICOLON, "missing ';' after goto");
-		break;
-
-	case _IMPORT:
-		node.tag = NODE_IMPORT;
-		move_check(self, _IDENTIFIER, "missing import name");
-		node.import = MarkedLexeme(self);
-		move_check_move(self, _SEMICOLON, "missing ';' after import");
 		break;
 
 	case _RETURN:

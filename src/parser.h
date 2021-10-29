@@ -161,7 +161,6 @@ typedef enum stmttag{
 	NODE_GOTOLABEL,
 	NODE_LABEL,
 	NODE_FALLTHROUGHSTMT,
-	NODE_IMPORT,
 } stmttag;
 
 struct stmt {
@@ -170,7 +169,6 @@ struct stmt {
 		expr *exprstmt;
 		expr *returnstmt; //NULL if function returns void
 		cstring *gotolabel;
-		cstring *import;
 
 		struct {
 			vector(Fiat) fiats;
@@ -321,7 +319,10 @@ impl_vector_get(fiat, Fiat, static)
 impl_vector_set(fiat, Fiat, static)
 impl_vector_reset(fiat, Fiat, static)
 
+make_vector(cstring *, Import, static)
+
 struct file {
+	vector(Import) imports;
 	vector(Fiat) fiats;
 	size_t errors;
 };
