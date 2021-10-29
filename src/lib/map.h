@@ -155,6 +155,8 @@ cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);
 
 //------------------------------------------------------------------------------
 
+#define MAP_DEFAULT_CAPACITY ((size_t) 8)
+
 #define impl_map_init(T, pfix, cls)					       \
 cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 {								               \
@@ -372,13 +374,13 @@ cls bool pfix##MapRemove						       \
 	return false;							       \
 }
 
+//input value pointer may be NULL
 #define impl_map_get(T, pfix, cls)					       \
 cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 {									       \
 	assert(self);							       \
 	assert(self->buffer);						       \
 	assert(key);							       \
-	assert(value);							       \
 									       \
 	uint64_t i = MapGetSlotIndex(key, self->cap);			       \
 	const uint64_t start = i;					       \
@@ -391,7 +393,10 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 									       \
 		case SLOT_CLOSED:					       \
 			if (MapMatch(slot->key, key)) {			       \
-				*value = slot->value;			       \
+				if (value) {				       \
+					*value = slot->value;		       \
+				}					       \
+									       \
 				return true;				       \
 			}						       \
 									       \

@@ -107,6 +107,8 @@ cls T pfix##VectorGet(const pfix##_vector *, const size_t);                    \
 cls T pfix##VectorSet(pfix##_vector *, const size_t , T);                      \
 cls void pfix##VectorReset(pfix##_vector *, void (*) (T));	               \
 
+#define VECTOR_DEFAULT_CAPACITY ((size_t) 8)
+
 #define impl_vector_init(T, pfix, cls)				               \
 cls pfix##_vector pfix##VectorInit(const size_t len, const size_t cap)         \
 {                                                                              \

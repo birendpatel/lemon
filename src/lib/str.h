@@ -43,7 +43,7 @@ static cstring *cStringFromView(const char *data, size_t len)
 	return new;
 }
 
-//for use with gcc cleanup
+//for use with gcc cleanup, okay if *cstr is null
 static void cStringFree(cstring **cstr)
 {
 	free(*cstr);

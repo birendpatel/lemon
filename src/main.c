@@ -1,21 +1,9 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// main.c compiles lemon source code into bytecode and executes it on a virtual
-// machine.
-//
-// The program begins by parsing the input file into an abstract syntax tree.
-// A directed dependency graph is then created recursively depth-first by
-// analysing the import statements. Graph nodes represent the imported files
-// and directed edges represent dependencies.
-//
-// Once the graph is finalized, the program verifies that it is acyclic. Then,
-// a symbol table is created for each graph node in topological order. Semantic
-// analysis is carried on each node independently.
-//
-// Finally, the optimisation and bytecode generation phases are performed and
-// the output program is sent to the virtual machine for execution. The virtual
-// machine controls all runtime aspects including garbage collection, overflow
-// detection, and debugging.
+// main.c begins by generating a file dependency graph using the input source
+// code. This process includes parsing and lexing. Then, semantic analysis is
+// performed in topological order. The optimisation passes are then performed
+// and a final program object is created and loaded onto the virtual machine.
 
 #include <assert.h>
 #include <errno.h>
