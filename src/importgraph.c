@@ -21,6 +21,7 @@ static xerror Insert(map(Vertex) *, const cstring *);
 make_vector(cstring *, Edge, static)
 
 //ast is NULL if the associated vertex hasn't been processed
+//TODO don't need a vector anymore, can use the import vector within the ast
 typedef struct vertex_info {
 	file *ast;
 	vector(Edge) edges;
@@ -47,6 +48,9 @@ xerror ImportGraphInit(const cstring *input_file, tagged_ast **list)
 	return XESUCCESS;
 }
 
+//TODO switch to exception handler provided everything in the map can be
+//created without additional malloc calls? when you create the AST, you'll
+//need to somehow deallocate them if an error occurs. 
 static xerror Insert(map(Vertex) *import_graph, const cstring *filename)
 {
 	assert(import_graph);
