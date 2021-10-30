@@ -121,8 +121,8 @@ struct decl {
 
 		struct {
 			cstring *name;
-			type *ret;
-			type *recv;
+			type *ret; //NULL if function returns void
+			type *recv; //NULL if function is not a method
 			stmt *block;
 			vector(Param) params;
 			bool public;

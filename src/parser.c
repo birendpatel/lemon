@@ -7,16 +7,11 @@
 // User errors are not logged, they don't propoage error codes, and they do not
 // cause the parser to terminate. Instead, they throw exceptions which trigger
 // the parser to synchronize to a new sequence point within the token stream.
-//
-// The setjmp/longjmp exception handler does not release the dynamic memory
-// allocations made within a try-block when an exception occurs. The parser
-// contains a vector<void*> used to track all memory allocations requested since
-// the last successful sequence point. Garbage collection is triggered after
-// synchronisation.
 
 #include <assert.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -27,13 +22,17 @@
 
 typedef struct parser parser;
 
-//utils
+//parser management
 static parser *ParserInit(const cstring *, const cstring *);
-static void ParserFree(parser **);
+static void ParserFree(parser *);
+static parser *ParserContainerOf(file *);
+
+//utils
+static void RawPointerRelease(void *);
 static void Mark(parser *, void *);
 static void *AllocateAndMark(parser *, const size_t);
-static void RemoveGarbage(parser *);
-static void ForgetGarbage(parser *);
+static void RemoveGarbage(vector(Ptr) *);
+static void MoveGarbage(vector(Ptr) *restrict, vector(Ptr) *restrict);
 static cstring *MarkedLexeme(parser *);
 static void GetNextToken(parser *);
 static void GetNextValidToken(parser *);
@@ -42,7 +41,8 @@ static size_t Synchronize(parser *);
 static void CheckToken
 (parser *, const token_type, const cstring *, const bool, const bool);
 static intmax_t ExtractArrayIndex(parser *);
-static file *FileInit(void);
+static metadata *MetadataInit(void);
+static file FileInit(void);
 static expr *ExprInit(parser *, const exprtag);
 static stmt *CopyStmtToHeap(parser *, const stmt);
 static decl *CopyDeclToHeap(parser *, const decl);
@@ -88,40 +88,125 @@ static expr *RecArrayLiteral(parser *);
 static expr *RecIdentifier(parser *);
 static expr *RecAccess(parser *, expr *);
 
+//-----------------------------------------------------------------------------
+// API implementation
+
 file *SyntaxTreeInit(const cstring *src, const cstring *alias)
 {
 	assert(src);
 	assert(alias);
 
-	RAII(ParserFree) parser *prs = ParserInit(src, alias);
+	parser *prs = ParserInit(src, alias);
 
 	if (!prs) {
 		xerror_issue("cannot init parser");
 		return NULL;
 	}
 
-	file *syntax_tree = RecursiveDescent(prs);
+	file *root = RecursiveDescent(prs);
 
-	return syntax_tree;
+	return root;
 }
 
-void SyntaxTreeFree(file *ast)
+void SyntaxTreeFree(file *root)
 {
-	free(ast);
-	//TODO
+	assert(root);
+
+	parser *prs = ContainerOfRoot(root);
+
+	ParserFree(prs);
 }
 
-//------------------------------------------------------------------------------
-// parser management
+//-----------------------------------------------------------------------------
+// memory management
+//
+// The unity exception handler does not release dynamic memory allocations made
+// within a try-block whenever an exception occurs. To accomodate for this,
+// during recursive descent the parser tracks its dynamic allocations in the
+// vector<RawPointer> container.
+//
+// If an exception occurs, allocations stored in the vector since the last
+// successful sequence point are released to the system.
+//
+// The allocations made from all successful sequence points are kept when the
+// parser terminates and are later referenced when the AST needs to be cleaned
+// up. Since vectors use cache-dense buffers, this results in very fast AST
+// destruction as compared to a post-order traversal.
 
-make_vector(void *, Ptr, static)
+typedef enum raw_pointer_tag {
+	PTR_STDLIB_MALLOC,
+	PTR_MEMBER_VECTOR,
+	PTR_PARAM_VECTOR,
+	PTR_TEST_VECTOR,
+	PTR_INDEX_VECTOR,
+	PTR_FIAT_VECTOR,
+	PTR_DECL_VECTOR,
+	PTR_STMT_VECTOR,
+	PTR_EXPR_VECTOR,
+} raw_pointer_tag;
+
+typedef struct raw_pointer {
+	raw_pointer_tag tag;	
+	void *memory;
+} raw_pointer;
+
+make_vector(raw_pointer, RawPointer, static)
+
+static void RawPointerRelease(void *region)
+{
+	const raw_pointer ptr = *((raw_pointer *) region);
+
+	switch (ptr.tag) {
+	case PTR_STDLIB_MALLOC:
+		free(ptr.memory);
+		break;
+
+	case PTR_MEMBER_VECTOR:
+		MemberVectorFree(ptr.memory, NULL);
+		break;
+	
+	case PTR_PARAM_VECTOR:
+		ParamvectorFree(ptr.memory, NULL);
+		break;
+
+	case PTR_TEST_VECTOR:
+		TestVectorFree(ptr.memory, NULL);
+		break;
+
+	case PTR_INDEX_VECTOR:
+		IndexVectorFree(ptr.memory, NULL);
+		break;
+
+	case PTR_FIAT_VECTOR:
+		FiatVectorFree(ptr.memory, NULL);
+		break;
+
+	case PTR_DECL_VECTOR:
+		DeclVectorFree(ptr.memory, NULL);
+		break;
+	
+	case PTR_STMT_VECTOR:
+		StmtVectorFree(ptr.memory, NULL);
+		break;
+
+	case PTR_EXPR_VECTOR:
+		ExprVectorFree(ptr.memory, NULL);
+		break;
+
+	default:
+		assert(0 != 0 && "invalid raw pointer tag");
+	}
+}
+
+//-----------------------------------------------------------------------------
+//parser management
 
 struct parser {
+	vector(RawPointer) garbage;
+	channel(Token) *chan;
 	const cstring *alias;
-	Token_channel *chan;
-	vector(Ptr) garbage;
 	token tok;
-	size_t errors;
+	file root;
 };
 
 static parser *ParserInit(const cstring *src, const cstring *alias)
@@ -131,21 +216,19 @@ static parser *ParserInit(const cstring *src, const cstring *alias)
 
 	parser *prs = AbortMalloc(sizeof(parser));
 
-	prs->alias = alias;
-
 	prs->chan = AbortMalloc(sizeof(channel(Token)));
 	TokenChannelInit(prs->chan, KiB(1));
 
-	const size_t garbage_capacity = 32;
-	prs->garbage = PtrVectorInit(0, garbage_capacity);
-
+	prs->garbage = RawPointerVectorInit(0, KiB(1));
+	prs->alias = alias;
 	prs->tok = INVALID_TOKEN;
-	prs->errors = 0;
+	prs->file = FileInit();
 
 	xerror err = ScannerInit(src, prs->chan);
 
 	if (err) {
-		xerror_issue("cannot init scanner: %s", XerrorDescription(err));
+		const cstring *msg = XerrorDescription(err);
+		xerror_issue("cannot init scanner: %s", msg);
 		ParserFree(&prs);
 		return NULL;
 	}
@@ -153,45 +236,47 @@ static parser *ParserInit(const cstring *src, const cstring *alias)
 	return prs;
 }
 
-static void ParserFree(parser **self)
+static void ParserFree(parser *self)
 {
 	assert(self);
 
-	parser *prs = *self;
+	(void) TokenChannelFree(self->chan, NULL);
 
-	if (!prs) {
-		return;
-	}
+	free(self->chan);
 
-	(void) TokenChannelFree(prs->chan, NULL);
+	RawPointerVectorFree(self->garbage, RawPointerRelease);
 
-	free(prs->chan);
+	free(self);
+}
 
-	PtrVectorFree(&prs->garbage, NULL);
+//@help see linux kernel containerof macro
+static parser *ParserContainerOf(file *root)
+{
+	assert(root);
 
-	free(prs);
+	const size_t offset = offsetof(parser, root);
+
+	return (parser *) ((char *) root - offset);
 }
 
 //------------------------------------------------------------------------------
 //node management
 
-static file *FileInit(void)
+static file FileInit(void)
 {
-	file *syntax_tree = AbortMalloc(sizeof(file));
-
-	*syntax_tree = (file) {
+	file node =  {
 		.imports = {0},
 		.fiats = {0},
 		.errors = 0
 	};
 
-	const size_t import_capacity = 4;
-	syntax_tree->imports = ImportVectorInit(0, import_capacity);
+	const size_t import_capacity = 8;
+	node.imports = ImportVectorInit(0, import_capacity);
 
 	const size_t fiat_capacity = 64;
-	syntax_tree->fiats = FiatVectorInit(0, fiat_capacity);
+	node.fiats = FiatVectorInit(0, fiat_capacity);
 
-	return syntax_tree;
+	return node;
 }
 
 static expr *ExprInit(parser *self, const exprtag tag)
@@ -257,14 +342,23 @@ static void *AllocateAndMark(parser *self, const size_t bytes)
 		Mark(self, recv.buffer);				       \
 	} while(0)
 
-static void RemoveGarbage(parser *self)
+static void RemoveGarbage(vector(Ptr) *garbage)
 {
-	PtrVectorReset(&self->garbage, free);
+	assert(garbage);
+
+	PtrVectorReset(garbage, free);
 }
 
-static void ForgetGarbage(parser *self)
+static void MoveGarbage(vector(Ptr) *restrict dest, vector(Ptr) *restrict src)
 {
-	PtrVectorReset(&self->garbage, NULL);
+	assert(dest);
+	assert(src);
+
+	for (size_t i = 0; i < src->len; i++) {
+		PtrVectorPush(dest, src->buffer[i]);
+	}
+
+	PtrVectorReset(src, NULL);
 }
 
 //the parser always uses 'self' as a OOP receiver name, so the xerror API can
@@ -430,35 +524,37 @@ static file *RecursiveDescent(parser *self)
 
 	CEXCEPTION_T exception;
 
-	file *syntax_tree = FileInit();
+	metadata *mdt = MetadataInit();
+
+	file *root = &mdt->root;
 
 	GetNextValidToken(self);
 
 	while (self->tok.type == _IMPORT) {
 		Try {
 			cstring *path = RecImport(self);
-			ImportVectorPush(&syntax_tree->imports, path);
-			ForgetGarbage(self);
+			ImportVectorPush(&root->imports, path);
+			MoveGarbage(&mdt->garbage, &self->garbage);
 		} Catch (exception) {
 			(void) Synchronize(self);
-			RemoveGarbage(self);
+			RemoveGarbage(&self->garbage);
 		}
 	}
 
 	while (self->tok.type != _EOF) {
 		Try {
 			fiat node = RecFiat(self);
-			FiatVectorPush(&syntax_tree->fiats, node);
-			ForgetGarbage(self);
+			FiatVectorPush(&root->fiats, node);
+			MoveGarbage(&mdt->garbage, &self->garbage);
 		} Catch (exception) {
 			(void) Synchronize(self);
-			RemoveGarbage(self);
+			RemoveGarbage(&self->garbage);
 		}
 	}
 
-	syntax_tree->errors = self->errors;
+	root->errors = self->errors;
 
-	return syntax_tree;
+	return root;
 }
 
 static cstring *RecImport(parser *self)
