@@ -29,10 +29,7 @@ static parser *ParserContainerOf(file *);
 
 //utils
 static void RawPointerRelease(void *);
-static void Mark(parser *, void *);
-static void *AllocateAndMark(parser *, const size_t);
-static void RemoveGarbage(vector(Ptr) *);
-static void MoveGarbage(vector(Ptr) *restrict, vector(Ptr) *restrict);
+static void *MarkedMalloc(parser *, const size_t);
 static cstring *MarkedLexeme(parser *);
 static void GetNextToken(parser *);
 static void GetNextValidToken(parser *);
@@ -284,7 +281,7 @@ static expr *ExprInit(parser *self, const exprtag tag)
 	assert(self);
 	assert(tag >= NODE_ASSIGNMENT && tag <= NODE_IDENT);
 
-	expr *new = AllocateAndMark(self, sizeof(expr));
+	expr *new = MarkedMalloc(self, sizeof(expr));
 
 	new->tag = tag;
 
@@ -297,7 +294,7 @@ static decl *CopyDeclToHeap(parser *self, const decl src)
 
 	const size_t bytes = sizeof(decl);
 
-	decl *new = AllocateAndMark(self, bytes);
+	decl *new = MarkedMalloc(self, bytes);
 
 	memcpy(new, &src, bytes);
 
@@ -310,7 +307,7 @@ static stmt *CopyStmtToHeap(parser *self, const stmt src)
 
 	const size_t bytes = sizeof(stmt);
 
-	stmt *new = AllocateAndMark(self, bytes);
+	stmt *new = MarkedMalloc(self, bytes);
 
 	memcpy(new, &src, bytes);
 
@@ -320,46 +317,37 @@ static stmt *CopyStmtToHeap(parser *self, const stmt src)
 //------------------------------------------------------------------------------
 //helper functions
 
-static void Mark(parser *self, void *region)
+static void AddGarbage(parser *self, const raw_pointer_tag tag, void *memory)
 {
-	PtrVectorPush(&self->garbage, region);
+	asesrt(self);
+	assert(tag >= PTR_RAW);
+	assert(tag <= PTR_EXPR_VECTOR);
+
+	raw_pointer new = {
+		.tag = tag,
+		.memory = memory
+	};
+
+	RawPointerVectorPush(&self->garbage, new);
 }
 
-static void *AllocateAndMark(parser *self, const size_t bytes)
+static void *MarkedMalloc(parser *self, const size_t bytes)
 {
 	assert(self);
 
-	void *region = AbortMalloc(bytes);
+	void *memory = AbortMalloc(bytes);
 
-	Mark(self, region);
+	AddGarbage(self, PTR_RAW, memory);
 
-	return region;
+	return memory;
 }
 
+//TODO here onwards
 #define alloc_mark_vector(VecInit, recv, len, cap)                             \
 	do {								       \
 		recv = VecInit(len, cap);				       \
 		Mark(self, recv.buffer);				       \
 	} while(0)
-
-static void RemoveGarbage(vector(Ptr) *garbage)
-{
-	assert(garbage);
-
-	PtrVectorReset(garbage, free);
-}
-
-static void MoveGarbage(vector(Ptr) *restrict dest, vector(Ptr) *restrict src)
-{
-	assert(dest);
-	assert(src);
-
-	for (size_t i = 0; i < src->len; i++) {
-		PtrVectorPush(dest, src->buffer[i]);
-	}
-
-	PtrVectorReset(src, NULL);
-}
 
 //the parser always uses 'self' as a OOP receiver name, so the xerror API can
 //be simplified with a guaranteed access mechanism for the token file name and
@@ -374,11 +362,11 @@ static cstring *MarkedLexeme(parser *self)
 {
 	assert(self);
 
-	cstring *target = self->tok.lexeme;
+	cstring *cstr = self->tok.lexeme;
 
-	Mark(self, target);
+	AddGarbage(self, PTR_RAW, cstr);
 
-	return target;
+	return cstr;
 }
 
 //if the extracted index is not a simple nonnegative integer less than LLONG_MAX
@@ -852,7 +840,7 @@ type *RecType(parser *self)
 {
 	assert(self);
 
-	type *node = AllocateAndMark(self, sizeof(type));
+	type *node = MarkedMalloc(self, sizeof(type));
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
