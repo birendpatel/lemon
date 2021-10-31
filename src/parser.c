@@ -170,6 +170,7 @@ static void ParserFree(parser *self)
 {
 	assert(self);
 
+	//RecursiveDescent() contract guarantees EOF is consumed
 	(void) TokenChannelFree(self->chan, NULL);
 
 	free(self->chan);
