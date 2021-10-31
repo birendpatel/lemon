@@ -359,11 +359,16 @@ static void GetNextToken(parser *self)
 
 	xerror err = TokenChannelRecv(self->chan, &self->tok);
 
+	if (err) {
+		xerror_fatal("attempted to read past EOF");
+		xerror_fatal("cannot recover parser; aborting program");
+		abort();
+	}
+
 	if (self->tok.lexeme) {
 		MemoryVectorPush(&self->garbage, self->tok.lexeme);
 	}
 
-	assert(!err && "attempted to read past EOF");
 }
 
 static void GetNextValidToken(parser *self)
