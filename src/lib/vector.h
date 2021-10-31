@@ -102,6 +102,7 @@ typedef struct pfix##_vector pfix##_vector;
 #define api_vector(T, pfix, cls)					       \
 cls pfix##_vector pfix##VectorInit(const size_t, const size_t);	               \
 cls void pfix##VectorFree(pfix##_vector *, void (*)(T));           	       \
+cls void pfix##VectorFreeReverse(pfix##_vector *self, void (*vfree) (T));      \
 cls void pfix##VectorPush(pfix##_vector *, T);   	                       \
 cls T pfix##VectorGet(const pfix##_vector *, const size_t);                    \
 cls T pfix##VectorSet(pfix##_vector *, const size_t , T);                      \
@@ -161,6 +162,36 @@ cls void pfix##VectorFree(pfix##_vector *self, void (*vfree) (T))	       \
 	}								       \
 }
 
+//like impl_vector_free but performs vfree allocations starting from the end of
+//the internal buffer and working towards buffer[0]. May be helpful whenever
+//the buffer stores heirarchical data that needs to be freed in a certain order
+//such as binary trees.
+#define impl_vector_free_reverse(T, pfix, cls)				       \
+cls void pfix##VectorFreeReverse(pfix##_vector *self, void (*vfree) (T))       \
+{									       \
+	assert(self);							       \
+	assert(self->len <= self->cap);					       \
+									       \
+	if (self->buffer) {						       \
+		if (vfree) {						       \
+			for (size_t i = self->len; i != 0; i--) {	       \
+				vfree(self->buffer[i - 1]);		       \
+			}						       \
+									       \
+			VectorTrace("buffer elements released");	       \
+		}							       \
+									       \
+		free(self->buffer);					       \
+									       \
+		VectorTrace("internal buffer released");                       \
+									       \
+		self->len = 0;						       \
+		self->cap = 0;						       \
+		self->buffer= NULL;					       \
+	} else {							       \
+		VectorTrace("vector not initialized; nothing to free");	       \
+	}								       \
+}
 //elements pushed to a vector are always copied to the internal buffer by value
 //
 //the datum paramater cannot be qualified with 'const' because if T is a pointer
@@ -254,6 +285,7 @@ cls void pfix##VectorReset(pfix##_vector *self, void (*vfree) (T))	       \
 	api_vector(T, pfix, cls)					       \
 	impl_vector_init(T, pfix, cls)				               \
 	impl_vector_free(T, pfix, cls)					       \
+	impl_vector_free_reverse(T, pfix, cls)				       \
 	impl_vector_push(T, pfix, cls)					       \
 	impl_vector_get(T, pfix, cls)					       \
 	impl_vector_set(T, pfix, cls)					       \
