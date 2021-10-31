@@ -108,7 +108,7 @@ void SyntaxTreeFree(file *root)
 {
 	assert(root);
 
-	parser *prs = ContainerOfRoot(root);
+	parser *prs = ParserContainerOf(root);
 
 	ParserFree(prs);
 }
@@ -153,14 +153,14 @@ static parser *ParserInit(const cstring *src, const cstring *alias)
 	prs->garbage = MemoryVectorInit(0, KiB(1));
 	prs->alias = alias;
 	prs->tok = INVALID_TOKEN;
-	prs->file = FileInit();
+	prs->root = FileInit();
 
 	xerror err = ScannerInit(src, prs->chan);
 
 	if (err) {
 		const cstring *msg = XerrorDescription(err);
 		xerror_issue("cannot init scanner: %s", msg);
-		ParserFree(&prs);
+		ParserFree(prs);
 		return NULL;
 	}
 
@@ -178,7 +178,7 @@ static void ParserFree(parser *self)
 	//allocations need to be released in reverse-order which mimics a
 	//post-order traversal. Otherwise parent nodes may be released before
 	//their children.
-	MemoryVectorFreeReverse(self->garbage, free);
+	MemoryVectorFreeReverse(&self->garbage, free);
 
 	free(self);
 }
@@ -462,7 +462,7 @@ static file *RecursiveDescent(parser *self)
 		}
 	}
 
-	return self->root;
+	return &self->root;
 }
 
 static cstring *RecImport(parser *self)
