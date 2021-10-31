@@ -116,18 +116,19 @@ void SyntaxTreeFree(file *root)
 //-----------------------------------------------------------------------------
 // parser management
 //
-// The unity exception handler does not release dynamic memory allocations made
-// within a try-block whenever an exception occurs. To accomodate for this,
-// during recursive descent the parser tracks its dynamic allocations in the
-// vector<memory> container.
+// If an exception occurs, the unity exception handler does not release dynamic
+// memory allocations that were made within the try-block. To accomodate for
+// this limitation, during recursive descent the parser will track its dynamic
+// allocations by pushing them to a vector<void *>.
 //
-// If an exception occurs, allocations stored in the vector since the last
-// successful sequence point are released to the system.
+// Allocations to this vector must be pushed in the order that they have been
+// requested from the system. This ensures that a backwards traversal of the
+// vector buffer always encounters child node allocations before parent node
+// allocations. In effect, a reverse linear traversal of the buffer mimics a
+// post-order right-left-parent tree traversal.
 //
-// The allocations made from all successful sequence points are kept when the
-// parser terminates and are later referenced when the AST needs to be cleaned
-// up. Since vectors use cache-dense buffers, this results in very fast AST
-// destruction as compared to a post-order traversal.
+// As a secondary benefit, vector buffers are cache-friendly and as a result
+// the AST destruction process is much faster than a manual tree traversal.
 
 make_vector(void *, Memory, static)
 

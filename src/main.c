@@ -183,6 +183,8 @@ xerror Compile(const cstring *src, const cstring *alias)
 		return XEPARSE;
 	}
 
+	SyntaxTreeFree(ast);	
+
 	return XESUCCESS;
 }
 
