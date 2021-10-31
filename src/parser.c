@@ -36,7 +36,6 @@ static stmt *CopyStmtToHeap(parser *, const stmt);
 static decl *CopyDeclToHeap(parser *, const decl);
 
 //utils
-static cstring *MarkedLexeme(parser *);
 static void GetNextToken(parser *);
 static void GetNextValidToken(parser *);
 static void ReportInvalidToken(parser *);
@@ -288,17 +287,6 @@ static stmt *CopyStmtToHeap(parser *self, const stmt src)
 		self->root.errors++;					       \
 	} while (0)
 
-static cstring *MarkedLexeme(parser *self)
-{
-	assert(self);
-
-	cstring *cstr = self->tok.lexeme;
-
-	ParserMark(self, cstr);
-
-	return cstr;
-}
-
 //if the extracted index is not a simple nonnegative integer less than LLONG_MAX
 //then a parser exception is thrown.
 static intmax_t ExtractArrayIndex(parser *self)
@@ -365,11 +353,16 @@ static void CheckToken
 //------------------------------------------------------------------------------
 //channel operations
 
+//the lexeme associated with the token, if any, will be added to the garbage
 static void GetNextToken(parser *self)
 {
 	assert(self);
 
 	xerror err = TokenChannelRecv(self->chan, &self->tok);
+
+	if (self->tok.lexeme) {
+		MemoryVectorPush(&self->garbage, self->tok.lexeme);
+	}
 
 	assert(!err && "attempted to read past EOF");
 }
@@ -477,7 +470,7 @@ static cstring *RecImport(parser *self)
 	cstring *import_path = NULL;
 
 	if (self->tok.lexeme != NULL) {
-		import_path = MarkedLexeme(self);
+		import_path = self->tok.lexeme;
 	}
 
 	move_check_move(self, _SEMICOLON, "missing ';' after import path");
@@ -543,7 +536,7 @@ static decl RecStruct(parser *self)
 
 	check(self, _IDENTIFIER, "missing struct name after 'struct' keyword");
 
-	node.udt.name = MarkedLexeme(self);
+	node.udt.name = self->tok.lexeme; 
 
 	move_check_move(self, _LEFTBRACE, "missing '{' after struct name");
 
@@ -580,7 +573,7 @@ static vector(Member) RecParseMembers(parser *self)
 
 		check(self, _IDENTIFIER, "missing struct member name");
 
-		attr.name = MarkedLexeme(self);
+		attr.name = self->tok.lexeme; 
 
 		move_check_move(self, _COLON, "missing ':' after name");
 
@@ -628,7 +621,7 @@ decl RecFunction(parser *self)
 
 	check(self, _IDENTIFIER, "missing function name in declaration");
 
-	node.function.name = MarkedLexeme(self);
+	node.function.name = self->tok.lexeme; 
 
 	//parameter list
 	move_check_move(self, _LEFTPAREN, "missing '(' after function name");
@@ -692,7 +685,7 @@ static vector(Param) RecParseParameters(parser *self)
 
 		check(self, _IDENTIFIER, "missing function parameter name");
 
-		attr.name = MarkedLexeme(self);
+		attr.name = self->tok.lexeme; 
 
 		move_check_move(self, _COLON, "missing ':' after name");
 
@@ -742,7 +735,7 @@ static decl RecVariable(parser *self)
 
 	check(self, _IDENTIFIER, "missing variable name in declaration");
 
-	node.variable.name = MarkedLexeme(self);
+	node.variable.name = self->tok.lexeme; 
 
 	move_check_move(self, _COLON, "missing ':' before type");
 
@@ -767,7 +760,7 @@ type *RecType(parser *self)
 	switch (self->tok.type) {
 	case _IDENTIFIER:
 		node->tag = NODE_BASE;
-		node->base = MarkedLexeme(self);
+		node->base = self->tok.lexeme; 
 		GetNextValidToken(self);
 		break;
 
@@ -1089,7 +1082,7 @@ static stmt RecNamedTarget(parser *self)
 	case _GOTO:
 		node.tag = NODE_GOTOLABEL;
 		move_check(self, _IDENTIFIER, "missing goto target");
-		node.gotolabel = MarkedLexeme(self);
+		node.gotolabel = self->tok.lexeme; 
 		move_check_move(self, _SEMICOLON, "missing ';' after goto");
 		break;
 
@@ -1164,7 +1157,7 @@ static stmt RecLabel(parser *self)
 
 	move_check(self, _IDENTIFIER, "label name must be an identifier");
 
-	node.label.name = MarkedLexeme(self);
+	node.label.name = self->tok.lexeme; 
 
 	move_check_move(self, _COLON, "missing ':' after label name");
 
@@ -1471,7 +1464,7 @@ static expr *RecPrimary(parser *self)
 	case _FALSE:
 		node = ExprInit(self, NODE_LIT);
 		node->line = self->tok.line;
-		node->lit.rep = MarkedLexeme(self);
+		node->lit.rep = self->tok.lexeme; 
 		node->lit.littype = self->tok.type;
 		GetNextValidToken(self);
 		break;
@@ -1579,7 +1572,7 @@ static expr *RecIdentifier(parser *self)
 
 	expr *node = ExprInit(self, NODE_IDENT);
 	node->line = self->tok.line;
-	node->ident.name = MarkedLexeme(self);
+	node->ident.name = self->tok.lexeme; 
 
 	return node;
 }
@@ -1593,7 +1586,7 @@ static expr *RecRvar(parser *self, bool seen_tilde)
 	expr *node = ExprInit(self, NODE_RVARLIT);
 
 	node->line = self->tok.line;
-	node->rvarlit.dist = MarkedLexeme(self);
+	node->rvarlit.dist = self->tok.lexeme; 
 
 	if (!seen_tilde) {
 		move_check(self, _TILDE, "missing '~' after distribution");

@@ -101,7 +101,7 @@ typedef struct token_flags {
 } token_flags;
 
 typedef struct token {
-	cstring *lexeme; //dynamically allocated
+	cstring *lexeme; //either dynamically allocated or NULL
 	token_type type;
 	size_t line; //starts at 1
 	token_flags flags;
