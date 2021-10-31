@@ -30,7 +30,7 @@ static void ParserMark(parser *, void *);
 static void *ParserMalloc(parser *, const size_t);
 
 //node management
-static file FileInit(void);
+static file FileInit(parser *);
 static expr *ExprInit(parser *, const exprtag);
 static stmt *CopyStmtToHeap(parser *, const stmt);
 static decl *CopyDeclToHeap(parser *, const decl);
@@ -140,7 +140,7 @@ struct parser {
 	file root;
 };
 
-//returns NULL on failure
+//returns NULL on failure; does not initialize the root member
 static parser *ParserInit(const cstring *src, const cstring *alias)
 {
 	assert(src);
@@ -154,7 +154,6 @@ static parser *ParserInit(const cstring *src, const cstring *alias)
 	prs->garbage = MemoryVectorInit(0, KiB(1));
 	prs->alias = alias;
 	prs->tok = INVALID_TOKEN;
-	prs->root = FileInit();
 
 	xerror err = ScannerInit(src, prs->chan);
 
@@ -222,7 +221,7 @@ static void *ParserMalloc(parser *self, const size_t bytes)
 //------------------------------------------------------------------------------
 //node management
 
-static file FileInit(void)
+static file FileInit(parser *self)
 {
 	file node =  {
 		.imports = {0},
@@ -231,10 +230,10 @@ static file FileInit(void)
 	};
 
 	const size_t import_capacity = 8;
-	node.imports = ImportVectorInit(0, import_capacity);
+	alloc_mark_vector(ImportVectorInit, node.imports, 0, import_capacity);
 
 	const size_t fiat_capacity = 64;
-	node.fiats = FiatVectorInit(0, fiat_capacity);
+	alloc_mark_vector(FiatVectorInit, node.fiats, 0, fiat_capacity);
 
 	return node;
 }
@@ -442,6 +441,8 @@ static file *RecursiveDescent(parser *self)
 	assert(self);
 
 	CEXCEPTION_T exception;
+
+	self->root = FileInit(self);
 
 	GetNextValidToken(self);
 
