@@ -1,12 +1,6 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// Recursive descent parser. Two types of errors may be encountered: compiler
-// errors and user errors. Compiler errors are treated as usual; Log the issue
-// and propogate the error code.
-//
-// User errors are not logged, they don't propoage error codes, and they do not
-// cause the parser to terminate. Instead, they throw exceptions which trigger
-// the parser to synchronize to a new sequence point within the token stream.
+// Recursive descent parser.
 
 #include <assert.h>
 #include <limits.h>
@@ -114,6 +108,10 @@ void SyntaxTreeFree(file *root)
 
 //-----------------------------------------------------------------------------
 // parser management
+//
+// User errors are not logged, they don't propoage error codes, and they do not
+// cause the parser to terminate. Instead, they throw exceptions which trigger
+// the parser to synchronize to a new sequence point within the token stream.
 //
 // If an exception occurs, the unity exception handler does not release dynamic
 // memory allocations that were made within the try-block. To accomodate for
