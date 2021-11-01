@@ -12,12 +12,8 @@
 #include "parser.h"
 #include "lib/str.h"
 
-typedef struct {
-	cstring *alias;
-	file *ast;
-} tagged_ast;
-
-//creates a directed-acyclic graph and returns the graph vertices in topological
-//order as an array of tagged_ast structs. The array is guaranteed to be NULL
-//terminated, even if an error is returned.
-xerror ImportGraphInit(const cstring *input_file, tagged_ast **list);
+//starting from the input fname, create a directed acyclic graph of file nodes
+//according to their import dependencies. On return the ast parameter points
+//to a null-terminated dynamically allocated array of nodes in topological
+//order. 
+xerror ImportGraphSort(const cstring *fname, file *ast[])
