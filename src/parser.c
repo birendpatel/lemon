@@ -40,7 +40,7 @@ static intmax_t ExtractArrayIndex(parser *);
 
 //declarations
 static file *RecursiveDescent(parser *, const cstring *);
-static cstring *RecImport(parser *);
+static import RecImport(parser *);
 static fiat RecFiat(parser *);
 static decl RecStruct(parser *);
 static vector(Member) RecParseMembers(parser *);
@@ -447,8 +447,8 @@ static file *RecursiveDescent(parser *self, const cstring *alias)
 
 	while (self->tok.type == _IMPORT) {
 		Try {
-			cstring *path = RecImport(self);
-			ImportVectorPush(&self->root.imports, path);
+			import node = RecImport(self);
+			ImportVectorPush(&self->root.imports, node);
 		} Catch (exception) {
 			(void) Synchronize(self);
 		}
@@ -466,22 +466,21 @@ static file *RecursiveDescent(parser *self, const cstring *alias)
 	return &self->root;
 }
 
-static cstring *RecImport(parser *self)
+static import RecImport(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _IMPORT);
 
 	move_check(self, _LITERALSTR, "missing import path string");
 
-	cstring *import_path = NULL;
+	import node = {
+		.alias = self->tok.lexeme,
+		.root = NULL
+	};
 
-	if (self->tok.lexeme != NULL) {
-		import_path = self->tok.lexeme;
-	}
+	GetNextValidToken(self);
 
-	move_check_move(self, _SEMICOLON, "missing ';' after import path");
-
-	return import_path;
+	return node;
 }
 
 static fiat RecFiat(parser *self)
@@ -843,6 +842,11 @@ static stmt RecStmt(parser *self)
 	case _LABEL:
 		node = RecLabel(self);
 		break;
+
+	case _SEMICOLON:
+		usererror("empty statement has no effect");
+		Throw(XXPARSE);
+		break; //unreachable but compiler won't flag the longjmp as okay
 
 	default:
 		node = RecExprStmt(self);
@@ -1479,6 +1483,15 @@ static expr *RecPrimary(parser *self)
 		GetNextValidToken(self);
 		node = RecAssignment(self);
 		check_move(self, _RIGHTPAREN, "missing ')' after grouping");
+		break;
+
+	//imports cannot exist other than at the start of a file. The default
+	//case message is too generic to make sense for most end-users in this
+	//situation.
+	case _IMPORT:
+		usererror("import directives must occur before all other "
+			  "statements and declarations");
+		Throw(XXPARSE);
 		break;
 
 	default:

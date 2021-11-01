@@ -92,12 +92,21 @@ STRING_LITERAL ::= "\"" [^"]* "\""
 
 #-------------------------------------------------------------------------------
 # Imports enable Lemon to automatically resolve file dependencies and to compile
-# each file in a sensible order. Imports are statements but they are handled
+# each file in a sensible order. Imports are like statements but they're handled
 # in a unique way with very specific ordering constraints. They are not allowed
-# anywhere except at the beginning of a file.
+# anywhere except at the beginning of a file and they do not need a terminating
+# semicolon.
 #-------------------------------------------------------------------------------
 
-<import> ::= "import" STRING_LITERAL ";"
+<import> ::= "import" STRING_LITERAL
+
+#-------------------------------------------------------------------------------
+# Since Lemon does not need a main entry function, statements residing at the
+# top level of a file are executed procedurally as if they were wrapped into
+# an implicit main function. Top level statements in a fiat are ignored if the
+# file is not the compiler input file. This is the case when the file is brought
+# into the compiler via an import directive.
+#-------------------------------------------------------------------------------
 
 <fiat> ::= <declaration> | <statement>
 

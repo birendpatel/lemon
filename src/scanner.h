@@ -70,7 +70,6 @@ typedef enum token_type {
 	_BREAK,
 	_CONTINUE,
 	_GOTO,
-	_IMPORT,
 	_FOR,
 	_WHILE,
 	_IF,
@@ -90,6 +89,7 @@ typedef enum token_type {
 	_PUB,
 	_SELF,
 	_VOID,
+	_IMPORT,
 
 	//total
 	_TOKEN_TYPE_COUNT
