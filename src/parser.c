@@ -17,14 +17,14 @@
 typedef struct parser parser;
 
 //parser management
-static parser *ParserInit(const cstring *, const cstring *);
+static parser *ParserInit(const cstring *); 
 static void ParserFree(parser *);
 static parser *ParserContainerOf(file *);
 static void ParserMark(parser *, void *);
 static void *ParserMalloc(parser *, const size_t);
 
 //node management
-static file FileInit(parser *);
+static file FileInit(parser *, const cstring *);
 static expr *ExprInit(parser *, const exprtag);
 static stmt *CopyStmtToHeap(parser *, const stmt);
 static decl *CopyDeclToHeap(parser *, const decl);
@@ -39,7 +39,7 @@ static void CheckToken
 static intmax_t ExtractArrayIndex(parser *);
 
 //declarations
-static file *RecursiveDescent(parser *);
+static file *RecursiveDescent(parser *, const cstring *);
 static cstring *RecImport(parser *);
 static fiat RecFiat(parser *);
 static decl RecStruct(parser *);
@@ -87,14 +87,14 @@ file *SyntaxTreeInit(const cstring *src, const cstring *alias)
 	assert(src);
 	assert(alias);
 
-	parser *prs = ParserInit(src, alias);
+	parser *prs = ParserInit(src);
 
 	if (!prs) {
 		xerror_issue("cannot init parser");
 		return NULL;
 	}
 
-	return RecursiveDescent(prs);
+	return RecursiveDescent(prs, alias);
 }
 
 void SyntaxTreeFree(file *root)
@@ -132,16 +132,14 @@ make_vector(void *, Memory, static)
 struct parser {
 	vector(Memory) garbage;
 	channel(Token) *chan;
-	const cstring *alias;
 	token tok;
 	file root;
 };
 
 //returns NULL on failure; does not initialize the root member
-static parser *ParserInit(const cstring *src, const cstring *alias)
+static parser *ParserInit(const cstring *src)
 {
 	assert(src);
-	assert(alias);
 
 	parser *prs = AbortMalloc(sizeof(parser));
 
@@ -149,7 +147,7 @@ static parser *ParserInit(const cstring *src, const cstring *alias)
 	TokenChannelInit(prs->chan, KiB(1));
 
 	prs->garbage = MemoryVectorInit(0, KiB(1));
-	prs->alias = alias;
+
 	prs->tok = INVALID_TOKEN;
 
 	xerror err = ScannerInit(src, prs->chan);
@@ -210,20 +208,24 @@ static void *ParserMalloc(parser *self, const size_t bytes)
 }
 
 #define alloc_mark_vector(VecInit, recv, len, cap)                             \
-	do {								       \
-		recv = VecInit(len, cap);				       \
-		ParserMark(self, recv.buffer);				       \
-	} while(0)
+do {								               \
+	recv = VecInit(len, cap);				       	       \
+	ParserMark(self, recv.buffer);				               \
+} while(0)
 
 
 //------------------------------------------------------------------------------
 //node management
 
-static file FileInit(parser *self)
+static file FileInit(parser *self, const cstring *alias)
 {
+	assert(self);
+	assert(alias);
+
 	file node =  {
 		.imports = {0},
 		.fiats = {0},
+		.alias = alias,
 		.errors = 0
 	};
 
@@ -281,10 +283,10 @@ static stmt *CopyStmtToHeap(parser *self, const stmt src)
 //be simplified with a guaranteed access mechanism for the token file name and
 //line number.
 #define usererror(msg, ...) 					               \
-	do {								       \
-		XerrorUser(self->alias, self->tok.line, msg, ##__VA_ARGS__);   \
-		self->root.errors++;					       \
-	} while (0)
+do {								               \
+	XerrorUser(self->root.alias, self->tok.line, msg, ##__VA_ARGS__);      \
+	self->root.errors++;					               \
+} while (0)
 
 //if the extracted index is not a simple nonnegative integer less than LLONG_MAX
 //then a parser exception is thrown.
@@ -433,13 +435,13 @@ found_sequence_point:
 //------------------------------------------------------------------------------
 //parsing algorithm
 
-static file *RecursiveDescent(parser *self)
+static file *RecursiveDescent(parser *self, const cstring *alias)
 {
 	assert(self);
 
 	CEXCEPTION_T exception;
 
-	self->root = FileInit(self);
+	self->root = FileInit(self, alias);
 
 	GetNextValidToken(self);
 

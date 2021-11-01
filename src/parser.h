@@ -324,5 +324,6 @@ make_vector(cstring *, Import, static)
 struct file {
 	vector(Import) imports;
 	vector(Fiat) fiats;
+	const cstring *alias;
 	size_t errors;
 };
