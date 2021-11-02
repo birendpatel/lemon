@@ -1,8 +1,8 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// The ImportGraph API exposes functions for creating a directed dependency
-// graph based on file import statements. The graph nodes represent the imported
-// files and directed edges represent dependencies. (A -> B :=  A depends on B)
+// The Graph API exposes an interface for creating a directed dependency graph
+// based on file import statements and topologically sorting the graph to
+// facilitate symbol table construction.
 
 #pragma once
 
@@ -16,4 +16,4 @@
 //according to their import dependencies. On return the ast parameter points
 //to a null-terminated dynamically allocated array of nodes in topological
 //order. 
-xerror ImportGraphSort(const cstring *fname, file *ast[])
+xerror GraphSort(const cstring *fname, file *ast[])
