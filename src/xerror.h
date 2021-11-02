@@ -67,7 +67,8 @@ void XerrorFlush(void);
 #define XETHREAD      7 //multithreading issue has occured
 #define XESHELL	      8 //shell error
 #define XEPARSE	      9 //parsing to AST failed
-#define XEUNDEFINED  10 //unspecified error
+#define XEUSER	     10 //user source code is not correct
+#define XEUNDEFINED  11 //unspecified error
 
 //code map for lib/channel.h
 #define CHANNEL_ESUCCESS XESUCCESS
@@ -77,7 +78,9 @@ void XerrorFlush(void);
 const cstring *XerrorDescription(const xerror err);
 
 //exceptions
-#define XXPARSE ((CEXCEPTION_T) 1) // cannot parse the current token
+#define XXPARSE ((CEXCEPTION_T) 1) // AST parsing issues
+#define XXIO    ((CEXCEPTION_T) 2) // IO issues
+#define XXUSER  ((CEXCEPTION_T) 3) // generic user issue (compiler is okay)
 
 //print a stderr message in red font; does not log to the internal buffer. Prefix
 //a line number when ln > 0 and a file name when fname != NULL.

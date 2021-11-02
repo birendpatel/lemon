@@ -99,7 +99,9 @@ file *SyntaxTreeInit(const cstring *src, const cstring *alias)
 
 void SyntaxTreeFree(file *root)
 {
-	assert(root);
+	if (!root) {
+		return;
+	}
 
 	parser *prs = ParserContainerOf(root);
 
@@ -222,10 +224,13 @@ static file FileInit(parser *self, const cstring *alias)
 	assert(self);
 	assert(alias);
 
+	cstring *copy = cStringDuplicate(alias);
+	ParserMark(self, copy);
+
 	file node =  {
 		.imports = {0},
 		.fiats = {0},
-		.alias = alias,
+		.alias = copy,
 		.errors = 0
 	};
 

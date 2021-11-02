@@ -1,6 +1,7 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdio.h>
 
 #include "importgraph.h"
@@ -15,68 +16,138 @@ static size_t GetFileSize(FILE *);
 static xerror Insert(map(Vertex) *, const cstring *);
 
 //------------------------------------------------------------------------------
-// the import graph is represented as an adjacency list, implemented as a hash
-// table of (cstring, vertex_info) key-value pairs.
+// the finite import graph is implemented as an adjacency list. Each vertex is
+// represented as a (cstring, file) key-value pair within a hash table. The
+// vector<import> within the file node provides the list of neighbor vertices.
 
-make_vector(cstring *, Edge, static)
-
-//ast is NULL if the associated vertex hasn't been processed
-//TODO don't need a vector anymore, can use the import vector within the ast
-typedef struct vertex_info {
-	file *ast;
-	vector(Edge) edges;
-} vertex_info;
-
-make_map(vertex_info, Vertex, static)
+make_map(file *, Vertex, static)
 
 //------------------------------------------------------------------------------
+// API implementation
 
-xerror ImportGraphInit(const cstring *input_file, tagged_ast **list)
+xerror ImportGraphSort(const cstring *fname, file *ast[])
 {
-	assert(input_file);
-	assert(list);
-
-	map(Vertex) import_graph = VertexMapInit(MAP_DEFAULT_CAPACITY);
-
-	xerror err = Insert(import_graph, input_file);
-
-	if (err) {
-		xerror_issue("cannot create import graph");
-		return err;
-	}
-
-	return XESUCCESS;
+	assert(fname);
+	assert(ast);
 }
 
-//TODO switch to exception handler provided everything in the map can be
-//created without additional malloc calls? when you create the AST, you'll
-//need to somehow deallocate them if an error occurs. 
-static xerror Insert(map(Vertex) *import_graph, const cstring *filename)
+//------------------------------------------------------------------------------
+// stage 1; recursive dependency resolution
+
+//on failure sets err to one of XEFILE, XEPARSE, XEUSER, or XEUNDEFINED and
+//the returned graph is not functional.
+static map(Vertex) CreateGraph(const cstring *fname, xerror *err)
+{
+	assert(fname);
+	assert(err);
+
+	CEXCEPTION_T exception;
+	const cstring *msg = "cannot create graph; %s";
+
+	map(Vertex) import_graph = VertexGraphInit(MAP_DEFAULT_CAPACITY);
+
+	Try {
+		(void) InsertVertex(&import_graph, fname);
+		*err = XESUCCESS;
+	} Catch (exception) {
+		switch (exception) {
+		case XXIO:
+			xerror_issue(msg, "IO issue");
+			*err = XEFILE;
+			break;
+
+		case XXPARSE:
+			xerror_issue(msg, "AST parsing failed");
+			*err = XEPARSE;
+			break;
+
+		case XXUSER:
+			XerrorUser(NULL, 0, "compilation failed");
+			*err = XEUSER;
+
+		default:
+			xerror_fatal(msg, "unknown exception caught");
+			*err = XEUNDEFINED;
+			assert(0 != 0);
+			break;
+		}
+
+		VertexMapFree(&import_graph, SyntaxTreeFree);
+	}
+
+	return import_graph;
+}
+
+//indirect recursion via InsertNeighbors. May Throw() an XXIO or XXPARSE 
+//exception. The returned pointer is non-NULL.
+static file *InsertVertex(map(Vertex) *import_graph, const cstring *fname)
 {
 	assert(import_graph);
-	assert(filename);
+	assert(fname);
 
-	//recursion base case; if the vertex already exists in the graph
-	//then it is already being processed higher in the call stack.
-	if (VertexMapGet(import_graph, filename, NULL)) {
-		return XESUCCESS;
+	CXECEPTION_T exception = 0;
+
+	file *root = FetchVertex(import_graph, fname);
+
+	if (root) {
+		return root;
 	}
 
-	RAII(cStringFree) cstring *source_code = LoadFile(filename);
+	cstring *source_code = LoadFile(fname);
 
 	if (!source_code) {
-		xerror_issue("%s: cannot load into memory", filename);
-		return XEFILE;
+		exception = XXIO;
+		goto fail;
 	}
 
-	vector_info vinfo = {
-		.ast = SyntaxTreeInit(source_code, filename);
-		.edges = EdgeVectorInit(0, VECTOR_DEFAULT_CAPACITY);
-	};
+	root = SyntaxTreeInit(source_code, fname);
 
-	if (!ast) {
-		xerror_issue("%s: cannot create ast");
-		return XEPARSE;
+	if (!root) {
+		exception = XXPARSE;
+		goto cleanup_source;
+	}
+
+	if (root->errors) {
+		exception = XXUSER;
+		goto cleanup_root;
+	}
+
+	(void) VectorMapInsert(import_graph, fname, root);
+
+	InsertNeighbors(import_graph, root->imports);
+
+	return root;
+
+cleanup_root:
+	SyntaxTreeFree(root);
+cleanup_source:
+	free(source_code);
+fail:
+	Throw(exception);
+}
+
+//returns NULL if the vertex does not exist in the graph
+static file *FetchVertex(map(Vertex) *import_graph, const cstring *fname)
+{
+	assert(import_graph);
+	assert(fname);
+
+	file *root = NULL;
+
+	(void) VertexMapGet(import_graph, fname, &root);
+
+	return root;
+}
+
+//note; indirect recursion.
+//this function populates the import.root member ignored by the parser.
+static InsertNeighbors(map(Vertex) *import_graph, vector(Import) imports)
+{
+	assert(import_graph);
+
+	for (size_t i = 0; i < imports.len; i++) {
+		import *node = &imports.buffer[i];
+		node->root = InsertVertex(import_graph, node.alias);
 	}
 }
 
@@ -90,7 +161,8 @@ static void FileCleanup(FILE **handle)
 	}
 }
 
-//on failure returns NULL, else returns a dynamically allocated cstring
+//on failure returns NULL, else returns a dynamically allocated cstring. Any
+//errors are reported to the xerror log.
 static cstring *LoadFile(const cstring *filename)
 {
 	assert(filename);

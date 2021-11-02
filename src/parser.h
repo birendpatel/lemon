@@ -35,7 +35,8 @@ typedef struct import import;
 //accurate representation of the input source code.
 file *SyntaxTreeInit(const cstring *src, const cstring *alias);
 
-//okay to call when ast.errors > 0
+//okay to call when ast == NULL.
+//must be called even if ast.errors > 0 to avoid memory leaks.
 void SyntaxTreeFree(file *ast);
 
 //<member list>

@@ -192,18 +192,22 @@ cls void pfix##MapFree(pfix##_map *self, void (*vfree)(T))	               \
 		MapTrace("map buffer is null; nothing to free");	       \
 		return;							       \
 	}								       \
+								               \
+	MapTrace("freeing map elements");				       \
 									       \
-	if (vfree) {							       \
-		MapTrace("freeing map elements");			       \
+	for (uint64_t i = 0; i < self->cap; i++) {			       \
+		pfix##_slot slot = self->buffer[i];			       \
+								               \
+		if (slot.status == SLOT_CLOSED) {			       \
+			free(slot.key);					       \
 									       \
-		for (uint64_t i = 0; i < self->cap; i++) {		       \
-			if (self->buffer[i].status == SLOT_OPEN) {	       \
-				vfree(self->buffer[i].value);		       \
+			if (vfree) {					       \
+				vfree(slot.value);			       \
 			}						       \
 		}							       \
-									       \
-		MapTrace("freed map elements");				       \
 	}								       \
+									       \
+	MapTrace("freed map elements");					       \
 									       \
 	free(self->buffer);						       \
 									       \
@@ -212,6 +216,8 @@ cls void pfix##MapFree(pfix##_map *self, void (*vfree)(T))	               \
 
 //abort if map.len == UINT64_MAX
 //return false if key already exists; it must be removed before a new insertion
+//key is duplicated when stored in the hash table; the user is responsible for
+//managing memory for the input key argument on return. The value is copied.
 #define impl_map_insert(T, pfix, cls)					       \
 cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 {									       \
@@ -283,6 +289,7 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 
 //this function assumes there is at least one open slot in the map buffer.
 //if the key already exists in a closed slot then do nothing and return false.
+//private; see MapInsert docs; key is duplicated and value is copied.
 #define impl_map_linear_probe_private(T, pfix, cls)  			       \
 cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 {									       \
@@ -305,7 +312,7 @@ cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 	}								       \
 									       \
 	*slot = (pfix##_slot) {						       \
-		.key = key,						       \
+		.key = cStringDuplicate(key),				       \
 		.value = value,						       \
 		.status = SLOT_CLOSED					       \
 	};							               \
@@ -346,6 +353,8 @@ cls bool pfix##MapRemove						       \
 									       \
 		case SLOT_CLOSED:					       \
 			if (MapMatch(slot->key, key)) {			       \
+				free(slot->key);			       \
+								               \
 				if (vfree) {				       \
 					vfree(slot->value);		       \
 				}					       \

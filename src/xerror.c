@@ -55,6 +55,7 @@ const char *XerrorDescription(const xerror err)
 		[XECLOSED] = "communication channel is closed",
 		[XETHREAD] = "multithreading failure",
 		[XESHELL] = "shell failure",
+		[XEUSER] = "issues detected in user source code",
 		[XEUNDEFINED] = "unspecified error"
 	};
 
