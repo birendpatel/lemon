@@ -11,4 +11,4 @@
 //load the file named fname into memory as a null-terminated dynamically
 //allocated C string. On failure returns NULL and errors are reported to
 //the xerror log.
-cstring *FileLoad(const cstring *fname);
+cstring *FileLoad(const cstring *name);
