@@ -119,7 +119,7 @@ static bool GraphInsert(graph *self, const cstring *key, vertex v)
 	return VertexMapInsert(self, key, v);
 }
 
-//on return vertex.root == NULL if the vertex does not exist
+//vertex.root == NULL if the vertex does not exist
 static vertex GraphSearch(graph *self, const cstring *key)
 {
 	assert(self);
@@ -134,6 +134,7 @@ static vertex GraphSearch(graph *self, const cstring *key)
 	return v;
 }
 
+//returns false if the vertex does not exist
 static bool GraphModify(graph *self, const cstring *key, vertex v)
 {
 	assert(self);
@@ -177,29 +178,19 @@ static graph *CreateGraph(const cstring *first_jobname, xerror *err)
 	assert(first_jobname);
 	assert(err);
 
-	//note; const pointer to graph is necessary because it informs the gcc
-	//compiler that the stack pointer 'jobs' will not be clobbered if a
-	//longjmp occurs. While the contents pointed to by jobs are modified
-	//within the try-block, the jobs pointer itself is not. The qualifier
-	//ensures that -Wclobbered will not be triggered when the compiler is
-	//set to -O2 or -O3.
+	//the const qualifier guarantees thats the call to GraphFree within the
+	//catch block is well defined behavior. On -O2/3 optimisation, gcc may
+	//suspect a possible clobber on the jobs pointer if a longjmp occurs.
 	//
-	//An alternative is to make the graph volatile, but this requires us
-	//to make all other signatures (ResolveDependency, CreateJob) also
-	//volatile, and slightly defeats the purpose of enabling the -O2/3 flag.
-	//const'ing the pointer ensures that the call to GraphFree() within the
-	//catch block is well defined behavior, while also generating faster
-	//assembly than volatile.
-	//
-	//GraphFree could have simply been delegated to the caller to avoid all
-	//of these issues, but then an odd dependency forms between the two
-	//functions and a graph with corrupt data gets exposed. Better to limit
-	//its scope and destroy it quickly.
+	//An alternative is to use the volatile qualifier. But this requires
+	//changing signatures for downstream functions and slightly defeats the
+	//point of optimisation. Responsibility for GraphFree may also be
+	//delegated to the caller, but this exposes corrupt graph data. Better
+	//to limit the scope and destroy the data quickly.
 	graph *const jobs = GraphInit();
 
-	//same dilemma as the jobs variable; the switch statement on e causes
-	//the compiler to put up a fuss but since its not a pointer we can't 
-	//const it.
+	//volatile qualifier prevents -Wclobbered on -O2/3 optimisation due to
+	//the catch-block switch statement. 
 	volatile CEXCEPTION_T e;
 
 	Try {
@@ -237,20 +228,14 @@ static graph *CreateGraph(const cstring *first_jobname, xerror *err)
 	return jobs;
 }
 
-//as a side effect, this function populates the import.root reference for each
-//import node in a given AST. This enrichment technically converts ASTs into
-//graphs. The first call to this recursive function creates one massive directed
-//and possibly cyclic abstract syntax graph.
+//As a side effect, this function populates the import.root reference for each
+//import node in a given AST. This reference is a backdoor that bypasses symbol
+//tables to avoid their public/private verification on variable references. For
+//debugging purposes it is occasionally useful to trace through one AST into
+//another via the backdoor.
 //
-//technical note; the import.root reference is essentially a backdoor that
-//bypasses the symbol tables later constructed during semantic analysis. This is
-//a little dangerous since the node bypasses public/private verification
-//on variable references. However, for debugging purposes it is very useful
-//and well worth the tradeoff. On a more subtle note, having a backdoor also
-//introduces opportunities for some sneaky optimisations on the backend phases.
-//
-//if necessary, this function might in the future only choose to enable the
-//backdoor on specific files (such as standard library code).
+//If necessary, in the future this function might only enable the backdoor
+//on specific files, such as standard library code.
 static vertex ResolveDependency(graph *jobs, const cstring *jobname)
 {
 	assert(jobs);
@@ -283,7 +268,7 @@ static vertex ResolveDependency(graph *jobs, const cstring *jobname)
 	return job;
 }
 
-//assumes job does not exist.
+//assumes job does not already exist
 static vertex CreateJob(graph *jobs, const cstring *jobname)
 {
 	assert(jobs);
