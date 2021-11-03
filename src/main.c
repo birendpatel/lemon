@@ -1,16 +1,12 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
-#include <assert.h>
-#include <errno.h>
-#include <inttypes.h>
 #include <stdbool.h>
-#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include "defs.h"
 #include "options.h"
 #include "parser.h"
+#include "jobs.h"
 #include "xerror.h"
 #include "lib/str.h"
 
@@ -18,34 +14,64 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
+const cstring *ParseRemainingInputs(char **);
+
 //------------------------------------------------------------------------------
 
 int main(int argc, char **argv)
 {
 	OptionsParse(&argc, &argv);
 
-	const cstring *input_file = argv[0];
+	const cstring *root_file = ParseRemainingInputs(argv);
 
-	if (!input_file) {
-		const cstring *msg = "no input files; nothing to compile";
-		XerrorUser(NULL, 0, msg);
+	if (!root_file) {
 		return EXIT_FAILURE;
+	}
+
+	xerror err = XEUNDEFINED;
+
+	vector(File) schedule = JobsCreate(root_file, &err);
+
+	for (size_t i = 0; i < schedule.len; i++) {
+		SyntaxTreeFree(schedule.buffer[i]);
+	}
+
+	switch (err) {
+	case XESUCCESS:
+		XerrorFlush();
+		return EXIT_SUCCESS;
+		break;
+
+	case XEUSER:
+		XerrorUser(NULL, 0, "compilation failed; user errors found");
+		XerrorFlush();
+		return EXIT_FAILURE;
+
+	default:
+		xerror_fatal("%s", XerrorDescription(err));
+		return EXIT_FAILURE;
+	}
+}
+
+//returns NULL if nothing remains in argv
+const cstring *ParseRemainingInputs(char **argv)
+{
+	assert(argv);
+
+	const cstring *root_file = argv[0];
+
+	if (!root_file) {
+		const cstring *msg = "no input file; nothing to compile";
+		XerrorUser(NULL, 0, msg);
+		return NULL;
 	}
 
 	const cstring *sentinel = argv[1];
 
 	if (sentinel != NULL) {
 		const cstring *msg = "all input files except %s were ignored";
-		XerrorUser(NULL, 0, msg, input_file);
+		XwarnUser(NULL, 0, msg, root_file);
 	}
 
-	xerror err = LoadFile(input_file);
-
-	if (err) {
-		xerror_fatal("%s", XerrorDescription(err));
-		return EXIT_FAILURE;
-	}
-
-	XerrorFlush();
-	return EXIT_SUCCESS;
+	return root_file;
 }

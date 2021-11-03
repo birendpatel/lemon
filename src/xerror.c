@@ -165,7 +165,7 @@ void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
  	//applied. This allows the inputs to also be coloured red. RED()
  	//cannot be applied directly to the inputs because the ANSI_RED macro
 	//relies on string concatenation.
-	fprintf(stderr, ANSI_RED "");
+	fprintf(stderr, ANSI_RED "ERROR: ");
 
 	if (fname) {
 		fprintf(stderr, "%s: ", fname);
@@ -179,6 +179,35 @@ void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
 
         //this final RED() causes the colours to reset after the statement
         fprintf(stderr, RED("\n"));
+
+        va_end(args);
+}
+
+void XwarnUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
+{
+	assert(msg);
+
+	va_list args;
+	va_start(args, msg);
+
+	//Note, the ANSI_YELLOW macro does not reset the colour after it is
+ 	//applied. This allows the inputs to also be coloured yellow. YELLOW()
+ 	//cannot be applied directly to the inputs because the ANSI_YELLOW 
+	//macro relies on string concatenation.
+	fprintf(stderr, ANSI_YELLOW "WARN: ");
+
+	if (fname) {
+		fprintf(stderr, "%s: ", fname);
+	}
+
+	if (ln) {
+                fprintf(stderr, "line %zu: ", ln);
+        } 
+
+        vfprintf(stderr, msg, args);
+
+        //this final YELLOW() causes the colours to reset after the statement
+        fprintf(stderr, YELLOW("\n"));
 
         va_end(args);
 }

@@ -86,6 +86,9 @@ const cstring *XerrorDescription(const xerror err);
 //a line number when ln > 0 and a file name when fname != NULL.
 void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...);
 
+//same actions as XerrorUser but prints in yellow font.
+void XwarnUser(const cstring *fname, const size_t ln, const cstring*msg, ...);
+
 //colours provided by @gon1332 at stackoverflow.com/questions/2616906/
 #ifdef COLOURS
 	#define COLOUR_RESET	"\x1B[0m"

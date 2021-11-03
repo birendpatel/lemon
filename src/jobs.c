@@ -9,20 +9,6 @@
 #include "file.h"
 #include "lib/map.h"
 
-static vertex VertexInit(const cstring *);
-static void VertexFree(vertex);
-static graph *GraphInit(void)
-static void GraphFree(graph *, bool);
-static bool GraphInsert(graph *, const cstring *, vertex);
-static vertex GraphSearch(graph *, const cstring *);
-static bool GraphModify(graph *, const cstring *, vertex);
-static graph *CreateGraph(const cstring *, xerror *);
-static vertex ResolveDependency(graph *, const cstring *);
-static vertex CreateJob(graph *, const cstring *);
-static vector(File) SortGraph(graph *, const cstring *, xerror *);
-const cstring *Visit(graph *, vector(File) *, const cstring *);
-static void ReportCycle(const cstring *, const cstring *);
-
 //------------------------------------------------------------------------------
 // The job graph is represented by an adjacency list implemented as a hash table
 // of vertices associated with a filename key. Vertex marks are required for the
@@ -42,6 +28,20 @@ typedef struct vertex {
 make_map(vertex, Vertex, static)
 
 typedef map(Vertex) graph;
+
+static vertex VertexInit(const cstring *);
+static void VertexFree(vertex);
+static graph *GraphInit(void);
+static void GraphFree(graph *, bool);
+static bool GraphInsert(graph *, const cstring *, vertex);
+static vertex GraphSearch(graph *, const cstring *);
+static bool GraphModify(graph *, const cstring *, vertex);
+static graph *CreateGraph(const cstring *, xerror *);
+static vertex ResolveDependency(graph *, const cstring *);
+static vertex CreateJob(graph *, const cstring *);
+static vector(File) SortGraph(graph *, const cstring *);
+const cstring *Visit(graph *, vector(File) *, const cstring *);
+static void ReportCycle(const cstring *, const cstring *);
 
 //------------------------------------------------------------------------------
 // vertex API
@@ -102,7 +102,7 @@ static void GraphFree(graph *self, bool free_vertices)
 		return;
 	}
 
-	if (free_verticies) {
+	if (free_vertices) {
 		VertexMapFree(self, VertexFree);
 	} else {
 		VertexMapFree(self, NULL);
@@ -110,13 +110,13 @@ static void GraphFree(graph *self, bool free_vertices)
 }
 
 //returns false if the vertex already exists
-static bool GraphInsert(graph *self, const cstring *filename, vertex v)
+static bool GraphInsert(graph *self, const cstring *key, vertex v)
 {
 	assert(self);
-	assert(name);
+	assert(key);
 	assert(v.root);
 
-	return VertexMapInsert(self, name, v);
+	return VertexMapInsert(self, key, v);
 }
 
 //on return vertex.root == NULL if the vertex does not exist
@@ -185,7 +185,7 @@ static graph *CreateGraph(const cstring *first_jobname, xerror *err)
 	graph *jobs = GraphInit();
 
 	Try {
-		(void) ResolveDependency(first_jobname, filename);
+		(void) ResolveDependency(jobs, first_jobname);
 		*err = XESUCCESS;
 	} Catch (exception) {
 		switch(exception) {
@@ -202,6 +202,7 @@ static graph *CreateGraph(const cstring *first_jobname, xerror *err)
 		case XXUSER:
 			XerrorUser(NULL, 0, "grammatical issues found");
 			*err = XEUSER;
+			break;
 
 		default:
 			xerror_fatal(msg, "unknown exception caught");
@@ -281,14 +282,14 @@ static vertex CreateJob(graph *jobs, const cstring *jobname)
 static vector(File) SortGraph(graph *jobs, const cstring *jobname)
 {
 	assert(jobs);
-	assert(err);
+	assert(jobname);
 
 	CEXCEPTION_T e;
 
 	vector(File) schedule = FileVectorInit(0, jobs->len);
 
 	Try {
-		const cstring *check = Visit(jobs, jobname);
+		const cstring *check = Visit(jobs, &schedule, jobname);
 		assert(check == NULL);
 	} Catch (e) {
 		FileVectorReset(&schedule, NULL);

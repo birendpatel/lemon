@@ -200,7 +200,10 @@ cls void pfix##MapFree(pfix##_map *self, void (*vfree)(T))	               \
 		pfix##_slot slot = self->buffer[i];			       \
 								               \
 		if (slot.status == SLOT_CLOSED) {			       \
-			free(slot.key);					       \
+_Pragma("GCC diagnostic push")		       				       \
+_Pragma("GCC diagnostic ignored \"-Wcast-qual\"")			       \
+			free((void *) slot.key);			       \
+_Pragma("GCC diagnostic pop")					               \
 									       \
 			if (vfree) {					       \
 				vfree(slot.value);			       \
@@ -354,7 +357,10 @@ cls bool pfix##MapRemove						       \
 									       \
 		case SLOT_CLOSED:					       \
 			if (MapMatch(slot->key, key)) {			       \
-				free(slot->key);			       \
+_Pragma("GCC diagnostic push")		       				       \
+_Pragma("GCC diagnostic ignored \"-Wcast-qual\"")			       \
+				free((void *) slot->key);		       \
+_Pragma("GCC diagnostic pop")	               				       \
 								               \
 				if (vfree) {				       \
 					vfree(slot->value);		       \
@@ -485,6 +491,7 @@ cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value)	       \
 	impl_map_resize_private(T, pfix, cls)				       \
 	impl_map_linear_probe_private(T, pfix, cls)			       \
 	impl_map_remove(T, pfix, cls)				               \
-	impl_map_get(T, pfix, cls)
+	impl_map_get(T, pfix, cls)					       \
+	impl_map_set(T, pfix, cls)
 
 #define map(pfix) pfix##_map

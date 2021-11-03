@@ -17,18 +17,18 @@ cstring *LoadFile(const cstring *filename)
 {
 	assert(filename);
 
-	RAII(FileCleanup) FILE *fp = fopen(fname, "r");
+	RAII(FileCleanup) FILE *fp = fopen(filename, "r");
 
 	if (!fp) {
-		xerror_issue("%s: %s", fname, strerror(errno));
+		xerror_issue("%s: %s", filename, strerror(errno));
 		return NULL;
 	}
 
 	cstring *src = cStringFromFile(fp);
 
 	if (!src) {
-		const cstring *msg = XerrorDescription(*err);
-		xerror_issue("%s: %s: cannot copy file to memory", fname, msg);
+		const cstring *msg = "%s: cannot copy file to memory";
+		xerror_issue(msg, filename);
 	}
 
 	return src;
@@ -46,7 +46,6 @@ static void FileCleanup(FILE **handle)
 static cstring *cStringFromFile(FILE *openfile)
 {
 	assert(openfile);
-	assert(err);
 
 	size_t filesize = GetFileSize(openfile);
 
@@ -73,7 +72,6 @@ static cstring *cStringFromFile(FILE *openfile)
 static size_t GetFileSize(FILE *openfile)
 {
 	assert(openfile);
-	assert(bytes);
 
 	rewind(openfile);
 
