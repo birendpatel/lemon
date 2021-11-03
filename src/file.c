@@ -13,7 +13,7 @@ static size_t GetFileSize(FILE *);
 
 //on failure returns NULL, else returns a dynamically allocated cstring. Any
 //errors are reported to the xerror log.
-cstring *LoadFile(const cstring *filename)
+cstring *FileLoad(const cstring *filename)
 {
 	assert(filename);
 
