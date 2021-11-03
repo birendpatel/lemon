@@ -70,7 +70,6 @@ typedef enum token_type {
 	_BREAK,
 	_CONTINUE,
 	_GOTO,
-	_IMPORT,
 	_FOR,
 	_WHILE,
 	_IF,
@@ -90,6 +89,7 @@ typedef enum token_type {
 	_PUB,
 	_SELF,
 	_VOID,
+	_IMPORT,
 
 	//total
 	_TOKEN_TYPE_COUNT
@@ -101,7 +101,7 @@ typedef struct token_flags {
 } token_flags;
 
 typedef struct token {
-	cstring *lexeme; //dynamically allocated
+	cstring *lexeme; //either dynamically allocated or NULL
 	token_type type;
 	size_t line; //starts at 1
 	token_flags flags;

@@ -601,6 +601,9 @@ static size_t Synchronize(scanner *self)
 	return total_consumed;
 }
 
+//if the string is ill-formed an invalid token with the bad_string flag is sent.
+//otherwise, a _LITERALSTR token is sent, but if the string is an empty string
+//then the token lexeme will be set to NULL.
 static void ConsumeString(scanner *self)
 {
 	assert(self);

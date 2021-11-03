@@ -1,6 +1,6 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// Associative array from string keys to any type T, implemented as a linear 
+// Associative array from string keys to any type T, implemented as a linear
 // probing hash table.
 
 #pragma once
@@ -80,7 +80,7 @@ static bool MapMatch(const cstring *a, const cstring *b)
 static uint64_t MapFNV1a(const cstring *cstr)
 {
 	assert(cstr);
-	
+
 	const uint64_t fnv_offset = (uint64_t) 14695981039346656037ULL;
 	const uint64_t fnv_prime  = (uint64_t) 1099511628211ULL;
 
@@ -151,9 +151,12 @@ cls bool pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
 cls void pfix##MapResize_private(pfix##_map *);			               \
 cls bool pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
 cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(T));          \
-cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);
+cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);		       \
+cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value);
 
 //------------------------------------------------------------------------------
+
+#define MAP_DEFAULT_CAPACITY ((size_t) 8)
 
 #define impl_map_init(T, pfix, cls)					       \
 cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
@@ -190,18 +193,25 @@ cls void pfix##MapFree(pfix##_map *self, void (*vfree)(T))	               \
 		MapTrace("map buffer is null; nothing to free");	       \
 		return;							       \
 	}								       \
+								               \
+	MapTrace("freeing map elements");				       \
 									       \
-	if (vfree) {							       \
-		MapTrace("freeing map elements");			       \
+	for (uint64_t i = 0; i < self->cap; i++) {			       \
+		pfix##_slot slot = self->buffer[i];			       \
+								               \
+		if (slot.status == SLOT_CLOSED) {			       \
+_Pragma("GCC diagnostic push")		       				       \
+_Pragma("GCC diagnostic ignored \"-Wcast-qual\"")			       \
+			free((void *) slot.key);			       \
+_Pragma("GCC diagnostic pop")					               \
 									       \
-		for (uint64_t i = 0; i < self->cap; i++) {		       \
-			if (self->buffer[i].status == SLOT_OPEN) {	       \
-				vfree(self->buffer[i].value);		       \
+			if (vfree) {					       \
+				vfree(slot.value);			       \
 			}						       \
 		}							       \
-									       \
-		MapTrace("freed map elements");				       \
 	}								       \
+									       \
+	MapTrace("freed map elements");					       \
 									       \
 	free(self->buffer);						       \
 									       \
@@ -210,6 +220,8 @@ cls void pfix##MapFree(pfix##_map *self, void (*vfree)(T))	               \
 
 //abort if map.len == UINT64_MAX
 //return false if key already exists; it must be removed before a new insertion
+//key is duplicated when stored in the hash table; the user is responsible for
+//managing memory for the input key argument on return. The value is copied.
 #define impl_map_insert(T, pfix, cls)					       \
 cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 {									       \
@@ -235,7 +247,7 @@ cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 	return pfix##MapProbe_private(self, key, value);		       \
 }
 
-//no-op if capacity cannot expand 
+//no-op if capacity cannot expand
 #define impl_map_resize_private(T, pfix, cls)			               \
 cls void pfix##MapResize_private(pfix##_map *self)			       \
 {								               \
@@ -281,6 +293,7 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 
 //this function assumes there is at least one open slot in the map buffer.
 //if the key already exists in a closed slot then do nothing and return false.
+//private; see MapInsert docs; key is duplicated and value is copied.
 #define impl_map_linear_probe_private(T, pfix, cls)  			       \
 cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 {									       \
@@ -303,7 +316,7 @@ cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 	}								       \
 									       \
 	*slot = (pfix##_slot) {						       \
-		.key = key,						       \
+		.key = cStringDuplicate(key),				       \
 		.value = value,						       \
 		.status = SLOT_CLOSED					       \
 	};							               \
@@ -344,6 +357,11 @@ cls bool pfix##MapRemove						       \
 									       \
 		case SLOT_CLOSED:					       \
 			if (MapMatch(slot->key, key)) {			       \
+_Pragma("GCC diagnostic push")		       				       \
+_Pragma("GCC diagnostic ignored \"-Wcast-qual\"")			       \
+				free((void *) slot->key);		       \
+_Pragma("GCC diagnostic pop")	               				       \
+								               \
 				if (vfree) {				       \
 					vfree(slot->value);		       \
 				}					       \
@@ -372,13 +390,13 @@ cls bool pfix##MapRemove						       \
 	return false;							       \
 }
 
+//input value pointer may be NULL
 #define impl_map_get(T, pfix, cls)					       \
 cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 {									       \
 	assert(self);							       \
 	assert(self->buffer);						       \
 	assert(key);							       \
-	assert(value);							       \
 									       \
 	uint64_t i = MapGetSlotIndex(key, self->cap);			       \
 	const uint64_t start = i;					       \
@@ -391,7 +409,10 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 									       \
 		case SLOT_CLOSED:					       \
 			if (MapMatch(slot->key, key)) {			       \
-				*value = slot->value;			       \
+				if (value) {				       \
+					*value = slot->value;		       \
+				}					       \
+									       \
 				return true;				       \
 			}						       \
 									       \
@@ -412,11 +433,51 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 	return false;							       \
 }
 
+//set an existing map value associated with the input key to a new value. If
+//the key doesn't exist, return false.
+#define impl_map_set(T, pfix, cls)					       \
+cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value)	       \
+{									       \
+	assert(self);							       \
+	assert(self->buffer);						       \
+	assert(key);							       \
+									       \
+	uint64_t i = MapGetSlotIndex(key, self->cap);			       \
+	const uint64_t start = i;					       \
+	pfix##_slot *slot = self->buffer + i;				       \
+									       \
+	do {								       \
+		switch (slot->status) {					       \
+		case SLOT_OPEN:						       \
+			return false;					       \
+									       \
+		case SLOT_CLOSED:					       \
+			if (MapMatch(slot->key, key)) {			       \
+				slot->value = value;			       \
+				return true;				       \
+			}						       \
+									       \
+			break;						       \
+								               \
+		case SLOT_REMOVED:					       \
+			break;						       \
+									       \
+		default:						       \
+			assert(0 != 0 && "bad status flag");		       \
+		}							       \
+									       \
+		i = (i + 1) % self->cap;				       \
+		slot = self->buffer + i;				       \
+	} while (i != start);						       \
+									       \
+	/* reach here when key doesn't exist and map.len == map.cap */	       \
+	return false;							       \
+}
 //------------------------------------------------------------------------------
 
 //make_map declares a map<T> type named pfix_map which may contain values of
 //type T, and only type T, associated with cstring (char *) keys. Map operations
-//have storage class cls. If sizeof(T) is not available at compile time before 
+//have storage class cls. If sizeof(T) is not available at compile time before
 //make_map then each component macro must be expanded separately.
 #define make_map(T, pfix, cls)					       	       \
 	alias_slot(pfix)						       \
@@ -430,6 +491,7 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 	impl_map_resize_private(T, pfix, cls)				       \
 	impl_map_linear_probe_private(T, pfix, cls)			       \
 	impl_map_remove(T, pfix, cls)				               \
-	impl_map_get(T, pfix, cls)
+	impl_map_get(T, pfix, cls)					       \
+	impl_map_set(T, pfix, cls)
 
 #define map(pfix) pfix##_map

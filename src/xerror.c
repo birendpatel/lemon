@@ -55,6 +55,7 @@ const char *XerrorDescription(const xerror err)
 		[XECLOSED] = "communication channel is closed",
 		[XETHREAD] = "multithreading failure",
 		[XESHELL] = "shell failure",
+		[XEUSER] = "issues detected in user source code",
 		[XEUNDEFINED] = "unspecified error"
 	};
 
@@ -164,20 +165,68 @@ void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
  	//applied. This allows the inputs to also be coloured red. RED()
  	//cannot be applied directly to the inputs because the ANSI_RED macro
 	//relies on string concatenation.
-	fprintf(stderr, ANSI_RED "error: ");
+	fprintf(stderr, ANSI_RED "ERROR: ");
 
 	if (fname) {
 		fprintf(stderr, "%s: ", fname);
 	}
 
 	if (ln) {
-                fprintf(stderr, "%zu: ", ln);
+                fprintf(stderr, "line %zu: ", ln);
         } 
 
         vfprintf(stderr, msg, args);
 
         //this final RED() causes the colours to reset after the statement
-        fprintf(stderr, RED("\n"));
+        fprintf(stderr, RED("\n\n"));
+
+        va_end(args);
+}
+
+void XwarnUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
+{
+	assert(msg);
+
+	va_list args;
+	va_start(args, msg);
+
+	fprintf(stderr, ANSI_YELLOW "WARNING: ");
+
+	if (fname) {
+		fprintf(stderr, "%s: ", fname);
+	}
+
+	if (ln) {
+                fprintf(stderr, "line %zu: ", ln);
+        } 
+
+        vfprintf(stderr, msg, args);
+
+        fprintf(stderr, YELLOW("\n\n"));
+
+        va_end(args);
+}
+
+void XhelpUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
+{
+	assert(msg);
+
+	va_list args;
+	va_start(args, msg);
+
+	fprintf(stderr, ANSI_GREEN "ADVICE: ");
+
+	if (fname) {
+		fprintf(stderr, "%s: ", fname);
+	}
+
+	if (ln) {
+                fprintf(stderr, "line %zu: ", ln);
+        } 
+
+        vfprintf(stderr, msg, args);
+
+        fprintf(stderr, GREEN("\n\n"));
 
         va_end(args);
 }

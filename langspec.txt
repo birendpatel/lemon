@@ -73,6 +73,12 @@ LITERAL ::= INT_LITERAL
 	  | FLOAT_LITERAL
 	  | STRING_LITERAL
 
+INT_LITERAL ::= [0-9]*
+
+FLOAT_LITERAL ::= [0-9]*.[0-9]*
+
+STRING_LITERAL ::= "\"" [^"]* "\""
+
 #-------------------------------------------------------------------------------
 # Syntactical Grammar
 #
@@ -82,7 +88,25 @@ LITERAL ::= INT_LITERAL
 # are nonetheless syntactically valid.
 #-------------------------------------------------------------------------------
 
-<file> ::= <fiat>* "EOF"
+<file> ::= <import>* <fiat>* "EOF"
+
+#-------------------------------------------------------------------------------
+# Imports enable Lemon to automatically resolve file dependencies and to compile
+# each file in a sensible order. Imports are like statements but they're handled
+# in a unique way with very specific ordering constraints. They are not allowed
+# anywhere except at the beginning of a file and they do not need a terminating
+# semicolon.
+#-------------------------------------------------------------------------------
+
+<import> ::= "import" STRING_LITERAL
+
+#-------------------------------------------------------------------------------
+# Since Lemon does not need a main entry function, statements residing at the
+# top level of a file are executed procedurally as if they were wrapped into
+# an implicit main function. Top level statements in a fiat are ignored if the
+# file is not the compiler input file. This is the case when the file is brought
+# into the compiler via an import directive.
+#-------------------------------------------------------------------------------
 
 <fiat> ::= <declaration> | <statement>
 
@@ -115,11 +139,11 @@ LITERAL ::= INT_LITERAL
 # method named foo with two parameters and returning nothing.
 #-------------------------------------------------------------------------------
 
-<function declaration> ::= 
+<function declaration> ::=
 	"func" "pub"? IDENTIFIER "(" ("void" | <parameter list>) ")"
-	"return" ("void" | <type>) ("for" <type>)? <block statement>
+	"-" ">" ("void" | <type>) ("for" <type>)? <block statement>
 
-<parameter list> ::= 
+<parameter list> ::=
 	"mut"? IDENTIFIER ":" <type> ("," "mut"? IDENTIFIER ":" <type>)*
 
 #-------------------------------------------------------------------------------
@@ -131,7 +155,7 @@ LITERAL ::= INT_LITERAL
 # Lemon does not allow multiple declarations such as "let x, y: int = 0, 1;".
 #-------------------------------------------------------------------------------
 
-<variable declaration> ::= 
+<variable declaration> ::=
 	"let" "pub"? "mut"? IDENTIFIER ":" <type> "=" <expression> ";"
 
 <short declaration> ::= "let" IDENTIFIER : <type> "=" <expression>
@@ -167,7 +191,6 @@ LITERAL ::= INT_LITERAL
 	      | <goto statement>
 	      | <label statement>
 	      | <fallthrough statement>
-	      | <import statement>
 
 <expression statement> ::= <expression> ";"
 
@@ -190,12 +213,6 @@ LITERAL ::= INT_LITERAL
 <label statement> ::= "label" IDENTIFIER ":" <statement>
 
 #-------------------------------------------------------------------------------
-# Import statements reference file names.
-#-------------------------------------------------------------------------------
-
-<import statement> ::= "import" IDENTIFIER ";"
-
-#-------------------------------------------------------------------------------
 # Block statements may include any anything at all. Function declarations in a
 # block may be used to create closures. Most recursion performed on statements
 # is directed to the block statement.
@@ -212,7 +229,7 @@ LITERAL ::= INT_LITERAL
 # optional. Where present, it can be referenced in both the if and else clauses.
 #-------------------------------------------------------------------------------
 
-<for statement> ::= 
+<for statement> ::=
 	"for" "(" (<short declaration> | <expression>) ";"
 	<expression> ";"
 	<expression> ")"
@@ -220,7 +237,7 @@ LITERAL ::= INT_LITERAL
 
 <while statement> ::= "while" "(" <expression> ")" <block statement>
 
-<branch statement> ::= 
+<branch statement> ::=
 	"if" "(" <short declaration>? <expression> ")" <block statement>
 	("else" (<branch statement> | <block statement>))?
 
@@ -279,7 +296,7 @@ LITERAL ::= INT_LITERAL
 	    | "true"
 	    | "false"
 	    | "null"
-	    | LITERAL 
+	    | LITERAL
 	    | <compound literal>
 
 <compound literal> ::= <array literal> | <rvar literal>

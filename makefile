@@ -28,8 +28,11 @@ vpath %.c ./src/assets
 vpath %.c ./extern/unity
 vpath %.c ./extern/cexception
 
-objects_raw := main.o xerror.o options.o scanner.o parser.o symtab.o kmap.o \
-	cexception.o 
+objects_raw := main.o xerror.o options.o \
+	file.o jobs.o scanner.o parser.o \
+	symtab.o \
+	kmap.o \
+	cexception.o
 
 DEBUG_DIR = ./debug/
 objects_debug := $(addprefix $(DEBUG_DIR), $(objects_raw))
@@ -41,11 +44,15 @@ objects_release := $(addprefix $(RELEASE_DIR), $(objects_raw))
 # source dependencies
 #-------------------------------------------------------------------------------
 
-main_deps := defs.h options.h parser.h xerror.h str.h
+main_deps := defs.h options.h parser.h jobs.h xerror.h str.h
 
 xerror_deps := CException.h str.h xerror.h
 
 options_deps := xerror.h defs.h options.h
+
+file_deps := str.h defs.h xerror.h
+
+jobs_deps := xerror.h parser.h vector.h str.h defs.h file.h map.h
 
 scanner_deps := options.h xerror.h channel.h str.h scanner.h defs.h kmap.h
 
@@ -85,6 +92,12 @@ $(DEBUG_DIR)xerror.o: xerror.c $(xerror_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(DEBUG_DIR)options.o : options.c $(options_deps)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(DEBUG_DIR)file.o : file.c $(file_deps)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(DEBUG_DIR)jobs.o : jobs.c $(jobs_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(DEBUG_DIR)scanner.o : scanner.c $(scanner_deps)
@@ -127,6 +140,12 @@ $(RELEASE_DIR)xerror.o: xerror.c $(xerror_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(RELEASE_DIR)options.o : options.c $(options_deps)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(RELEASE_DIR)file.o : file.c $(file_deps)
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+$(RELEASE_DIR)jobs.o : jobs.c $(jobs_deps)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 $(RELEASE_DIR)scanner.o : scanner.c $(scanner_deps) 

@@ -43,7 +43,7 @@ static cstring *cStringFromView(const char *data, size_t len)
 	return new;
 }
 
-//for use with gcc cleanup
+//for use with gcc cleanup, okay if *cstr is null
 static void cStringFree(cstring **cstr)
 {
 	free(*cstr);
@@ -63,6 +63,7 @@ static char vStringGet(const vstring *, size_t);
 static void vStringTrim(vstring *, const char);
 static void vStringReset(vstring *);
 static const cstring *vStringRaw(vstring *);
+static cstring *cStringFromvString(vstring *);
 
 static vstring vStringInit(const size_t capacity)
 {
