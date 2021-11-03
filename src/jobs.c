@@ -152,8 +152,6 @@ vector(File) JobsCreate(const cstring *filename, xerror *err)
 	graph *jobs = CreateGraph(filename, err);
 
 	if (*err) {
-		assert(jobs == NULL);
-
 		return (vector(File)) {0};
 	}
 
@@ -173,22 +171,44 @@ vector(File) JobsCreate(const cstring *filename, xerror *err)
 //------------------------------------------------------------------------------
 
 //on failure sets err to one of XEFILE, XEPARSE, XEUSER, or XEUNDEFINED and
-//the returned pointer is NULL
+//the returned pointer points to a deinitialized graph
 static graph *CreateGraph(const cstring *first_jobname, xerror *err)
 {
 	assert(first_jobname);
 	assert(err);
 
-	CEXCEPTION_T exception;
-	const cstring *msg = "cannot create graph; %s";
+	//note; const pointer to graph is necessary because it informs the gcc
+	//compiler that the stack pointer 'jobs' will not be clobbered if a
+	//longjmp occurs. While the contents pointed to by jobs are modified
+	//within the try-block, the jobs pointer itself is not. The qualifier
+	//ensures that -Wclobbered will not be triggered when the compiler is
+	//set to -O2 or -O3.
+	//
+	//An alternative is to make the graph volatile, but this requires us
+	//to make all other signatures (ResolveDependency, CreateJob) also
+	//volatile, and slightly defeats the purpose of enabling the -O2/3 flag.
+	//const'ing the pointer ensures that the call to GraphFree() within the
+	//catch block is well defined behavior, while also generating faster
+	//assembly than volatile.
+	//
+	//GraphFree could have simply been delegated to the caller to avoid all
+	//of these issues, but then an odd dependency forms between the two
+	//functions and a graph with corrupt data gets exposed. Better to limit
+	//its scope and destroy it quickly.
+	graph *const jobs = GraphInit();
 
-	graph *jobs = GraphInit();
+	//same dilemma as the jobs variable; the switch statement on e causes
+	//the compiler to put up a fuss but since its not a pointer we can't 
+	//const it.
+	volatile CEXCEPTION_T e;
 
 	Try {
 		(void) ResolveDependency(jobs, first_jobname);
 		*err = XESUCCESS;
-	} Catch (exception) {
-		switch(exception) {
+	} Catch (e) {
+		const cstring *msg = "cannot create graph; %s";
+
+		switch(e) {
 		case XXIO:
 			xerror_issue(msg, "IO issue");
 			*err = XEFILE;
@@ -212,7 +232,6 @@ static graph *CreateGraph(const cstring *first_jobname, xerror *err)
 		}
 
 		GraphFree(jobs, true);
-		jobs = NULL;
 	}
 
 	return jobs;
@@ -222,6 +241,16 @@ static graph *CreateGraph(const cstring *first_jobname, xerror *err)
 //import node in a given AST. This enrichment technically converts ASTs into
 //graphs. The first call to this recursive function creates one massive directed
 //and possibly cyclic abstract syntax graph.
+//
+//technical note; the import.root reference is essentially a backdoor that
+//bypasses the symbol tables later constructed during semantic analysis. This is
+//a little dangerous since the node bypasses public/private verification
+//on variable references. However, for debugging purposes it is very useful
+//and well worth the tradeoff. On a more subtle note, having a backdoor also
+//introduces opportunities for some sneaky optimisations on the backend phases.
+//
+//if necessary, this function might in the future only choose to enable the
+//backdoor on specific files (such as standard library code).
 static vertex ResolveDependency(graph *jobs, const cstring *jobname)
 {
 	assert(jobs);
@@ -254,7 +283,7 @@ static vertex ResolveDependency(graph *jobs, const cstring *jobname)
 	return job;
 }
 
-//assumes job does not exist
+//assumes job does not exist.
 static vertex CreateJob(graph *jobs, const cstring *jobname)
 {
 	assert(jobs);
