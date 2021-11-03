@@ -211,7 +211,6 @@ static graph *CreateGraph(const cstring *first_jobname, xerror *err)
 			break;
 
 		case XXUSER:
-			XerrorUser(NULL, 0, "grammatical issues found");
 			*err = XEUSER;
 			break;
 

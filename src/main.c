@@ -43,7 +43,7 @@ int main(int argc, char **argv)
 		break;
 
 	case XEUSER:
-		XerrorUser(NULL, 0, "compilation failed; user errors found");
+		XerrorUser(NULL, 0, "compilation failed");
 		XerrorFlush();
 		return EXIT_FAILURE;
 
@@ -71,6 +71,11 @@ const cstring *ParseRemainingInputs(char **argv)
 	if (sentinel != NULL) {
 		const cstring *msg = "all input files except %s were ignored";
 		XwarnUser(NULL, 0, msg, root_file);
+
+		const cstring *advice = 
+			"lemon resolves file dependencies automatically";
+
+		XhelpUser(NULL, 0, advice);
 	}
 
 	return root_file;
