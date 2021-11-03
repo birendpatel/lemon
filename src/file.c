@@ -41,9 +41,8 @@ cstring *FileLoad(const cstring *name)
 	return src;
 }
 
-//determines the filename as it exists on disk. Imports may not contain
-//the file extension while compiler arguments will. Returned string is
-//dynamically allocated.
+//determines the filename as it exists on disk. Both imports and the compiler
+//arguments to main can except names with or without the extension.
 static cstring *GetFileName(const cstring *name)
 {
 	if (HasExtension(name)) {
@@ -52,13 +51,13 @@ static cstring *GetFileName(const cstring *name)
 
 	vstring vstr = vStringInit(strlen(name));
 
-	for (const char *ch = name; ch != NULL; ch++) {
+	for (const char *ch = name; *ch; ch++) {
 		vStringAppend(&vstr, *ch);
 	}
 
 	const cstring *extension = ".lem";
 
-	for (const char *ch = extension; ch != NULL; ch++) {
+	for (const char *ch = extension; *ch; ch++) {
 		vStringAppend(&vstr, *ch);
 	}
 
