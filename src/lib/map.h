@@ -1,6 +1,6 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// Associative array from string keys to any type T, implemented as a linear 
+// Associative array from string keys to any type T, implemented as a linear
 // probing hash table.
 
 #pragma once
@@ -80,7 +80,7 @@ static bool MapMatch(const cstring *a, const cstring *b)
 static uint64_t MapFNV1a(const cstring *cstr)
 {
 	assert(cstr);
-	
+
 	const uint64_t fnv_offset = (uint64_t) 14695981039346656037ULL;
 	const uint64_t fnv_prime  = (uint64_t) 1099511628211ULL;
 
@@ -151,7 +151,8 @@ cls bool pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
 cls void pfix##MapResize_private(pfix##_map *);			               \
 cls bool pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
 cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(T));          \
-cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);
+cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);		       \
+cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value);
 
 //------------------------------------------------------------------------------
 
@@ -243,7 +244,7 @@ cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 	return pfix##MapProbe_private(self, key, value);		       \
 }
 
-//no-op if capacity cannot expand 
+//no-op if capacity cannot expand
 #define impl_map_resize_private(T, pfix, cls)			               \
 cls void pfix##MapResize_private(pfix##_map *self)			       \
 {								               \
@@ -426,11 +427,51 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 	return false;							       \
 }
 
+//set an existing map value associated with the input key to a new value. If
+//the key doesn't exist, return false.
+#define impl_map_set(T, pfix, cls)					       \
+cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value)	       \
+{									       \
+	assert(self);							       \
+	assert(self->buffer);						       \
+	assert(key);							       \
+									       \
+	uint64_t i = MapGetSlotIndex(key, self->cap);			       \
+	const uint64_t start = i;					       \
+	pfix##_slot *slot = self->buffer + i;				       \
+									       \
+	do {								       \
+		switch (slot->status) {					       \
+		case SLOT_OPEN:						       \
+			return false;					       \
+									       \
+		case SLOT_CLOSED:					       \
+			if (MapMatch(slot->key, key)) {			       \
+				slot->value = value;			       \
+				return true;				       \
+			}						       \
+									       \
+			break;						       \
+								               \
+		case SLOT_REMOVED:					       \
+			break;						       \
+									       \
+		default:						       \
+			assert(0 != 0 && "bad status flag");		       \
+		}							       \
+									       \
+		i = (i + 1) % self->cap;				       \
+		slot = self->buffer + i;				       \
+	} while (i != start);						       \
+									       \
+	/* reach here when key doesn't exist and map.len == map.cap */	       \
+	return false;							       \
+}
 //------------------------------------------------------------------------------
 
 //make_map declares a map<T> type named pfix_map which may contain values of
 //type T, and only type T, associated with cstring (char *) keys. Map operations
-//have storage class cls. If sizeof(T) is not available at compile time before 
+//have storage class cls. If sizeof(T) is not available at compile time before
 //make_map then each component macro must be expanded separately.
 #define make_map(T, pfix, cls)					       	       \
 	alias_slot(pfix)						       \
