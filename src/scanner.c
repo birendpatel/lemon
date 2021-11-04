@@ -346,17 +346,19 @@ static const cstring *GetTokenName(token_type type)
 
 static void TokenPrint(scanner *self)
 {
-	const cstring *lexfmt = "TOKEN { line %-10zu: %-20s: %s }\n";
-	const cstring *nolexfmt = "TOKEN { line %-10zu: %-20s }\n";
+	const cstring *lexfmt = "TOKEN { line %-10zu: %-20s: %s: %d %d }\n";
+	const cstring *nolexfmt = "TOKEN { line %-10zu: %-20s: %d %d }\n";
 
 	const size_t line = self->tok.line;
 	const cstring *name = GetTokenName(self->tok.type);
 	const cstring *lexeme  = self->tok.lexeme;
+	const int valid = self->tok.flags.valid;
+	const int badstr = self->tok.flags.bad_string;
 
 	if (lexeme) {
-		fprintf(stderr, lexfmt, line, name, lexeme);
+		fprintf(stderr, lexfmt, line, name, lexeme, valid, badstr);
 	} else {
-		fprintf(stderr, nolexfmt, line, name);
+		fprintf(stderr, nolexfmt, line, name, valid, badstr);
 	}
 }
 
