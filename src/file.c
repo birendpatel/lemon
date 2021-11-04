@@ -22,7 +22,7 @@ cstring *FileLoad(const cstring *name)
 {
 	assert(name);
 
-	cstring *filename = GetFileName(name);
+	RAII(cStringFree) cstring *filename = GetFileName(name);
 
 	RAII(FileCleanup) FILE *fp = fopen(filename, "r");
 
@@ -42,7 +42,8 @@ cstring *FileLoad(const cstring *name)
 }
 
 //determines the filename as it exists on disk. Both imports and the compiler
-//arguments to main can except names with or without the extension.
+//arguments to main can accept names with or without the extension. The return
+//string is dynamically allocated.
 static cstring *GetFileName(const cstring *name)
 {
 	if (HasExtension(name)) {

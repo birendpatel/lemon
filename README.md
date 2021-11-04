@@ -50,6 +50,5 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Update map.h insertions to recycle removed slots before aborting (MEDIUM)
 - [ ] Add 'as' keyword to grammar and scanner
 - [ ] implement 'as' keyword for import nicknames
-- [ ] Plug memory leak in file.c for GetFileName return string (EASY)
-- [ ] Expose GetFileName to public file.h API (EASY)
 - [ ] Refactor GraphSort in graph.c to use GetFileName for errors (MEDIUM)
+- [ ] Modify xerror messages to use tabs instead of new lines (EASY)
