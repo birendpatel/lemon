@@ -43,12 +43,12 @@
 #line 4 "keywords.txt"
 //kv_pair defined in kmap.h
 
-#define TOTAL_KEYWORDS 24
+#define TOTAL_KEYWORDS 25
 #define MIN_WORD_LENGTH 2
 #define MAX_WORD_LENGTH 11
-#define MIN_HASH_VALUE 4
+#define MIN_HASH_VALUE 3
 #define MAX_HASH_VALUE 39
-/* maximum key range = 36, duplicates = 0 */
+/* maximum key range = 37, duplicates = 0 */
 
 #ifdef __GNUC__
 __inline
@@ -72,8 +72,8 @@ hash (register const char *str, register size_t len)
       40, 40, 40, 40, 40, 40, 40, 40, 40, 40,
       40, 40, 40, 40, 40, 40, 40, 40, 40, 40,
       40, 40, 40, 40, 40, 40, 40,  0,  0, 20,
-       0,  5, 10, 30,  0, 10, 40, 40,  5,  0,
-      25,  5, 15, 40,  0,  0,  0,  5, 20, 20,
+       0,  0,  5, 30,  0, 20, 40, 40,  0,  0,
+      25,  5, 10, 40, 15,  5,  0,  5, 20, 20,
       40, 40, 40, 40, 40, 40, 40, 40, 40, 40,
       40, 40, 40, 40, 40, 40, 40, 40, 40, 40,
       40, 40, 40, 40, 40, 40, 40, 40, 40, 40,
@@ -97,32 +97,25 @@ kmap_lookup (register const char *str, register size_t len)
 {
   static const struct kv_pair wordlist[] =
     {
-      {(char*)0}, {(char*)0}, {(char*)0}, {(char*)0},
-#line 28 "keywords.txt"
-      {"true", _TRUE},
-#line 8 "keywords.txt"
-      {"break", _BREAK,},
-#line 20 "keywords.txt"
-      {"struct", _STRUCT},
-      {(char*)0},
-#line 19 "keywords.txt"
-      {"mut", _MUT},
-#line 27 "keywords.txt"
-      {"self", _SELF},
-#line 17 "keywords.txt"
-      {"label", _LABEL},
-#line 24 "keywords.txt"
-      {"return", _RETURN},
-#line 14 "keywords.txt"
-      {"default", _DEFAULT},
+      {(char*)0}, {(char*)0}, {(char*)0},
 #line 18 "keywords.txt"
       {"let", _LET},
 #line 11 "keywords.txt"
       {"else", _ELSE,},
-#line 29 "keywords.txt"
+#line 17 "keywords.txt"
+      {"label", _LABEL},
+#line 24 "keywords.txt"
+      {"method", _METHOD},
+#line 14 "keywords.txt"
+      {"default", _DEFAULT},
+#line 19 "keywords.txt"
+      {"mut", _MUT},
+#line 28 "keywords.txt"
+      {"self", _SELF},
+#line 30 "keywords.txt"
       {"false", _FALSE},
-#line 21 "keywords.txt"
-      {"import", _IMPORT},
+#line 20 "keywords.txt"
+      {"struct", _STRUCT},
       {(char*)0},
 #line 6 "keywords.txt"
       {"for", _FOR},
@@ -131,23 +124,34 @@ kmap_lookup (register const char *str, register size_t len)
       {(char*)0},
 #line 15 "keywords.txt"
       {"fallthrough", _FALLTHROUGH},
-#line 10 "keywords.txt"
-      {"if", _IF},
+      {(char*)0},
 #line 22 "keywords.txt"
       {"pub", _PUB},
+#line 29 "keywords.txt"
+      {"true", _TRUE},
+#line 8 "keywords.txt"
+      {"break", _BREAK,},
+#line 25 "keywords.txt"
+      {"return", _RETURN},
+      {(char*)0}, {(char*)0},
 #line 13 "keywords.txt"
       {"case", _CASE},
 #line 7 "keywords.txt"
       {"while", _WHILE,},
+#line 21 "keywords.txt"
+      {"import", _IMPORT},
+#line 10 "keywords.txt"
+      {"if", _IF},
+      {(char*)0},
+#line 27 "keywords.txt"
+      {"void", _VOID},
+      {(char*)0},
 #line 12 "keywords.txt"
       {"switch", _SWITCH},
-      {(char*)0}, {(char*)0},
-#line 26 "keywords.txt"
-      {"void", _VOID},
-      {(char*)0}, {(char*)0}, {(char*)0},
+      {(char*)0},
 #line 9 "keywords.txt"
       {"continue", _CONTINUE,},
-#line 25 "keywords.txt"
+#line 26 "keywords.txt"
       {"null", _NULL},
       {(char*)0}, {(char*)0}, {(char*)0}, {(char*)0},
 #line 16 "keywords.txt"

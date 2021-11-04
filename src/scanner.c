@@ -328,6 +328,7 @@ static const cstring *GetTokenName(token_type type)
 		[_IMPORT] = "IMPORT",
 		[_SELF] = "SELF",
 		[_FUNC] = "FUNCTION",
+		[_METHOD] = "METHOD",
 		[_PUB] = "PUBLIC",
 		[_PRIV] = "PRIVATE",
 		[_RETURN] = "RETURN",

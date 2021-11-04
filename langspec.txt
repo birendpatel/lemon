@@ -119,6 +119,7 @@ declaration visible when the file is imported.
 <declaration> ::= <struct declaration>
 		| <function declaration>
 		| <variable declaration>
+		| <method declaration>
 
 #-------------------------------------------------------------------------------
 # A struct declaration introduces a scoped user defined type. Together with its
@@ -131,8 +132,7 @@ declaration visible when the file is imported.
 <member list> ::= ("mut"? IDENTIFIER ":" <type>";")+
 
 #-------------------------------------------------------------------------------
-# Functions may be methods taking a pointer to the receiver or the receiver
-# itself. Functions are default private, meaning file scoped.
+# Functions and methods are default private.
 #
 # example: func pub foo(x: i32, y: f32) return void for *bar {...} is a public
 # method named foo with two parameters and returning nothing.
@@ -140,7 +140,14 @@ declaration visible when the file is imported.
 
 <function declaration> ::=
 	"func" "pub"? IDENTIFIER "(" ("void" | <parameter list>) ")"
-	"-" ">" ("void" | <type>) ("for" <type>)? <block statement>
+	"-" ">" ("void" | <type>) 
+	<block statement>
+
+<method declaration> ::=
+	"method" "pub"? "(" <type> ")" 
+	IDENTIFIER "(" ("void" | <parameter list>) ")"
+	"-" ">" ("void" | <type>) 
+	<block statement>
 
 <parameter list> ::=
 	"mut"? IDENTIFIER ":" <type> ("," "mut"? IDENTIFIER ":" <type>)*

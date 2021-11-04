@@ -45,6 +45,7 @@ static fiat RecFiat(parser *);
 static decl RecStruct(parser *);
 static vector(Member) RecParseMembers(parser *);
 decl RecFunction(parser *);
+decl RecMethod(parser *self);
 static vector(Param) RecParseParameters(parser *);
 type *RecType(parser *);
 static decl RecVariable(parser *);
@@ -505,6 +506,11 @@ static fiat RecFiat(parser *self)
 		node.declaration = RecFunction(self);
 		break;
 
+	case _METHOD:
+		node.tag = NODE_DECL;
+		node.declaration = RecMethod(self);
+		break;
+
 	case _LET:
 		node.tag = NODE_DECL;
 		node.declaration = RecVariable(self);
@@ -614,7 +620,6 @@ decl RecFunction(parser *self)
 		.function = {
 			.name = NULL,
 			.ret = NULL,
-			.recv = NULL,
 			.block = NULL,
 			.params = {0},
 			.public = false
@@ -654,15 +659,73 @@ decl RecFunction(parser *self)
 		node.function.ret = RecType(self);
 	}
 
-	//receiver
-	if (self->tok.type == _FOR) {
-		GetNextValidToken(self);
-		node.function.recv = RecType(self);
-	}
-
 	//body
 	check(self, _LEFTBRACE, "cannot declare function without a body");
 	node.function.block = CopyStmtToHeap(self, RecBlock(self));
+
+	return node;
+}
+
+decl RecMethod(parser *self)
+{
+	assert(self);
+	assert(self->tok.type == _METHOD);
+
+	decl node = {
+		.tag = NODE_METHOD,
+		.method= {
+			.name = NULL,
+			.ret = NULL,
+			.recv = NULL,
+			.block = NULL,
+			.params = {0},
+			.public = false
+		},
+		.line = self->tok.line
+	};
+
+	GetNextValidToken(self);
+
+	if (self->tok.type == _PUB) {
+		node.method.public = true;
+		GetNextValidToken(self);
+	}
+
+	//receiver-name pair
+	check_move(self, _LEFTPAREN, "missing '(' before receiver");
+
+	node.method.recv = RecType(self);
+
+	check_move(self, _RIGHTPAREN, "missing closing ')' after receiver");
+
+	check(self, _IDENTIFIER, "missing method name in declaration");
+
+	node.method.name = self->tok.lexeme; 
+
+	//parameter list
+	move_check_move(self, _LEFTPAREN, "missing '(' after method name");
+
+	if (self->tok.type == _VOID) {
+		GetNextValidToken(self);
+	} else {
+		node.method.params = RecParseParameters(self);
+	}
+
+	check_move(self, _RIGHTPAREN, "missing ')' after parameters");
+
+	//return
+	check_move(self, _MINUS, "missing '->' after parameter list");
+	check_move(self, _GREATER, "missing ->' after parameter list");
+
+	if (self->tok.type == _VOID) {
+		GetNextValidToken(self);
+	} else {
+		node.function.ret = RecType(self);
+	}
+
+	//body
+	check(self, _LEFTBRACE, "cannot declare method without a body");
+	node.method.block = CopyStmtToHeap(self, RecBlock(self));
 
 	return node;
 }

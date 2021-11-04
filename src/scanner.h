@@ -65,6 +65,7 @@ typedef enum token_type {
 	//sequence point keywords
 	_STRUCT,
 	_FUNC,
+	_METHOD,
 	_LET,
 	_RETURN,
 	_BREAK,

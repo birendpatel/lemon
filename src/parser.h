@@ -106,6 +106,7 @@ struct type {
 typedef enum decltag {
 	NODE_UDT,
 	NODE_FUNCTION,
+	NODE_METHOD,
 	NODE_VARIABLE,
 } decltag;
 
@@ -124,11 +125,19 @@ struct decl {
 		struct {
 			cstring *name;
 			type *ret; //NULL if function returns void
-			type *recv; //NULL if function is not a method
 			stmt *block;
 			vector(Param) params;
 			bool public;
 		} function;
+
+		struct {
+			cstring *name;
+			type *ret; //NULL if method returns void
+			type *recv; 
+			stmt *block;
+			vector(Param) params;
+			bool public;
+		} method;
 
 		struct {
 			cstring *name;

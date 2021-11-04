@@ -21,6 +21,7 @@ struct, _STRUCT
 import, _IMPORT
 pub, _PUB
 func, _FUNC
+method, _METHOD
 return, _RETURN
 null, _NULL
 void, _VOID
