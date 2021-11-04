@@ -40,7 +40,7 @@ static graph *CreateGraph(const cstring *, xerror *);
 static vertex ResolveDependency(graph *, const cstring *);
 static vertex CreateJob(graph *, const cstring *);
 static vector(File) SortGraph(graph *, const cstring *);
-const cstring *Visit(graph *, vector(File) *, const cstring *);
+static const cstring *Visit(graph *, vector(File) *, const cstring *);
 static void ReportCycle(const cstring *, const cstring *);
 
 //------------------------------------------------------------------------------
@@ -313,7 +313,8 @@ static vector(File) SortGraph(graph *jobs, const cstring *jobname)
 
 //returns a non-NULL pointer to a jobname when a cycle is detected and then
 //Throw()'s an XXUSER exception. On success returns NULL.
-const cstring *Visit(graph *jobs, vector(File) *schedule, const cstring *jobname)
+static const cstring *
+Visit(graph *jobs, vector(File) *schedule, const cstring *jobname)
 {
 	assert(jobs);
 	assert(jobname);
@@ -356,9 +357,13 @@ const cstring *Visit(graph *jobs, vector(File) *schedule, const cstring *jobname
 	return NULL;
 }
 
-static void ReportCycle(const cstring *jobname_a, const cstring *jobname_b)
+static void ReportCycle(const cstring *job_1, const cstring *job_2)
 {
 	const cstring *msg = "%s, %s: circular dependency detected";
 
-	XerrorUser(NULL, 0, msg, jobname_a, jobname_b);
+	RAII(cStringFree) cstring *file_1 = FileGetDiskName(job_1);
+	RAII(cStringFree) cstring *file_2 = FileGetDiskName(job_2);
+
+	XerrorUser(NULL, 0, msg, file_1, file_2);
 }
+

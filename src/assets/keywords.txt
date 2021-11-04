@@ -20,7 +20,6 @@ mut, _MUT
 struct, _STRUCT
 import, _IMPORT
 pub, _PUB
-priv, _PRIV
 func, _FUNC
 return, _RETURN
 null, _NULL

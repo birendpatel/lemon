@@ -112,9 +112,8 @@ STRING_LITERAL ::= "\"" [^"]* "\""
 
 #-------------------------------------------------------------------------------
 # Struct and variable declarations outside of a function block have file scope
-# by default. This is an implicit "priv" keyword. "priv" is a reserved keyword
-# but it is not actually used by Lemon. The "pub" scope qualifier gives global
-# scope. This makes the declaration visible when the file is imported.
+# by default. The "pub" scope qualifier gives global scope. This makes the 
+declaration visible when the file is imported.
 #-------------------------------------------------------------------------------
 
 <declaration> ::= <struct declaration>

@@ -85,7 +85,6 @@ typedef enum token_type {
 	_NULL,
 	_TRUE,
 	_FALSE,
-	_PRIV,
 	_PUB,
 	_SELF,
 	_VOID,

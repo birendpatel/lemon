@@ -12,3 +12,8 @@
 //allocated C string. On failure returns NULL and errors are reported to
 //the xerror log.
 cstring *FileLoad(const cstring *name);
+
+//adds the ".lem" extension to the input name and returns a dynamically
+//allocated cstring. If the extension already exists, a duplicate copy
+//of the input is returned.
+cstring *FileGetDiskName(const cstring *name);

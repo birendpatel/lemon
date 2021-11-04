@@ -165,7 +165,7 @@ void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
  	//applied. This allows the inputs to also be coloured red. RED()
  	//cannot be applied directly to the inputs because the ANSI_RED macro
 	//relies on string concatenation.
-	fprintf(stderr, ANSI_RED "ERROR: ");
+	fprintf(stderr, ANSI_RED "ERROR:\n\t");
 
 	if (fname) {
 		fprintf(stderr, "%s: ", fname);
@@ -178,7 +178,7 @@ void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
         vfprintf(stderr, msg, args);
 
         //this final RED() causes the colours to reset after the statement
-        fprintf(stderr, RED("\n\n"));
+        fprintf(stderr, RED("\n"));
 
         va_end(args);
 }
@@ -190,7 +190,7 @@ void XwarnUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
 	va_list args;
 	va_start(args, msg);
 
-	fprintf(stderr, ANSI_YELLOW "WARNING: ");
+	fprintf(stderr, ANSI_YELLOW "WARNING:\n\t");
 
 	if (fname) {
 		fprintf(stderr, "%s: ", fname);
@@ -202,7 +202,7 @@ void XwarnUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
 
         vfprintf(stderr, msg, args);
 
-        fprintf(stderr, YELLOW("\n\n"));
+        fprintf(stderr, YELLOW("\n"));
 
         va_end(args);
 }
@@ -214,7 +214,7 @@ void XhelpUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
 	va_list args;
 	va_start(args, msg);
 
-	fprintf(stderr, ANSI_GREEN "ADVICE: ");
+	fprintf(stderr, ANSI_GREEN "ADVICE:\n\t");
 
 	if (fname) {
 		fprintf(stderr, "%s: ", fname);
@@ -226,7 +226,7 @@ void XhelpUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
 
         vfprintf(stderr, msg, args);
 
-        fprintf(stderr, GREEN("\n\n"));
+        fprintf(stderr, GREEN("\n"));
 
         va_end(args);
 }
