@@ -119,6 +119,11 @@ static void Scan(scanner *self)
 	};
 
 	while (true) {
+
+/* enable switch range statements */
+_Pragma("GCC diagnostic push")
+_Pragma("GCC diagnostic ignored \"-Wpedantic\"")
+
 		switch (*self->pos) {
 		case '\0':
 			goto exit;
@@ -261,6 +266,10 @@ static void Scan(scanner *self)
 		default:
 			ConsumeInvalid(self, invalid_state);
 		}
+
+/* disable switch range statements */
+_Pragma("GCC diagnostic pop")
+
 	}
 
 exit:

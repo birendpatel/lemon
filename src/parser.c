@@ -17,7 +17,7 @@
 typedef struct parser parser;
 
 //parser management
-static parser *ParserInit(const cstring *); 
+static parser *ParserInit(const cstring *);
 static void ParserFree(parser *);
 static parser *ParserContainerOf(file *);
 static void ParserMark(parser *, void *);
@@ -412,6 +412,11 @@ static size_t Synchronize(parser *self)
 	size_t tokens_skipped = 0;
 
 	do {
+
+/* enable switch range statements */
+_Pragma("GCC diagnostic push")
+_Pragma("GCC diagnostic ignored \"-Wpedantic\"")
+
 		switch(self->tok.type) {
 		case _EOF:
 			fallthrough;
@@ -429,6 +434,9 @@ static size_t Synchronize(parser *self)
 		default:
 			break;
 		}
+
+/* disable switch range statements */
+_Pragma("GCC diagnostic pop")
 
 		GetNextToken(self);
 		tokens_skipped++;
@@ -552,7 +560,7 @@ static decl RecStruct(parser *self)
 
 	check(self, _IDENTIFIER, "missing struct name after 'struct' keyword");
 
-	node.udt.name = self->tok.lexeme; 
+	node.udt.name = self->tok.lexeme;
 
 	move_check_move(self, _LEFTBRACE, "missing '{' after struct name");
 
@@ -589,7 +597,7 @@ static vector(Member) RecParseMembers(parser *self)
 
 		check(self, _IDENTIFIER, "missing struct member name");
 
-		attr.name = self->tok.lexeme; 
+		attr.name = self->tok.lexeme;
 
 		move_check_move(self, _COLON, "missing ':' after name");
 
@@ -636,7 +644,7 @@ decl RecFunction(parser *self)
 
 	check(self, _IDENTIFIER, "missing function name in declaration");
 
-	node.function.name = self->tok.lexeme; 
+	node.function.name = self->tok.lexeme;
 
 	//parameter list
 	move_check_move(self, _LEFTPAREN, "missing '(' after function name");
@@ -700,7 +708,7 @@ decl RecMethod(parser *self)
 
 	check(self, _IDENTIFIER, "missing method name in declaration");
 
-	node.method.name = self->tok.lexeme; 
+	node.method.name = self->tok.lexeme;
 
 	//parameter list
 	move_check_move(self, _LEFTPAREN, "missing '(' after method name");
@@ -758,7 +766,7 @@ static vector(Param) RecParseParameters(parser *self)
 
 		check(self, _IDENTIFIER, "missing function parameter name");
 
-		attr.name = self->tok.lexeme; 
+		attr.name = self->tok.lexeme;
 
 		move_check_move(self, _COLON, "missing ':' after name");
 
@@ -808,7 +816,7 @@ static decl RecVariable(parser *self)
 
 	check(self, _IDENTIFIER, "missing variable name in declaration");
 
-	node.variable.name = self->tok.lexeme; 
+	node.variable.name = self->tok.lexeme;
 
 	move_check_move(self, _COLON, "missing ':' before type");
 
@@ -833,7 +841,7 @@ type *RecType(parser *self)
 	switch (self->tok.type) {
 	case _IDENTIFIER:
 		node->tag = NODE_BASE;
-		node->base = self->tok.lexeme; 
+		node->base = self->tok.lexeme;
 		GetNextValidToken(self);
 		break;
 
@@ -1160,7 +1168,7 @@ static stmt RecNamedTarget(parser *self)
 	case _GOTO:
 		node.tag = NODE_GOTOLABEL;
 		move_check(self, _IDENTIFIER, "missing goto target");
-		node.gotolabel = self->tok.lexeme; 
+		node.gotolabel = self->tok.lexeme;
 		move_check_move(self, _SEMICOLON, "missing ';' after goto");
 		break;
 
@@ -1235,7 +1243,7 @@ static stmt RecLabel(parser *self)
 
 	move_check(self, _IDENTIFIER, "label name must be an identifier");
 
-	node.label.name = self->tok.lexeme; 
+	node.label.name = self->tok.lexeme;
 
 	move_check_move(self, _COLON, "missing ':' after label name");
 
@@ -1542,7 +1550,7 @@ static expr *RecPrimary(parser *self)
 	case _FALSE:
 		node = ExprInit(self, NODE_LIT);
 		node->line = self->tok.line;
-		node->lit.rep = self->tok.lexeme; 
+		node->lit.rep = self->tok.lexeme;
 		node->lit.littype = self->tok.type;
 		GetNextValidToken(self);
 		break;
@@ -1659,7 +1667,7 @@ static expr *RecIdentifier(parser *self)
 
 	expr *node = ExprInit(self, NODE_IDENT);
 	node->line = self->tok.line;
-	node->ident.name = self->tok.lexeme; 
+	node->ident.name = self->tok.lexeme;
 
 	return node;
 }
@@ -1673,7 +1681,7 @@ static expr *RecRvar(parser *self, bool seen_tilde)
 	expr *node = ExprInit(self, NODE_RVARLIT);
 
 	node->line = self->tok.line;
-	node->rvarlit.dist = self->tok.lexeme; 
+	node->rvarlit.dist = self->tok.lexeme;
 
 	if (!seen_tilde) {
 		move_check(self, _TILDE, "missing '~' after distribution");

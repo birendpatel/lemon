@@ -1,15 +1,14 @@
 # -*- MakeFile -*-
-# Copyright (C) 2021 Biren Patel
-# Lemon is licensed under the GNU General Public License v3.0
+# Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 CC = gcc
 
-CFLAGS = -std=gnu17 -Wall -Wextra -Werror
+CFLAGS = -std=gnu17 -Wall -Wextra -Werror -Wpedantic
 CFLAGS += -Wdouble-promotion -Wconversion -Wcast-qual -Wnull-dereference
 CFLAGS += -DCOLOURS
 
-# disable unused function warnings so that they don't interfere with C-style
-# templating for vectors, channels, and maps.
+# macros such as make_vector defined in the templated data structures located
+# at ./src/lib create unused functions for the sake of end-user convenience.
 CFLAGS += -Wno-unused-function
 
 #-------------------------------------------------------------------------------

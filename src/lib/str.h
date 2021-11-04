@@ -62,7 +62,6 @@ static void vStringAppend(vstring *, const char);
 static char vStringGet(const vstring *, size_t);
 static void vStringTrim(vstring *, const char);
 static void vStringReset(vstring *);
-static const cstring *vStringRaw(vstring *);
 static cstring *cStringFromvString(vstring *);
 
 static vstring vStringInit(const size_t capacity)
