@@ -851,7 +851,7 @@ type *RecType(parser *self)
 		break;
 
 	default:
-		usererror("missing a data type");
+		usererror("missing data type");
 		Throw(XXPARSE);
 		break;
 	}
