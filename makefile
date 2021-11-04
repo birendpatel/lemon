@@ -27,11 +27,8 @@ vpath %.c ./src/assets
 vpath %.c ./extern/unity
 vpath %.c ./extern/cexception
 
-objects_raw := main.o xerror.o options.o \
-	file.o jobs.o scanner.o parser.o \
-	symtab.o \
-	kmap.o \
-	cexception.o
+objects_raw := main.o xerror.o options.o file.o jobs.o scanner.o parser.o \
+	symtab.o kmap.o cexception.o
 
 DEBUG_DIR = ./debug/
 objects_debug := $(addprefix $(DEBUG_DIR), $(objects_raw))
