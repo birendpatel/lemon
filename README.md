@@ -10,7 +10,7 @@ Lemon is a programming language. It includes features such as:
 
 This repository contains CLemon, an aggresively optimising bytecode compiler for the Lemon language. It places an emphasis on optimisation for mathematical code, particularly probability theory.
 
-```
+```Python
 import "math"
 import "io"
 
@@ -61,7 +61,6 @@ This project is licensed under the GNU General Public License v3.0. You may find
 
 # Todo
 
-- [ ] Add a 60 second language tutorial on this readme (EASY)
 - [ ] Write vector unit tests (MEDIUM)
 - [ ] Write channel unit tests (HARD)
 - [ ] Create a thread pool for multi-file compilation (HARD)
