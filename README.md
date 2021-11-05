@@ -10,7 +10,7 @@ Lemon is a programming language. It includes features such as:
 
 # Requirements
 
-To install Lemon, you need a POSIX compliant system or POSIX comptability layer with the following software installed:
+To install Lemon, you need a GNU/Linux OS with the following software installed:
 
 - GCC 8.3.0+
 - GNU Make 4.2.1+
@@ -19,12 +19,10 @@ To install Lemon, you need a POSIX compliant system or POSIX comptability layer 
 # Installation Guide
 
 1. Clone this repository
-2. Change into the new directory
-3. Execute the command `sudo make install`.
-4. You're done! Execute `lemon [options] [files]` or `lemon --help`.
-5. Uninstall with `sudo make uninstall`.
-
-By default, Lemon will be installed in the `/usr/local/bin` directory. You can change this path by using the `INSTALL_PATH` makefile variable.
+2. `cd` into the new directory named `lemon`
+3. Execute the command `sudo python3 build.py install`
+4. You're done! Execute `lemon [source file]` or `lemon --help`.
+5. Uninstall the compiler with `sudo python3 build.py uninstall`
 
 # License
 
@@ -39,7 +37,6 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Add a lookup table for pthreads errors (EASY)
 - [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add support for escape characters in string literals (HARD)
-- [ ] Refactor the makefile (MEDIUM)
 - [ ] Convert all diagnostic output to JSON (HARD)
 - [ ] Refactor string implementation to not use vector.h (HARD)
 - [ ] Update channel.h to use function malloc (EASY)
