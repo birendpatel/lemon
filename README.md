@@ -8,6 +8,37 @@ Lemon is a programming language. It includes features such as:
 - Random variable types
 - Object orientation
 
+This repository contains CLemon, an aggresively optimising bytecode compiler for the Lemon language. It places an emphasis on optimisation for mathematical code, particularly probability theory.
+
+```
+import "math"
+import "io"
+
+func main(void) -> void {
+	# declares an immutable gaussian random variable mu=0, sigma=1
+	let X: rvar = norm ~ (0, 1);
+
+	# the entropy of X is reduced to a compile-time constant
+	io.print(math.entropy(X));
+
+	# declares an array of two independent bernoulli random variables
+	let prob: f64 = 0.5;
+
+	let Y: [2]rvar = [
+		[0] = bern ~ (prob),
+		[1] = bern ~ (prob)
+	];
+
+	# Y1 + Y2 is not simulated. The optimiser detects the convolution
+	# and generates bytecode to reduce the operation down to a single 
+	# random sample from a binomial distribution ~ (2, p)
+	io.print(Y[1] + Y[2])
+
+	#the same as above, more explicit and easier to use
+	io.print(math.bernoulli_convolute(Y))
+}
+```
+
 # Requirements
 
 To install Lemon, you need a GNU/Linux OS with the following software installed:
@@ -18,8 +49,8 @@ To install Lemon, you need a GNU/Linux OS with the following software installed:
 
 # Installation Guide
 
-1. Clone this repository
-2. `cd` into the new directory named `lemon`
+1. Clone this repository or download and extract the zip file
+2. Change into the new directory with `cd ./lemon`
 3. Execute the command `sudo python3 build.py install`
 4. You're done! Execute `lemon [source file]` or `lemon --help`.
 5. Uninstall the compiler with `sudo python3 build.py uninstall`
