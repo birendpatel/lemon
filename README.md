@@ -8,18 +8,17 @@ Lemon is a programming language. It includes features such as:
 - Random variable types
 - Object orientation
 
-This repository contains CLemon, an aggresively optimising bytecode compiler for the Lemon language. It places an emphasis on optimisation for mathematical code, particularly probability theory.
+This repository contains CLemon, an aggressively optimising bytecode compiler for the Lemon language. It places an emphasis on optimisation for mathematical code, particularly for probability theory.
 
 ```Python
 import "math"
 import "io"
 
 func main(void) -> void {
-	# declares an immutable gaussian random variable
+	# define a standard guassian random variable
 	let X: rvar = norm ~ (0, 1);
 
-	# we can sample directly from X and receive a new random value each
-	# time.
+	# we can sample directly from X and receive a new random value every time
 	let sample_1 = X.sample();
 	let sample_2 = X.sample();
 	
@@ -27,25 +26,29 @@ func main(void) -> void {
 		io.print("this code is unreachable; the samples are random!");
 	}
 
-	# the entropy of X is reduced to a compile-time constant and stored
-	# directly as a machine instruction operand.
+	# the entropy of X is reduced to a compile-time constant and stored directly
+	# as a machine instruction operand.
 	io.print(math.entropy(X));
 
-	# declares an array of two independent bernoulli random variables
-	let prob: f64 = 0.5;
-
+	# fills an array with 10,000 bernoulli variables parameterised by probability 0.5
 	let Y: [2]rvar = [
-		[0] = bern ~ (prob),
-		[1] = bern ~ (prob)
+		[0] = bern ~ (0.5)
 	];
+	
+	# all variables are immutable by default unless the 'mut' qualifier is specified
+	let mut sum: f64 = 0.0;
+	
+	# the optimiser detects that the sum is a probability convolution and reduces it
+	# to a single random sample from a binomial distribution with n = 10000 and
+	# p = 0.5. The entire for loop is optimised out.
+	for (let i: i16 = 0; i < 10000; i = i + 1) {
+		sum += Y[i].sample()
+	}
 
-	# Y1 + Y2 is not brute force simulated by the compiler or at runtime.
-	# Instead, the optimiser detects that the sum is in fact a probability
-	# convolution. It generates bytecode to reduce the operation down to a
-	# single random sample from a binomial distribution ~ (2, p)
-	io.print(Y[1] + Y[2])
-
-	#the same as above, more explicit and easier to use
+	# the same as above; sometimes the programmer needs to do mathematical programming
+	# but may not necessarily know what a specific theory is. When they don't know, the
+	# optimiser is there to help. When they do know, the standard library is there to
+	# make life simple.
 	io.print(math.bernoulli_convolute(Y))
 }
 ```
