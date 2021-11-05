@@ -15,10 +15,20 @@ import "math"
 import "io"
 
 func main(void) -> void {
-	# declares an immutable gaussian random variable mu=0, sigma=1
+	# declares an immutable gaussian random variable
 	let X: rvar = norm ~ (0, 1);
 
-	# the entropy of X is reduced to a compile-time constant
+	# we can sample directly from X and receive a new random value each
+	# time.
+	let sample_1 = X.sample();
+	let sample_2 = X.sample();
+	
+	if (sample_1 == sample_2) {
+		io.print("this code is unreachable; the samples are random!");
+	}
+
+	# the entropy of X is reduced to a compile-time constant and stored
+	# directly as a machine instruction operand.
 	io.print(math.entropy(X));
 
 	# declares an array of two independent bernoulli random variables
@@ -29,9 +39,10 @@ func main(void) -> void {
 		[1] = bern ~ (prob)
 	];
 
-	# Y1 + Y2 is not simulated. The optimiser detects the convolution
-	# and generates bytecode to reduce the operation down to a single 
-	# random sample from a binomial distribution ~ (2, p)
+	# Y1 + Y2 is not brute force simulated by the compiler or at runtime.
+	# Instead, the optimiser detects that the sum is in fact a probability
+	# convolution. It generates bytecode to reduce the operation down to a
+	# single random sample from a binomial distribution ~ (2, p)
 	io.print(Y[1] + Y[2])
 
 	#the same as above, more explicit and easier to use
