@@ -210,3 +210,4 @@ test_scanner: debug
 clean:
 	@rm -rf ./lemon ./release ./debug ./docs
 	@echo "directory cleaned."
+

@@ -6,7 +6,7 @@ Lemon is a programming language. It includes features such as:
 - Garbage collection
 - Closures
 - Random variable types
-- Matrix types
+- Object orientation
 
 # Requirements
 
@@ -14,6 +14,7 @@ To install Lemon, you need a POSIX compliant system or POSIX comptability layer 
 
 - GCC 8.3.0+
 - GNU Make 4.2.1+
+- Python 3.8.10+
 
 # Installation Guide
 
