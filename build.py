@@ -121,7 +121,7 @@ install: release
 
 uninstall:
 \trm -f $(INSTALL_PATH){0}
-\t@echo "\\nnLemon uninstalled successfully."
+\t@echo "\\nLemon uninstalled successfully."
 """.format(executable_name)
 
 #-------------------------------------------------------------------------------
