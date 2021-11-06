@@ -282,9 +282,14 @@ if __name__ == "__main__":
 
     process = start_make(rule)
 
-    output = process.communicate(input=makefile)
+    timeout = 10 #seconds
 
-    print(output[0])
+    try:
+        output = process.communicate(input=makefile, timeout=timeout)
+        print(output[0])
+    except TimeoutExpired:
+        process.kill()
+        print("build failed; timed out after {} seconds".format(timeout))
 
     if errmsg:
         print(errmsg)
