@@ -19,10 +19,10 @@ To install Lemon, you need a GNU/Linux OS with the following software installed:
 # Installation Guide
 
 1. Clone this repository or download and extract the zip file
-2. Change into the new directory with `cd ./lemon`
-3. Execute the command `sudo python3 build.py install`
-4. You're done! Execute `lemon [source file]` or `lemon --help`.
-5. Uninstall the compiler with `sudo python3 build.py uninstall`
+2. Change into the new directory with `cd lemon`
+3. Execute the command `sudo python3 build install`
+4. You're done! Lemon is ready to use. 
+5. Uninstall the compiler with `sudo python3 build uninstall`
 
 # License
 
