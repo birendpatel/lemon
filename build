@@ -2,15 +2,16 @@
 
 # Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 #
-# This script builds the C Lemon compiler in either installation, release, or
-# debug mode via GNU make and GCC. Invoke the script with one of the following
-# arguments. If no arugments are passed, the build will default to 'debug'.
+# This script builds the C Lemon compiler in various modes and controls test
+# suite and memory leak detection. Invoke the script with one of the following
+# arguments. If no arugments are passed, the script will default to 'debug'.
 #
 # (0) debug     : Build with assertions, debug info, and no optimisations
-# (1) release   : Builds with optimisations; no trace, no debug, no assertions
-# (2) install   : Build in release mode and installs Lemon at /usr/local/bin
-# (3) uninstall : Uninstall Lemon from /usr/local/bin
-# (3) clean     : Remove files created by debug and release; does not uninstall
+# (1) trace     : Build in debug mode and enable all possible trace output
+# (2) release   : Build with optimisations; no trace, no debug, no assertions
+# (3) install   : Build in release mode and copy Lemon to config install path
+# (4) uninstall : Remove Lemon from config install path
+# (5) clean     : Remove files created by modes 0 thru 2; does not uninstall
 
 from subprocess import run 
 from sys import argv
@@ -23,6 +24,7 @@ compiler = "gcc"
 executable_name = "lemon"
 debug = "debug"
 release = "release"
+trace = "trace"
 install_path = "/usr/local/bin"
 
 files = [
@@ -61,6 +63,14 @@ debug_flags = [
     "-DDEBUG"
 ]
 
+trace_flags = [
+    *debug_flags,
+    "-DXERROR_DEBUG",
+    "-DCHANNEL_TRACE_STDERR",
+    "-DMAP_TRACE_STDERR",
+    "-DVECTOR_TRACE_STDERR"
+]
+
 release_flags = [
     "-O3",
     "-march=native"
@@ -70,8 +80,8 @@ release_flags = [
 # makefile templates
 
 preamble = """\
-CC = {}
-CFLAGS = {}
+CC = {0}
+CFLAGS = {1}
 """
 
 mode = """\
@@ -81,13 +91,16 @@ mode = """\
 {0}: {0}_deps ./{0}/lemon
 \t@echo "\\nbuild finished successfully."
 \t@echo "Lemon was compiled in {0} mode."
+
+{0}_deps:
+\t@mkdir -p ./{0}
 """
 
 clean = """\
 .PHONY: clean
 
 clean:
-\t@rm -rf ./{} ./{}
+\t@rm -rf ./{0} ./{1}
 \t@echo "directories cleaned"
 """
 
@@ -112,6 +125,8 @@ def build(target: str) -> str:
         script = mode.format(debug, ' '.join(debug_flags))
     elif target == release:
         script = mode.format(release, ' '.join(release_flags))
+    elif target == trace:
+        script = mode.format(trace, ' '.join(trace_flags))
     else:
         ValueError("invalid target: {}".format(target))
 
@@ -122,39 +137,28 @@ def build(target: str) -> str:
 
     return script
 
-#create a makefile rule for the input C source file; the target will be placed
-#in the input directory.
+#create a makefile rule for the input C source file
 def create_object_rule(target: str, file: str) -> str:
     command = "gcc -MM {}".format(file)
 
     result = run(command, check=True, shell=True, capture_output=True)
 
     directory = "./{}/".format(target)
-    prerequisites = insert_source(result.stdout.decode(), file)
+    prerequisites = result.stdout.decode()
     recipe = "\n\t$(CC) $(CFLAGS) -c -o $@ $<\n\n"
 
     return directory + prerequisites + recipe
 
-#take a gcc -MM generated rule as input and inject the input file as the
-#the first prerequisite
-def insert_source(rule: str, file: str) -> str:
-    colon = rule.find(':') + 1
-    assert(colon != 0)
-
-    return rule[:colon] + " " + file + " " + rule[colon:]
-
 #create a makefile rule for the GNU linker; the input script must contain
-#all the object file rules necessary for all the object files that must be
-#passed to the linker
+#all required object file recipes
 def create_exe_rule(target: str, script: str) -> str:
-    directory = "./{}/{}:".format(target, executable_name)
+    directory = "./{}/{} : ".format(target, executable_name)
     prerequisites = get_linker_prerequisites(script)
     recipe = "\n\t$(CC) -o $@ $^ {}\n\n".format(' '.join(library_flags))
 
     return directory + prerequisites + recipe
 
-#finds all object-file paths within the input string and returns them with
-#whitespace separation
+#finds all object-file paths within the input string
 def get_linker_prerequisites(script: str) -> str:
     objects = []
     pattern = ".o:"
@@ -175,7 +179,7 @@ def get_linker_prerequisites(script: str) -> str:
 # it. This guarantees that file dependencies are always up to date and prevents
 # end users from accidentally using a stale build configuration.
 #
-# system() is used because generates real-time build messages from the makefile
+# os.system is used because generates real-time build messages from the makefile
 # and preserves the colour output from gcc. This is harder to accomplish via
 # the subprocess and pty modules.
 
@@ -190,12 +194,12 @@ def get_rule() -> str:
     else:
         raise ValueError("more than one rule provided")
 
-
 def create_script() -> str:
     makefile = ""
 
     makefile += preamble.format(compiler, ' '.join(common_flags))
     makefile += build(debug)
+    makefile += build(trace)
     makefile += build(release)
     makefile += install.format(release, executable_name, install_path)
     makefile += clean.format(debug, release)
@@ -209,7 +213,5 @@ if __name__ == "__main__":
     with open("makefile", mode='w') as file:
         file.write(script)
 
-    print(command)
-    print(script)
     system(command)
     remove("makefile")
