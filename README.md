@@ -8,6 +8,15 @@ Lemon is a programming language. It includes features such as:
 - Random variable types
 - Object orientation
 
+```python
+import "io"
+
+func main(void) -> void {
+	let message: str = "hello world";
+	io.print(message);
+}
+```
+
 # Requirements
 
 To install Lemon, you need a GNU/Linux OS with the following software installed:
@@ -40,3 +49,4 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Refactor string implementation to not use vector.h (HARD)
 - [ ] Update channel.h to use function malloc (EASY)
 - [ ] Update map.h insertions to recycle removed slots before aborting (MEDIUM)
+- [ ] Remove fiats and top level statements (HARD)
