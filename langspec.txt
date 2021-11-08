@@ -81,14 +81,9 @@ STRING_LITERAL ::= "\"" [^"]* "\""
 
 #-------------------------------------------------------------------------------
 # Syntactical Grammar
-#
-# Lemon does not require a main() function as its entry point. Therefore,
-# statements may exist at the top level alongside declarations. Some statements
-# are semantically meaningless at the top level, such as break or continue, but
-# are nonetheless syntactically valid.
 #-------------------------------------------------------------------------------
 
-<file> ::= <import>* <fiat>* "EOF"
+<file> ::= <import>* <declaration>* "EOF"
 
 #-------------------------------------------------------------------------------
 # Imports are directives which allow the compiler to automatically resolve file
@@ -96,16 +91,6 @@ STRING_LITERAL ::= "\"" [^"]* "\""
 #-------------------------------------------------------------------------------
 
 <import> ::= "import" STRING_LITERAL
-
-#-------------------------------------------------------------------------------
-# Fiats occur either at the top level of a file or occur nested within a block 
-# statement. Statements at the top level of a file are wrapped procedurally 
-# into an implicit  main() function whose signature is (void) -> void. This
-# function is always private, and is only executed for the compiler input file.
-# This is roughly related to the `if __name__ == "__main__":` idiom in python.
-#-------------------------------------------------------------------------------
-
-<fiat> ::= <declaration> | <statement>
 
 #-------------------------------------------------------------------------------
 # Struct and variable declarations outside of a function block have file scope
@@ -216,12 +201,15 @@ declaration visible when the file is imported.
 <label statement> ::= "label" IDENTIFIER ":" <statement>
 
 #-------------------------------------------------------------------------------
-# Block statements may include any anything at all. Function declarations in a
-# block may be used to create closures. Most recursion performed on statements
-# is directed to the block statement.
+# Fiats allow block statements to contain essentially any component of the
+# grammar except compiler directives. This grammar design ensures that the top
+# level of a file cannot contain statements while function blocks can. This also
+# allows for closures and scoped UDTs.
 #-------------------------------------------------------------------------------
 
 <block statement> ::= "{" <fiat>* "}"
+
+<fiat> ::= <declaration> | <statement>
 
 #-------------------------------------------------------------------------------
 # Unlike C, loop control flow does not have optional controlling expressions.
