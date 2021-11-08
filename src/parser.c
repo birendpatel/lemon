@@ -412,8 +412,7 @@ static void ReportInvalidToken(parser *self)
 	}
 }
 
-//if file-level then only declarations are sequence points and all statement
-//sequence points become user errors
+//if file-level then only declarations are sequence points 
 static size_t Synchronize(parser *self, bool file_level)
 {
 	size_t tokens_skipped = 0;
@@ -428,22 +427,23 @@ _Pragma("GCC diagnostic ignored \"-Wpedantic\"")
 		case _EOF:
 			fallthrough;
 
-		case _LEFTBRACE:
+		case _STRUCT ... _LET:
 			goto found_sequence_point;
+
+		//'{' is for all intents and purposes the blockstmt keyword
+		case _LEFTBRACE:
+			fallthrough;
 
 		case _RETURN ... _SWITCH:
 			if (file_level) {
-				usererror("statement is not a declaration");
+				break;
 			}
-
-			fallthrough;
-
-		case _STRUCT ... _LET:
+			
 			goto found_sequence_point;
 
 		case _INVALID:
 			ReportInvalidToken(self);
-			fallthrough;
+			break;
 
 		default:
 			break;
@@ -518,10 +518,12 @@ static decl RecDecl(parser *self)
 {
 	assert(self);
 
+	const cstring *msg = "'%s' is not the start of a valid declaration";
+
 	switch (self->tok.type) {
 	case _STRUCT:
 		return RecStruct(self);
-	
+
 	case _FUNC:
 		return RecFunction(self);
 
@@ -532,7 +534,7 @@ static decl RecDecl(parser *self)
 		return RecVariable(self);
 
 	default:
-		usererror("not a valid declaration");
+		usererror(msg, self->tok.lexeme);
 		Throw(XXPARSE);
 		__builtin_unreachable();
 	}
@@ -960,7 +962,7 @@ static stmt RecBlock(parser *self)
 	GetNextValidToken(self);
 
 	ParseFiats(self, &node.block.fiats);
-	
+
 	GetNextValidToken(self);
 
 	return node;
@@ -994,7 +996,7 @@ static fiat RecFiat(parser *self)
 	switch (self->tok.type) {
 	case _STRUCT:
 		fallthrough;
-	
+
 	case _FUNC:
 		fallthrough;
 
@@ -1003,13 +1005,13 @@ static fiat RecFiat(parser *self)
 
 	case _LET:
 		return (fiat) {
-			.tag = NODE_DECL, 
+			.tag = NODE_DECL,
 			.declaration = RecDecl(self)
 		};
 
 	default:
 		return (fiat) {
-			.tag = NODE_STMT, 
+			.tag = NODE_STMT,
 			.statement = RecStmt(self)
 		};
 	}

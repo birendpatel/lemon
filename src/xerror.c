@@ -165,14 +165,14 @@ void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
  	//applied. This allows the inputs to also be coloured red. RED()
  	//cannot be applied directly to the inputs because the ANSI_RED macro
 	//relies on string concatenation.
-	fprintf(stderr, ANSI_RED "ERROR:\n\t");
+	fprintf(stderr, ANSI_RED "ERROR: ");
 
 	if (fname) {
 		fprintf(stderr, "%s: ", fname);
 	}
 
 	if (ln) {
-                fprintf(stderr, "line %zu: ", ln);
+                fprintf(stderr, "%zu: ", ln);
         } 
 
         vfprintf(stderr, msg, args);
@@ -190,14 +190,14 @@ void XwarnUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
 	va_list args;
 	va_start(args, msg);
 
-	fprintf(stderr, ANSI_YELLOW "WARNING:\n\t");
+	fprintf(stderr, ANSI_YELLOW "WARNING: ");
 
 	if (fname) {
 		fprintf(stderr, "%s: ", fname);
 	}
 
 	if (ln) {
-                fprintf(stderr, "line %zu: ", ln);
+                fprintf(stderr, "%zu: ", ln);
         } 
 
         vfprintf(stderr, msg, args);
@@ -214,14 +214,14 @@ void XhelpUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
 	va_list args;
 	va_start(args, msg);
 
-	fprintf(stderr, ANSI_GREEN "ADVICE:\n\t");
+	fprintf(stderr, ANSI_GREEN "ADVICE: ");
 
 	if (fname) {
 		fprintf(stderr, "%s: ", fname);
 	}
 
 	if (ln) {
-                fprintf(stderr, "line %zu: ", ln);
+                fprintf(stderr, "%zu: ", ln);
         } 
 
         vfprintf(stderr, msg, args);
