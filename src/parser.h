@@ -39,7 +39,9 @@ file *SyntaxTreeInit(const cstring *src, const cstring *alias);
 //must be called even if ast.errors > 0 to avoid memory leaks.
 void SyntaxTreeFree(file *ast);
 
+//------------------------------------------------------------------------------
 //<member list>
+
 typedef struct member {
 	cstring *name;
 	type *typ;
@@ -48,7 +50,9 @@ typedef struct member {
 
 make_vector(member, Member, static)
 
+//------------------------------------------------------------------------------
 //<parameter list>
+
 typedef struct param {
 	cstring *name;
 	type *typ;
@@ -57,13 +61,17 @@ typedef struct param {
 
 make_vector(param, Param, static)
 
+//------------------------------------------------------------------------------
 //<case statement>
+
 typedef struct test {
 	expr *cond; //NULL for the default case
 	stmt *pass; //guaranteed to be a block statement
 } test;
 
 make_vector(test, Test, static)
+
+//------------------------------------------------------------------------------
 
 //<tagged index> integer literals within the <array literal> rule
 make_vector(intmax_t, Index, static)
@@ -81,6 +89,8 @@ declare_vector(decl, Decl)
 
 alias_vector(Stmt)
 declare_vector(stmt, Stmt)
+
+//------------------------------------------------------------------------------
 
 typedef enum typetag {
 	NODE_BASE,
@@ -102,6 +112,8 @@ struct type {
 		} array;
 	};
 };
+
+//------------------------------------------------------------------------------
 
 typedef enum decltag {
 	NODE_UDT,
@@ -158,6 +170,8 @@ impl_vector_push(decl, Decl, static)
 impl_vector_get(decl, Decl, static)
 impl_vector_set(decl, Decl, static)
 impl_vector_reset(decl, Decl, static)
+
+//------------------------------------------------------------------------------
 
 typedef enum stmttag{
 	NODE_EXPRSTMT,
@@ -232,6 +246,8 @@ impl_vector_push(stmt, Stmt, static)
 impl_vector_get(stmt, Stmt, static)
 impl_vector_set(stmt, Stmt, static)
 impl_vector_reset(stmt, Stmt, static)
+
+//------------------------------------------------------------------------------
 
 typedef enum exprtag {
 	NODE_ASSIGNMENT,
@@ -309,6 +325,8 @@ struct expr {
 	size_t line;
 };
 
+//------------------------------------------------------------------------------
+
 typedef enum fiattag {
 	NODE_DECL,
 	NODE_STMT,
@@ -330,6 +348,7 @@ impl_vector_get(fiat, Fiat, static)
 impl_vector_set(fiat, Fiat, static)
 impl_vector_reset(fiat, Fiat, static)
 
+//------------------------------------------------------------------------------
 //import nodes in the AST returned by SyntaxTreeInit may have a NULL alias if
 //the user specified the import path as an empty string.
 //
@@ -345,7 +364,7 @@ make_vector(import, Import, static)
 
 struct file {
 	vector(Import) imports;
-	vector(Fiat) fiats;
+	vector(Decl) declarations;
 	const cstring *alias;
 	size_t errors;
 };
