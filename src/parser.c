@@ -57,6 +57,7 @@ static decl RecVariable(parser *);
 static stmt RecStmt(parser *);
 static stmt RecExprStmt(parser *);
 static stmt RecBlock(parser *);
+static void ParseFiats(parser *, vector(Fiat) *const);
 static stmt RecLabel(parser *);
 static stmt RecAnonymousTarget(parser *);
 static stmt RecNamedTarget(parser *);
@@ -945,8 +946,6 @@ static stmt RecBlock(parser *self)
 	assert(self);
 	assert(self->tok.type == _LEFTBRACE);
 
-	CEXCEPTION_T e;
-
 	stmt node = {
 		.tag = NODE_BLOCK,
 		.block = {
@@ -960,9 +959,23 @@ static stmt RecBlock(parser *self)
 
 	GetNextValidToken(self);
 
+	ParseFiats(self, &node.block.fiats);
+	
+	GetNextValidToken(self);
+
+	return node;
+}
+
+static void ParseFiats(parser *self, vector(Fiat) *const fiats)
+{
+	assert(self);
+	assert(fiats);
+
+	CEXCEPTION_T e;
+
 	while (self->tok.type != _RIGHTBRACE) {
 		Try {
-			FiatVectorPush(&node.block.fiats, RecFiat(self));
+			FiatVectorPush(fiats, RecFiat(self));
 		} Catch (e) {
 			(void) Synchronize(self, false);
 		}
@@ -972,10 +985,6 @@ static stmt RecBlock(parser *self)
 			Throw(XXPARSE);
 		}
 	}
-
-	GetNextValidToken(self);
-
-	return node;
 }
 
 static fiat RecFiat(parser *self)
