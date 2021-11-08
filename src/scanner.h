@@ -62,11 +62,7 @@ typedef enum token_type {
 	_DIV,		// /
 	_MOD,		// %
 
-	//sequence point keywords
-	_STRUCT,
-	_FUNC,
-	_METHOD,
-	_LET,
+	//sequence point keywords; block level
 	_RETURN,
 	_BREAK,
 	_CONTINUE,
@@ -76,6 +72,12 @@ typedef enum token_type {
 	_IF,
 	_SWITCH,
 	
+	//sequence point keywords; file level
+	_STRUCT,
+	_FUNC,
+	_METHOD,
+	_LET,
+
 	//regular keywords
 	_ELSE,
 	_CASE,

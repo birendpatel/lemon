@@ -22,6 +22,7 @@ static void ParserFree(parser *);
 static parser *ParserContainerOf(file *);
 static void ParserMark(parser *, void *);
 static void *ParserMalloc(parser *, const size_t);
+static file *RecursiveDescent(parser *, const cstring *);
 
 //node management
 static file FileInit(parser *, const cstring *);
@@ -33,21 +34,23 @@ static decl *CopyDeclToHeap(parser *, const decl);
 static void GetNextToken(parser *);
 static void GetNextValidToken(parser *);
 static void ReportInvalidToken(parser *);
-static size_t Synchronize(parser *);
+static size_t Synchronize(parser *, bool);
 static void CheckToken
 (parser *, const token_type, const cstring *, const bool, const bool);
 static intmax_t ExtractArrayIndex(parser *);
 
-//declarations
-static file *RecursiveDescent(parser *, const cstring *);
+//directives
 static import RecImport(parser *);
+
+//declarations
+static decl RecDecl(parser *);
 static fiat RecFiat(parser *);
 static decl RecStruct(parser *);
 static vector(Member) RecParseMembers(parser *);
-decl RecFunction(parser *);
-decl RecMethod(parser *self);
+static decl RecFunction(parser *);
+static decl RecMethod(parser *self);
 static vector(Param) RecParseParameters(parser *);
-type *RecType(parser *);
+static type *RecType(parser *);
 static decl RecVariable(parser *);
 
 //statements
@@ -230,7 +233,7 @@ static file FileInit(parser *self, const cstring *alias)
 
 	file node =  {
 		.imports = {0},
-		.fiats = {0},
+		.declarations = {0},
 		.alias = copy,
 		.errors = 0
 	};
@@ -238,8 +241,8 @@ static file FileInit(parser *self, const cstring *alias)
 	const size_t import_capacity = 8;
 	alloc_mark_vector(ImportVectorInit, node.imports, 0, import_capacity);
 
-	const size_t fiat_capacity = 64;
-	alloc_mark_vector(FiatVectorInit, node.fiats, 0, fiat_capacity);
+	const size_t decl_capacity = 16;
+	alloc_mark_vector(DeclVectorInit, node.declarations, 0, decl_capacity);
 
 	return node;
 }
@@ -379,6 +382,7 @@ static void GetNextToken(parser *self)
 
 }
 
+//synchronize at the block level if the immediate next token is invalid
 static void GetNextValidToken(parser *self)
 {
 	assert(self);
@@ -386,7 +390,7 @@ static void GetNextValidToken(parser *self)
 	GetNextToken(self);
 
 	if (self->tok.type == _INVALID) {
-		(void) Synchronize(self);
+		(void) Synchronize(self, false);
 	}
 }
 
@@ -407,7 +411,9 @@ static void ReportInvalidToken(parser *self)
 	}
 }
 
-static size_t Synchronize(parser *self)
+//if file-level then only declarations are sequence points and all statement
+//sequence points become user errors
+static size_t Synchronize(parser *self, bool file_level)
 {
 	size_t tokens_skipped = 0;
 
@@ -422,10 +428,17 @@ _Pragma("GCC diagnostic ignored \"-Wpedantic\"")
 			fallthrough;
 
 		case _LEFTBRACE:
+			goto found_sequence_point;
+
+		case _RETURN ... _SWITCH:
+			if (file_level) {
+				usererror("statement is not a declaration");
+			}
+
 			fallthrough;
 
-		case _STRUCT ... _SWITCH:
-			goto found_sequence_point;
+		case _STRUCT ... _LET:
+			goto found_sequence point;
 
 		case _INVALID:
 			ReportInvalidToken(self);
@@ -464,16 +477,16 @@ static file *RecursiveDescent(parser *self, const cstring *alias)
 			import node = RecImport(self);
 			ImportVectorPush(&self->root.imports, node);
 		} Catch (exception) {
-			(void) Synchronize(self);
+			(void) Synchronize(self, true);
 		}
 	}
 
 	while (self->tok.type != _EOF) {
 		Try {
-			fiat node = RecFiat(self);
-			FiatVectorPush(&self->root.fiats, node);
+			decl node = RecDecl(self);
+			DeclVectorPush(&self->root.declarations, node);
 		} Catch (exception) {
-			(void) Synchronize(self);
+			(void) Synchronize(self, true);
 		}
 	}
 
@@ -497,44 +510,32 @@ static import RecImport(parser *self)
 	return node;
 }
 
-static fiat RecFiat(parser *self)
+//------------------------------------------------------------------------------
+//declarations
+
+static decl RecDecl(parser *self)
 {
 	assert(self);
 
-	fiat node = {0};
-
 	switch (self->tok.type) {
 	case _STRUCT:
-		node.tag = NODE_DECL;
-		node.declaration = RecStruct(self);
-		break;
-
+		return RecStruct(self);
+	
 	case _FUNC:
-		node.tag = NODE_DECL;
-		node.declaration = RecFunction(self);
-		break;
+		return RecFunction(self);
 
 	case _METHOD:
-		node.tag = NODE_DECL;
-		node.declaration = RecMethod(self);
-		break;
+		return RecMethod(self);
 
-	case _LET:
-		node.tag = NODE_DECL;
-		node.declaration = RecVariable(self);
-		break;
+	cast _LET:
+		return RecVariable(self);
 
 	default:
-		node.tag = NODE_STMT;
-		node.statement = RecStmt(self);
+		usererror("not a valid declaration");
+		Throw(XXPARSE);
 		break;
 	}
-
-	return node;
 }
-
-//------------------------------------------------------------------------------
-//declarations
 
 static decl RecStruct(parser *self)
 {
@@ -618,7 +619,7 @@ static vector(Member) RecParseMembers(parser *self)
 	return vec;
 }
 
-decl RecFunction(parser *self)
+static decl RecFunction(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _FUNC);
@@ -674,7 +675,7 @@ decl RecFunction(parser *self)
 	return node;
 }
 
-decl RecMethod(parser *self)
+static decl RecMethod(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _METHOD);
@@ -832,7 +833,7 @@ static decl RecVariable(parser *self)
 }
 
 //guaranteed to be a singly linked list with a non-null head
-type *RecType(parser *self)
+static type *RecType(parser *self)
 {
 	assert(self);
 
@@ -870,7 +871,6 @@ type *RecType(parser *self)
 //------------------------------------------------------------------------------
 //statements
 
-//master jump table
 static stmt RecStmt(parser *self)
 {
 	assert(self);
@@ -932,10 +932,20 @@ static stmt RecStmt(parser *self)
 	return node;
 }
 
+//blocks essentially "restart" recursive descent and are even more expressive
+//than file nodes because they allow for statements. A new try block is used
+//here so that we can synchronise from errors with as little information loss
+//as possible. If we remove the try block and let a function higher in the call
+//stack catch the exception, that function might or might not synchronize at
+//the file level. This would drop the remaining statements within the block.
+//Catching here means that we can present more errors to the user in a single
+//compliation attempt.
 static stmt RecBlock(parser *self)
 {
 	assert(self);
 	assert(self->tok.type == _LEFTBRACE);
+
+	CEXCEPTION_T e;
 
 	stmt node = {
 		.tag = NODE_BLOCK,
@@ -951,7 +961,12 @@ static stmt RecBlock(parser *self)
 	GetNextValidToken(self);
 
 	while (self->tok.type != _RIGHTBRACE) {
-		FiatVectorPush(&node.block.fiats, RecFiat(self));
+		Try {
+			fiat node = RecFiat(self);
+			FiatVectorPush(&node.block.fiats, node);
+		} Catch (e) {
+			(void) Synchronize(self, false)
+		}
 
 		if (self->tok.type == _EOF) {
 			usererror("missing closing '}' at end of file");
@@ -962,6 +977,28 @@ static stmt RecBlock(parser *self)
 	GetNextValidToken(self);
 
 	return node;
+}
+
+static fiat RecFiat(parser *self)
+{
+	assert(self);
+
+	switch (self->tok.type) {
+	case _STRUCT:
+		fallthrough;
+	
+	case _FUNC:
+		fallthrough;
+
+	case _METHOD:
+		fallthrough;
+
+	case _LET:
+		return (fiat) {NODE_DECL, RecDecl(self)};
+
+	default:
+		return (fiat) {NODE_STMT, RecStmt(self)};
+	}
 }
 
 static stmt RecForLoop(parser *self)
