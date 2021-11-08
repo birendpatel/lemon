@@ -438,7 +438,7 @@ _Pragma("GCC diagnostic ignored \"-Wpedantic\"")
 			fallthrough;
 
 		case _STRUCT ... _LET:
-			goto found_sequence point;
+			goto found_sequence_point;
 
 		case _INVALID:
 			ReportInvalidToken(self);
@@ -527,13 +527,13 @@ static decl RecDecl(parser *self)
 	case _METHOD:
 		return RecMethod(self);
 
-	cast _LET:
+	case _LET:
 		return RecVariable(self);
 
 	default:
 		usererror("not a valid declaration");
 		Throw(XXPARSE);
-		break;
+		return (decl) {0};
 	}
 }
 
@@ -962,10 +962,9 @@ static stmt RecBlock(parser *self)
 
 	while (self->tok.type != _RIGHTBRACE) {
 		Try {
-			fiat node = RecFiat(self);
-			FiatVectorPush(&node.block.fiats, node);
+			FiatVectorPush(&node.block.fiats, RecFiat(self));
 		} Catch (e) {
-			(void) Synchronize(self, false)
+			(void) Synchronize(self, false);
 		}
 
 		if (self->tok.type == _EOF) {
@@ -994,10 +993,16 @@ static fiat RecFiat(parser *self)
 		fallthrough;
 
 	case _LET:
-		return (fiat) {NODE_DECL, RecDecl(self)};
+		return (fiat) {
+			.tag = NODE_DECL, 
+			.declaration = RecDecl(self)
+		};
 
 	default:
-		return (fiat) {NODE_STMT, RecStmt(self)};
+		return (fiat) {
+			.tag = NODE_STMT, 
+			.statement = RecStmt(self)
+		};
 	}
 }
 
