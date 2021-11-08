@@ -95,7 +95,7 @@ STRING_LITERAL ::= "\"" [^"]* "\""
 #-------------------------------------------------------------------------------
 # Struct and variable declarations outside of a function block have file scope
 # by default. The "pub" scope qualifier gives global scope. This makes the 
-declaration visible when the file is imported.
+# declaration visible when the file is imported.
 #-------------------------------------------------------------------------------
 
 <declaration> ::= <struct declaration>

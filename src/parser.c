@@ -533,7 +533,7 @@ static decl RecDecl(parser *self)
 	default:
 		usererror("not a valid declaration");
 		Throw(XXPARSE);
-		return (decl) {0};
+		__builtin_unreachable();
 	}
 }
 
@@ -922,7 +922,7 @@ static stmt RecStmt(parser *self)
 	case _SEMICOLON:
 		usererror("empty statement has no effect");
 		Throw(XXPARSE);
-		break; //unreachable but compiler won't flag the longjmp as okay
+		__builtin_unreachable();
 
 	default:
 		node = RecExprStmt(self);
