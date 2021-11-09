@@ -69,6 +69,59 @@ struct symtable {
 	map(Symbol) entries;
 };
 
+//global sketch
+//the array of pairs basically shows what resides in the global symbol table
+//by default. since maps exist on heap, the compile-time info in the array will
+//get copied into the heap global table on startup when the correct API function
+//is invoked by application code.
+struct pair {
+	cstring *key;
+	symbol value;
+};
+
+//rough draft, we can expand this later with the full predeclared type suite
+pair entries[] = {
+	{
+		.key = "byte",
+		.value = {
+			.tag = SYMBOL_NATIVE,
+			.native = {
+				.bytes = 1
+			}
+		}
+	},
+	{
+		.key = "i8",
+		.value = {
+			.tag = SYMBOL_NATIVE,
+			.native = {
+				.bytes = 1
+			}
+		}
+	},
+	{
+		.key = "f64",
+		.value = {
+			.tag = SYMBOL_NATIVE,
+			.native = {
+				.bytes = 8
+			}
+		}
+	},
+	{
+		.key = "string",
+		.value = {
+			.tag = SYMBOL_NATIVE,
+			.native = {
+				.bytes = 8
+			}
+		}
+	},
+	{
+		.key = NULL
+	}
+};
+
 //if something already found, throw a re-declared sort of error
 //if nothing found, throw an error
 //
@@ -87,10 +140,3 @@ struct symtable {
 //- whenever a new lexical scope is encountered or left
 //
 //store references to each hash table in block statement nodes
-
-//need some sort of global root hash table where predeclared identifiers reside.
-//this is not stuff that the user has declared but stuff that is provided by
-//Lemon beforehand, like ints and floats.
-
-//symbol table should include number of times a variable, function, or UDT is
-//referenced so as to trigger -Wunused errors
