@@ -109,6 +109,19 @@ static symtable root = {
 	}								       \
 }
 
+#define NATIVE_FUNCTION(keyname) 				               \
+{								               \
+	.key = keyname,							       \
+	.value = {							       \
+		.tag = SYMBOL_FUNCTION,					       \
+		.function = {						       \
+			.table = NULL,					       \
+			.decl = NULL,					       \
+			.referenced = false				       \
+		}							       \
+	}								       \
+}
+
 bool SymTableConfigGlobal(void)
 {
 	struct pair {
@@ -117,10 +130,25 @@ bool SymTableConfigGlobal(void)
 	};
 
 	static const struct pair entries[] = {
+		NATIVE_PAIR("bool", 1),
 		NATIVE_PAIR("byte", 1),
-		NATIVE_PAIR("i8", 1),
-		NATIVE_PAIR("f64", 8),
+		NATIVE_PAIR("addr", 8),
+		NATIVE_PAIR("int8", 1),
+		NATIVE_PAIR("int16", 2),
+		NATIVE_PAIR("int32", 4),
+		NATIVE_PAIR("int64", 8),
+		NATIVE_PAIR("uint8", 1),
+		NATIVE_PAIR("uint16", 2),
+		NATIVE_PAIR("uint32", 4),
+		NATIVE_PAIR("uint64", 8),
+		NATIVE_PAIR("float32", 4),
+		NATIVE_PAIR("float64", 8),
+		NATIVE_PAIR("complex64", 8),
+		NATIVE_PAIR("complex128", 16),
 		NATIVE_PAIR("string", 8),
+		NATIVE_FUNCTION("assert"),
+		NATIVE_FUNCTION("print"),
+		NATIVE_FUNCTION("sizeof")
 	};
 	
 	const size_t num_entries = sizeof(entries) / sizeof(entries[0]);
@@ -133,9 +161,7 @@ bool SymTableConfigGlobal(void)
 		cstring *key = entries[i].key;
 		symbol value = entries[i].value;
 		
-		bool status = SymbolMapInsert(&root.entries, key, value);
-
-		if (status == false) {
+		if (SymbolMapInsert(&root.entries, key, value) == false) {
 			xerror_fatal("'%s'; duplicate entry", key);
 			goto fail;
 		}

@@ -5,6 +5,5 @@
 typedef struct symbol symbol;
 typedef struct symtable symtable;
 
-// this function must be called before any other in order to register the
-// predeclared types and functions. 
+//register predeclared types and functions with the global symbol table
 bool SymTableGlobalConfig(void);
