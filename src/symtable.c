@@ -1,13 +1,18 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "symtab.h"
+#include "symtable.h"
+#include "parser.h"
+#include "xerror.h"
 #include "lib/map.h"
 
-typedef struct symbol symbol;
-typedef struct symtable symtable;
+//------------------------------------------------------------------------------
+// classic symbol table implementation; each symbol resides in some hash table
+// and each hash table resides somewhere in a spaghetti stack. References 
+// to tables outside of the active stack are stored within various AST nodes.
 
 struct symbol {
 	enum {
@@ -51,8 +56,8 @@ struct symbol {
 			decl *node;
 			bool referenced;
 			bool parameter;
-		}
-	}
+		};
+	};
 };
 
 make_map(symbol, Symbol, static)
@@ -67,76 +72,82 @@ struct symtable {
 	} tag;
 	symtable *parent;
 	map(Symbol) entries;
+	union {
+		struct {
+			bool configured;
+			pthread_mutex_t mutex;
+		} global;
+	};
 };
 
-//global sketch
-//the array of pairs basically shows what resides in the global symbol table
-//by default. since maps exist on heap, the compile-time info in the array will
-//get copied into the heap global table on startup when the correct API function
-//is invoked by application code.
-struct pair {
-	cstring *key;
-	symbol value;
-};
+//------------------------------------------------------------------------------
+// global symbol table; always the first element in the spaghetti stack and once
+// initialized it exists for the lifetime of the compiler.
 
-//rough draft, we can expand this later with the full predeclared type suite
-pair entries[] = {
-	{
-		.key = "byte",
-		.value = {
-			.tag = SYMBOL_NATIVE,
-			.native = {
-				.bytes = 1
-			}
-		}
+static symtable root = {
+	.tag = TABLE_GLOBAL,
+	.parent = NULL,
+	.entries = {
+		.len = 0,
+		.cap = 0,
+		.buffer = NULL
 	},
-	{
-		.key = "i8",
-		.value = {
-			.tag = SYMBOL_NATIVE,
-			.native = {
-				.bytes = 1
-			}
-		}
-	},
-	{
-		.key = "f64",
-		.value = {
-			.tag = SYMBOL_NATIVE,
-			.native = {
-				.bytes = 8
-			}
-		}
-	},
-	{
-		.key = "string",
-		.value = {
-			.tag = SYMBOL_NATIVE,
-			.native = {
-				.bytes = 8
-			}
-		}
-	},
-	{
-		.key = NULL
+	.global = {
+		.configured = false,
+		.mutex = PTHREAD_MUTEX_INITIALIZER
 	}
 };
 
-//if something already found, throw a re-declared sort of error
-//if nothing found, throw an error
-//
-//nodes should store location of slot in the hash table to allow future
-//faster accesses instead of having to lookup hash again, but this can only
-//be done when the hash table is finished growing b/c hash resizes will change
-//references. this is just for optimisation.
-//
-//instead you can store the specific hash table rather than the slot, this
-//solves the issue of a redeclaration within the scope. You can also
-//traverse the tree first to count up the total decls and then on the second
-//pass create a hash table with a capacity large enough to not trigger
-//a growth.
+#define NATIVE_PAIR(keyname, size) 				               \
+{								               \
+	.key = keyname,							       \
+	.value = {							       \
+		.tag = SYMBOL_NATIVE,					       \
+		.native = {						       \
+			.bytes = size					       \
+		}							       \
+	}								       \
+}
 
-//pop and push hash tables off a stack
-//- whenever a new lexical scope is encountered or left
-//
-//store references to each hash table in block statement nodes
+bool SymTableConfigGlobal(void)
+{
+	struct pair {
+		cstring *key;
+		symbol value;
+	};
+
+	static const struct pair entries[] = {
+		NATIVE_PAIR("byte", 1),
+		NATIVE_PAIR("i8", 1),
+		NATIVE_PAIR("f64", 8),
+		NATIVE_PAIR("string", 8),
+	};
+	
+	const size_t num_entries = sizeof(entries) / sizeof(entries[0]);
+
+	pthread_mutex_lock(&root.global.mutex);
+
+	root.entries = SymbolMapInit(MAP_DEFAULT_CAPACITY);
+
+	for (size_t i = 0; num_entries; i++) {
+		cstring *key = entries[i].key;
+		symbol value = entries[i].value;
+		
+		bool status = SymbolMapInsert(&root.entries, key, value);
+
+		if (status == false) {
+			xerror_fatal("'%s'; duplicate entry", key);
+			goto fail;
+		}
+	}
+
+	root.global.configured = true;
+
+fail:
+	pthread_mutex_unlock(&root.global.mutex);
+	return root.global.configured;
+}
+
+#undef NATIVE_PAIR
+
+//------------------------------------------------------------------------------

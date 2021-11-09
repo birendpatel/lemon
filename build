@@ -35,7 +35,7 @@ files = [
     "./src/jobs.c",
     "./src/scanner.c",
     "./src/parser.c",
-    "./src/symtab.c",
+    "./src/symtable.c",
     "./src/assets/kmap.c",
     "./extern/cexception/CException.c"
 ]
