@@ -1,23 +1,75 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
+#include <stdbool.h>
+#include <stdint.h>
+
 #include "symtab.h"
 #include "lib/map.h"
 
-//insert things into a symbol table
-//- functions
-//- types
-//- variables
-//
-//if something already found, throw a re-declared sort of error
-//
-//do all types of things sit in the same hash table at the same scope?
-//namespacing!
+typedef struct symbol symbol;
+typedef struct symtable symtable;
 
-//lookup things in a symbol table
-//- functions
-//- types
-//- variables
-//
+struct symbol {
+	enum {
+		SYMBOL_NATIVE,
+		SYMBOL_FILE,
+		SYMBOL_FUNCTION,
+		SYMBOL_METHOD,
+		SYMBOL_UDT,
+		SYMBOL_VARIABLE,
+	} tag;
+	union {
+		struct {
+			size_t bytes;
+		} native;
+
+		struct {
+			symtable *table;
+			bool referenced;
+		} file;
+
+		struct {
+			symtable *table;
+			decl *node;
+			bool referenced;
+		} function;
+
+		struct {
+			symtable *table;
+			decl *node;
+			bool referenced;
+		} method;
+
+		struct {
+			symtable *table;
+			decl *node;
+			size_t bytes;
+			bool referenced;
+		} udt;
+
+		struct {
+			decl *node;
+			bool referenced;
+			bool parameter;
+		}
+	}
+};
+
+make_map(symbol, Symbol, static)
+
+struct symtable {
+	enum {
+		TABLE_GLOBAL,
+		TABLE_FILE,
+		TABLE_FUNCTION,
+		TABLE_METHOD,
+		TABLE_UDT,
+	} tag;
+	symtable *parent;
+	map(Symbol) entries;
+};
+
+//if something already found, throw a re-declared sort of error
 //if nothing found, throw an error
 //
 //nodes should store location of slot in the hash table to allow future
@@ -42,13 +94,3 @@
 
 //symbol table should include number of times a variable, function, or UDT is
 //referenced so as to trigger -Wunused errors
-//
-//how to handle import? what if a PROGRAM recursively calls itself to handle
-//import dependencies? I'm thinking main.c should only take one input file,
-//which solves the first issue of which file is the main file when multiple
-//files contain file-scoped statements. From there, Lemon needs to figure out
-//how to resolve import dependencies from this main file. How can the main
-//file get access to a symbol table.
-void SymTabInit(void) {
-	return;
-}
