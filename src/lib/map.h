@@ -170,7 +170,7 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 		assert(new.buffer[i].status == SLOT_OPEN);		       \
 	}								       \
 									       \
-	MapTrace("new map initialized with %" PRIu64 "slots", capacity);       \
+	MapTrace("new map initialized with %" PRIu64 " slots", capacity);      \
 									       \
 	return new;							       \
 }
