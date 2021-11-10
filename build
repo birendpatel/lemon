@@ -4,13 +4,22 @@
 #
 # This script builds the C Lemon compiler in various modes and controls test
 # suite and memory leak detection. Invoke the script with one of the following
-# arguments. If no arugments are passed, the script will default to 'debug'.
+# arguments. 
 #
-# (0) debug     : Build with assertions, debug info, and no optimisations
-# (1) trace     : Build in debug mode and enable all possible trace output
-# (2) release   : Build with optimisations; no trace, no debug, no assertions
-# (3) install   : Build in release mode and copy Lemon to config install path
-# (4) uninstall : Remove Lemon from config install path
+# (0) debug     : Build with assertions, debug info, and no optimisations. This
+#                 is the default if no script arguments are passed.
+#
+# (1) trace     : Build in debug mode and enable all possible stderr output. The
+#                 output is extremely detailed; keep grep and awk handy.
+#
+# (2) release   : Build with optimisations; no trace, no debug, no assertions.
+#                 Only use for development to check optimisation bugs such as
+#                 register clobbering.
+#
+# (3) install   : Build in release mode and copy Lemon to config install path.
+#
+# (4) uninstall : Remove Lemon from config install path.
+#
 # (5) clean     : Remove files created by modes 0 thru 2; does not uninstall
 
 from subprocess import run 
@@ -66,9 +75,6 @@ debug_flags = [
 trace_flags = [
     *debug_flags,
     "-DXERROR_DEBUG",
-    "-DCHANNEL_TRACE_STDERR",
-    "-DMAP_TRACE_STDERR",
-    "-DVECTOR_TRACE_STDERR"
 ]
 
 release_flags = [

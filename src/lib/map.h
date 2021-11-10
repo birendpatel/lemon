@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "../xerror.h"
+
 #ifdef __SIZEOF_INT128__
 	#define uint128_t __uint128_t
 #else
@@ -21,31 +23,12 @@ typedef char cstring;
 
 //-----------------------------------------------------------------------------
 
-//thread IDs may collide; the pthread_t transformation is not injective
-#ifdef MAP_TRACE_STDERR
-	#include <pthread.h>
-	#include <stdio.h>
-
-	static void MapTrace(const cstring *msg)
-	{
-		const void *thread_id = ((void *) pthread_self());
-		const cstring *fmt = "map: thread %p: %s\n";
-
-		(void) fprintf(stderr, fmt, thread_id, msg);
-	}
-#else
-	static void MapTrace(__attribute__((unused)) const cstring *msg)
-	{
-		return;
-	}
-#endif
-
 __attribute__((malloc)) static void *MapCalloc(const size_t bytes)
 {
 	void *region = calloc(bytes, sizeof(char));
 
 	if (!region) {
-		MapTrace("calloc failed; aborting program");
+		xerror_trace("calloc failed; aborting program");
 		abort();
 	}
 
@@ -175,7 +158,7 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 		assert(new.buffer[i].status == SLOT_OPEN);		       \
 	}								       \
 									       \
-	MapTrace("map initialized");					       \
+	xerror_trace("map initialized");					       \
 									       \
 	return new;							       \
 }
@@ -185,16 +168,16 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 cls void pfix##MapFree(pfix##_map *self, void (*vfree)(T))	               \
 {									       \
 	if (!self) {							       \
-		MapTrace("null input; nothing to free");		       \
+		xerror_trace("null input; nothing to free");		       \
 		return;							       \
 	}								       \
 									       \
 	if (!self->buffer) {						       \
-		MapTrace("map buffer is null; nothing to free");	       \
+		xerror_trace("map buffer is null; nothing to free");	       \
 		return;							       \
 	}								       \
 								               \
-	MapTrace("freeing map elements");				       \
+	xerror_trace("freeing map elements");				       \
 									       \
 	for (uint64_t i = 0; i < self->cap; i++) {			       \
 		pfix##_slot slot = self->buffer[i];			       \
@@ -211,11 +194,11 @@ _Pragma("GCC diagnostic pop")					               \
 		}							       \
 	}								       \
 									       \
-	MapTrace("freed map elements");					       \
+	xerror_trace("freed map elements");					       \
 									       \
 	free(self->buffer);						       \
 									       \
-	MapTrace("freed map buffer");					       \
+	xerror_trace("freed map buffer");					       \
 }
 
 //abort if map.len == UINT64_MAX
@@ -230,7 +213,7 @@ cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 	assert(key);							       \
 									       \
 	if (self->len == UINT64_MAX) {					       \
-		MapTrace("fail; map is full");				       \
+		xerror_trace("fail; map is full");				       \
 		abort();						       \
 	}								       \
 									       \
@@ -238,11 +221,11 @@ cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 	const double load_factor = (double) self->len / (double) self->cap;    \
 									       \
 	if (load_factor > load_factor_threshold) {			       \
-		MapTrace("load factor exceeds threshold");		       \
+		xerror_trace("load factor exceeds threshold");		       \
 		pfix##MapResize_private(self);				       \
 	}								       \
 								               \
-	MapTrace("inserting key value pair");			               \
+	xerror_trace("inserting key value pair");			               \
 									       \
 	return pfix##MapProbe_private(self, key, value);		       \
 }
@@ -255,14 +238,14 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 	assert(self->buffer);						       \
 									       \
 	if (self->cap == UINT64_MAX) {					       \
-		MapTrace("fail; cannot resize map; maximum capacity reached"); \
+		xerror_trace("fail; cannot resize map; maximum capacity reached"); \
 		return;							       \
 	}								       \
 									       \
 	const uint64_t new_capacity = MapGrow(self->cap);		       \
 	pfix##_map new_map = pfix##MapInit(new_capacity);		       \
 									       \
-	MapTrace("resized map");					       \
+	xerror_trace("resized map");					       \
 									       \
 	for (uint64_t i = 0; i < self->cap; i++) {			       \
 		const pfix##_slot slot = self->buffer[i];		       \
@@ -276,11 +259,11 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 		}							       \
 	}								       \
 								               \
-	MapTrace("inserted closed slots from old map");			       \
+	xerror_trace("inserted closed slots from old map");			       \
 									       \
 	free(self->buffer);						       \
 									       \
-	MapTrace("released internal buffer from old map");		       \
+	xerror_trace("released internal buffer from old map");		       \
 									       \
 	*self = (pfix##_map) {						       \
 		.len = new_map.len,					       \
@@ -288,7 +271,7 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 		.buffer = new_map.buffer				       \
 	};								       \
 									       \
-	MapTrace("copied new map members to old map");			       \
+	xerror_trace("copied new map members to old map");			       \
 }
 
 //this function assumes there is at least one open slot in the map buffer.
@@ -307,7 +290,7 @@ cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 									       \
 	while (slot->status != SLOT_OPEN) {				       \
 		if (slot->status == SLOT_CLOSED && MapMatch(key, slot->key)) { \
-			MapTrace("fail; key already exists in closed slot");   \
+			xerror_trace("fail; key already exists in closed slot");   \
 			return false;					       \
 		}							       \
 									       \
@@ -323,7 +306,7 @@ cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 									       \
 	self->len++;							       \
 									       \
-	MapTrace("linear probe succeeded");			               \
+	xerror_trace("linear probe succeeded");			               \
 									       \
 	return true;							       \
 }
@@ -348,7 +331,7 @@ cls bool pfix##MapRemove						       \
 	const uint64_t start = i;					       \
 	pfix##_slot *slot = self->buffer + i;				       \
 									       \
-	MapTrace("searching for removal slot");				       \
+	xerror_trace("searching for removal slot");				       \
 									       \
 	do {								       \
 		switch (slot->status) {					       \
@@ -368,7 +351,7 @@ _Pragma("GCC diagnostic pop")	               				       \
 								               \
 				slot->status = SLOT_REMOVED;		       \
 									       \
-				MapTrace("key-value pair removed");	       \
+				xerror_trace("key-value pair removed");	       \
 									       \
 				return true;				       \
 			}						       \

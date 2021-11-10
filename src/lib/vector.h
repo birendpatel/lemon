@@ -13,31 +13,16 @@
 #include <stdint.h>
 #include <stdlib.h>
 
-//thread IDs may collide; the pthread_t transformation is not injective
-#ifdef VECTOR_TRACE_STDERR
-	#include <pthread.h>
-	#include <stdio.h>
+#include "../xerror.h"
 
-	static void VectorTrace(const char *msg)
-	{
-		const void *thread_id = ((void *) pthread_self());
-		const char *fmt = "vector: thread %p: %s\n";
-
-		fprintf(stderr, fmt, thread_id, msg);
-	}
-#else
-	static void VectorTrace(__attribute__((unused)) const char *msg)
-	{
-		return;
-	}
-#endif
+//------------------------------------------------------------------------------
 
 __attribute__((malloc)) static void *VectorMalloc(const size_t bytes)
 {
 	void *region = malloc(bytes);
 
 	if (!region) {
-		VectorTrace("malloc failed; aborting program");
+		xerror_trace("malloc failed; aborting program");
 		abort();
 	}
 
@@ -52,7 +37,7 @@ static void *VectorRealloc(void *ptr, size_t bytes)
 	void *region = realloc(ptr, bytes);
 
 	if (!region) {
-		VectorTrace("realloc failed; aborting program");
+		xerror_trace("realloc failed; aborting program");
 		abort();
 	}
 
@@ -124,7 +109,7 @@ cls pfix##_vector pfix##VectorInit(const size_t len, const size_t cap)         \
 	const size_t bytes = cap * sizeof(T);				       \
 	v.buffer = VectorMalloc(bytes);  				       \
 									       \
-	VectorTrace("initialized");				               \
+	xerror_trace("initialized");				               \
 								               \
 	return v;							       \
 }
@@ -147,18 +132,18 @@ cls void pfix##VectorFree(pfix##_vector *self, void (*vfree) (T))	       \
 				vfree(self->buffer[i]);			       \
 			}         					       \
 									       \
-			VectorTrace("buffer elements released");	       \
+			xerror_trace("buffer elements released");	       \
 		}							       \
 									       \
 		free(self->buffer);					       \
 									       \
-		VectorTrace("internal buffer released");                       \
+		xerror_trace("internal buffer released");                      \
 									       \
 		self->len = 0;						       \
 		self->cap = 0;						       \
 		self->buffer= NULL;					       \
 	} else {							       \
-		VectorTrace("vector not initialized; nothing to free");	       \
+		xerror_trace("vector not initialized; nothing to free");       \
 	}								       \
 }
 
@@ -178,18 +163,18 @@ cls void pfix##VectorFreeReverse(pfix##_vector *self, void (*vfree) (T))       \
 				vfree(self->buffer[i - 1]);		       \
 			}						       \
 									       \
-			VectorTrace("buffer elements released");	       \
+			xerror_trace("buffer elements released");	       \
 		}							       \
 									       \
 		free(self->buffer);					       \
 									       \
-		VectorTrace("internal buffer released");                       \
+		xerror_trace("internal buffer released");                      \
 									       \
 		self->len = 0;						       \
 		self->cap = 0;						       \
 		self->buffer= NULL;					       \
 	} else {							       \
-		VectorTrace("vector not initialized; nothing to free");	       \
+		xerror_trace("vector not initialized; nothing to free");	       \
 	}								       \
 }
 //elements pushed to a vector are always copied to the internal buffer by value
@@ -206,23 +191,23 @@ cls void pfix##VectorPush(pfix##_vector *self, T datum)                        \
 	assert(self->buffer);						       \
                                                                                \
 	if (self->len == SIZE_MAX) {                                           \
-		VectorTrace("reached absolute capacity; aborting program");    \
+		xerror_trace("reached absolute capacity; aborting program");   \
 		abort();			                               \
 	}                                                                      \
 									       \
 	if (self->len == self->cap) {					       \
-		VectorTrace("maximum capacity; reallocating...");	       \
+		xerror_trace("maximum capacity; reallocating...");	       \
 									       \
 		self->cap = VectorGrow(self->cap);                             \
 		self->buffer = VectorRealloc(self->buffer, self->cap);	       \
 									       \
-		VectorTrace("reallocated");                                    \
+		xerror_trace("reallocated");                                   \
 	}								       \
 									       \
 	self->buffer[self->len] = datum;				       \
 	self->len++;							       \
     									       \
-	VectorTrace("push successful");					       \
+	xerror_trace("push successful");					       \
 }
 
 #define impl_vector_get(T, pfix, cls)					       \
@@ -265,12 +250,12 @@ cls void pfix##VectorReset(pfix##_vector *self, void (*vfree) (T))	       \
 			vfree(self->buffer[i]);				       \
 		}							       \
 									       \
-		VectorTrace("buffer elements released");		       \
+		xerror_trace("buffer elements released");		       \
 	}								       \
 									       \
 	self->len = 0;							       \
 									       \
-	VectorTrace("reset successful");				       \
+	xerror_trace("reset successful");				       \
 }
 
 //------------------------------------------------------------------------------
