@@ -1,5 +1,6 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
+#include <assert.h>
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -11,7 +12,7 @@
 
 //------------------------------------------------------------------------------
 // classic symbol table implementation; each symbol resides in some hash table
-// and each hash table resides somewhere in a spaghetti stack. References 
+// and each hash table resides somewhere in a spaghetti stack. References
 // to tables outside of the active stack are stored within various AST nodes.
 
 struct symbol {
@@ -98,6 +99,15 @@ static symtable root = {
 	}
 };
 
+bool SymTableConfigGlobal(void)
+{
+	assert(root.global.configured == false);
+
+	typedef struct pair {
+		const cstring *key;
+		const symbol value;
+	} pair;
+
 #define NATIVE_PAIR(keyname, size) 				               \
 {								               \
 	.key = keyname,							       \
@@ -109,27 +119,20 @@ static symtable root = {
 	}								       \
 }
 
-#define NATIVE_FUNCTION(keyname) 				               \
+#define FUNCTION_PAIR(keyname) 				               	       \
 {								               \
 	.key = keyname,							       \
 	.value = {							       \
 		.tag = SYMBOL_FUNCTION,					       \
 		.function = {						       \
 			.table = NULL,					       \
-			.decl = NULL,					       \
+			.node = NULL,					       \
 			.referenced = false				       \
 		}							       \
 	}								       \
 }
 
-bool SymTableConfigGlobal(void)
-{
-	struct pair {
-		cstring *key;
-		symbol value;
-	};
-
-	static const struct pair entries[] = {
+	static const pair table[] = {
 		NATIVE_PAIR("bool", 1),
 		NATIVE_PAIR("byte", 1),
 		NATIVE_PAIR("addr", 8),
@@ -146,25 +149,30 @@ bool SymTableConfigGlobal(void)
 		NATIVE_PAIR("complex64", 8),
 		NATIVE_PAIR("complex128", 16),
 		NATIVE_PAIR("string", 8),
-		NATIVE_FUNCTION("assert"),
-		NATIVE_FUNCTION("print"),
-		NATIVE_FUNCTION("sizeof")
+		FUNCTION_PAIR("assert"),
+		FUNCTION_PAIR("print"),
+		FUNCTION_PAIR("sizeof"),
+		{.key = NULL}
 	};
-	
-	const size_t num_entries = sizeof(entries) / sizeof(entries[0]);
+
+#undef NATIVE_PAIR
+#undef FUNCTION_PAIR
 
 	pthread_mutex_lock(&root.global.mutex);
 
 	root.entries = SymbolMapInit(MAP_DEFAULT_CAPACITY);
 
-	for (size_t i = 0; num_entries; i++) {
-		cstring *key = entries[i].key;
-		symbol value = entries[i].value;
+	const pair *p = table;
+
+	while (p->key) {
+		bool ok = SymbolMapInsert(&root.entries, p->key, p->value);
 		
-		if (SymbolMapInsert(&root.entries, key, value) == false) {
-			xerror_fatal("'%s'; duplicate entry", key);
+		if (!ok) {
+			xerror_fatal("'%s'; duplicate entry", p->key);
 			goto fail;
 		}
+
+		p++;
 	}
 
 	root.global.configured = true;
@@ -173,7 +181,5 @@ fail:
 	pthread_mutex_unlock(&root.global.mutex);
 	return root.global.configured;
 }
-
-#undef NATIVE_PAIR
 
 //------------------------------------------------------------------------------
