@@ -46,19 +46,16 @@ static uint64_t MapGrow(uint64_t curr_capacity)
 {
 	const uint64_t overflow_threshold = UINT64_MAX / 2;
 	const uint64_t growth_rate = 2;
-	uint64_t new_capacity = 0;
-
+	
 	if (curr_capacity == 0) {
-		new_capacity = 1;
-	} else if (curr_capacity >= overflow_threshold) {
-		new_capacity = UINT64_MAX;
-	} else {
-		new_capacity = curr_capacity * growth_rate;
+		return 1;
 	}
 
-	MapTrace("new capacity is %" PRIu64 " slots", new_capacity);
+	if (curr_capacity >= overflow_threshold) {
+		return UINT64_MAX;
+	}
 
-	return new_capacity;
+	return curr_capacity * growth_rate;
 }
 
 static bool MapMatch(const cstring *a, const cstring *b)
@@ -149,7 +146,12 @@ cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value);
 
 //------------------------------------------------------------------------------
 
-#define MAP_DEFAULT_CAPACITY ((size_t) 8)
+#define MAP_DEFAULT_CAPACITY ((size_t) 16)
+
+//use this when the hash table is going to contain a known or minimum number of
+//elements; helps reduce the chances of a thread from pausing hot spot code to
+//perform dynamic resizing.
+#define MAP_MINIMUM_CAPACITY(capacity) MapGrow(capacity)
 
 #define impl_map_init(T, pfix, cls)					       \
 cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
@@ -168,7 +170,7 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 		assert(new.buffer[i].status == SLOT_OPEN);		       \
 	}								       \
 									       \
-	MapTrace("map initialized");					       \
+	MapTrace("new map initialized with %" PRIu64 "slots", capacity);       \
 									       \
 	return new;							       \
 }
