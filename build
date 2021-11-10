@@ -75,6 +75,9 @@ debug_flags = [
 trace_flags = [
     *debug_flags,
     "-DXERROR_DEBUG",
+    "-DMAP_TRACE",
+    "-DVECTOR_TRACE",
+    "-DCHANNEL_TRACE"
 ]
 
 release_flags = [
