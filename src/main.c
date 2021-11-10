@@ -16,7 +16,6 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-void ConfigureCompiler(void);
 vector(File) CreateSchedule(char **, xerror *);
 const cstring *GetRootFileName(char **);
 
@@ -28,7 +27,7 @@ int main(int argc, char **argv)
 
 	OptionsParse(&argc, &argv);
 
-	ConfigureCompiler();
+	SymTableConfigGlobal();
 
 	vector(File) schedule = CreateSchedule(argv, &err);
 
@@ -52,11 +51,6 @@ int main(int argc, char **argv)
 		xerror_fatal("%s", XerrorDescription(err));
 		return EXIT_FAILURE;
 	}
-}
-
-void ConfigureCompiler(void)
-{
-	SymTableConfigGlobal();
 }
 
 //vector.len == 0 on failure and return code is XEFILE, XEPARSE, or XEUSER
