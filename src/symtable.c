@@ -99,16 +99,7 @@ static symtable root = {
 	}
 };
 
-bool SymTableConfigGlobal(void)
-{
-	assert(root.global.configured == false);
-
-	typedef struct pair {
-		const cstring *key;
-		const symbol value;
-	} pair;
-
-#define NATIVE_PAIR(keyname, size) 				               \
+#define NATIVE_TYPE(keyname, size) 				               \
 {								               \
 	.key = keyname,							       \
 	.value = {							       \
@@ -119,7 +110,7 @@ bool SymTableConfigGlobal(void)
 	}								       \
 }
 
-#define FUNCTION_PAIR(keyname) 				               	       \
+#define NATIVE_FUNC(keyname) 				               	       \
 {								               \
 	.key = keyname,							       \
 	.value = {							       \
@@ -132,31 +123,38 @@ bool SymTableConfigGlobal(void)
 	}								       \
 }
 
-	static const pair table[] = {
-		NATIVE_PAIR("bool", 1),
-		NATIVE_PAIR("byte", 1),
-		NATIVE_PAIR("addr", 8),
-		NATIVE_PAIR("int8", 1),
-		NATIVE_PAIR("int16", 2),
-		NATIVE_PAIR("int32", 4),
-		NATIVE_PAIR("int64", 8),
-		NATIVE_PAIR("uint8", 1),
-		NATIVE_PAIR("uint16", 2),
-		NATIVE_PAIR("uint32", 4),
-		NATIVE_PAIR("uint64", 8),
-		NATIVE_PAIR("float32", 4),
-		NATIVE_PAIR("float64", 8),
-		NATIVE_PAIR("complex64", 8),
-		NATIVE_PAIR("complex128", 16),
-		NATIVE_PAIR("string", 8),
-		FUNCTION_PAIR("assert"),
-		FUNCTION_PAIR("print"),
-		FUNCTION_PAIR("sizeof"),
-		{.key = NULL}
-	};
+bool SymTableConfigGlobal(void)
+{
+	assert(root.global.configured == false);
 
-#undef NATIVE_PAIR
-#undef FUNCTION_PAIR
+	typedef struct pair {
+		const cstring *key;
+		const symbol value;
+	} pair;
+
+	static const pair table[] = {
+		[0]  = NATIVE_TYPE("bool", 1),
+		[1]  = NATIVE_TYPE("byte", 1),
+		[2]  = NATIVE_TYPE("addr", 8),
+		[3]  = NATIVE_TYPE("int8", 1),
+		[4]  = NATIVE_TYPE("int16", 2),
+		[5]  = NATIVE_TYPE("int32", 4),
+		[6]  = NATIVE_TYPE("int64", 8),
+		[7]  = NATIVE_TYPE("uint8", 1),
+		[8]  = NATIVE_TYPE("uint16", 2),
+		[9]  = NATIVE_TYPE("uint32", 4),
+		[10] = NATIVE_TYPE("uint64", 8),
+		[11] = NATIVE_TYPE("float32", 4),
+		[12] = NATIVE_TYPE("float64", 8),
+		[13] = NATIVE_TYPE("complex64", 8),
+		[14] = NATIVE_TYPE("complex128", 16),
+		[15] = NATIVE_TYPE("string", 8),
+		[16] = NATIVE_FUNC("assert"),
+		[17] = NATIVE_FUNC("print"),
+		[18] = NATIVE_FUNC("sizeof"),
+		[19] = NATIVE_FUNC("typeof"),
+		[20] = {NULL}
+	};
 
 	pthread_mutex_lock(&root.global.mutex);
 
@@ -181,5 +179,8 @@ fail:
 	pthread_mutex_unlock(&root.global.mutex);
 	return root.global.configured;
 }
+
+#undef NATIVE_TYPE
+#undef NATIVE_FUNC
 
 //------------------------------------------------------------------------------
