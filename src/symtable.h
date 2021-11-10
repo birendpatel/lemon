@@ -6,4 +6,4 @@ typedef struct symbol symbol;
 typedef struct symtable symtable;
 
 //register predeclared types and functions with the global symbol table
-bool SymTableGlobalConfig(void);
+void SymTableConfigGlobal(void);

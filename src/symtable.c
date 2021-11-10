@@ -123,7 +123,7 @@ static symtable root = {
 	}								       \
 }
 
-bool SymTableConfigGlobal(void)
+void SymTableConfigGlobal(void)
 {
 	assert(root.global.configured == false);
 
@@ -164,20 +164,13 @@ bool SymTableConfigGlobal(void)
 
 	while (p->key) {
 		bool ok = SymbolMapInsert(&root.entries, p->key, p->value);
-		
-		if (!ok) {
-			xerror_fatal("'%s'; duplicate entry", p->key);
-			goto fail;
-		}
+		assert(ok && "duplicate entry in global symbol table");
 
 		p++;
 	}
 
 	root.global.configured = true;
-
-fail:
 	pthread_mutex_unlock(&root.global.mutex);
-	return root.global.configured;
 }
 
 #undef NATIVE_TYPE

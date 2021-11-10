@@ -1,5 +1,6 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
+#include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>
 
@@ -7,6 +8,7 @@
 #include "options.h"
 #include "parser.h"
 #include "jobs.h"
+#include "symtable.h"
 #include "xerror.h"
 #include "lib/str.h"
 
@@ -14,26 +16,25 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-const cstring *ParseRemainingInputs(char **);
+void ConfigureCompiler(void);
+vector(File) CreateSchedule(char **, xerror *);
+const cstring *GetRootFileName(char **);
 
 //------------------------------------------------------------------------------
 
 int main(int argc, char **argv)
 {
-	OptionsParse(&argc, &argv);
-
-	const cstring *root_file = ParseRemainingInputs(argv);
-
-	if (!root_file) {
-		return EXIT_FAILURE;
-	}
-
 	xerror err = XEUNDEFINED;
 
-	vector(File) schedule = JobsCreate(root_file, &err);
+	OptionsParse(&argc, &argv);
 
+	ConfigureCompiler();
+
+	vector(File) schedule = CreateSchedule(argv, &err);
+
+	//temporary
 	for (size_t i = 0; i < schedule.len; i++) {
-		SyntaxTreeFree(schedule.buffer[i]);
+		puts(schedule.buffer[i]->alias);
 	}
 
 	switch (err) {
@@ -53,30 +54,38 @@ int main(int argc, char **argv)
 	}
 }
 
-//returns NULL if nothing remains in argv
-const cstring *ParseRemainingInputs(char **argv)
+void ConfigureCompiler(void)
+{
+	SymTableConfigGlobal();
+}
+
+//vector.len == 0 on failure and return code is XEFILE, XEPARSE, or XEUSER
+vector(File) CreateSchedule(char **argv, xerror *err)
 {
 	assert(argv);
 
-	const cstring *root_file = argv[0];
+	const cstring *fname = GetRootFileName(argv);
 
-	if (!root_file) {
-		const cstring *msg = "no input file; nothing to compile";
-		XerrorUser(NULL, 0, msg);
-		return NULL;
+	return JobsCreate(fname, err);
+}
+
+//returns "main" if argv is empty
+const cstring *GetRootFileName(char **argv)
+{
+	assert(argv);
+
+	const cstring *fname = argv[0];
+
+	if (!fname) {
+		return "main";
 	}
 
 	const cstring *sentinel = argv[1];
 
 	if (sentinel != NULL) {
 		const cstring *msg = "all input files except %s were ignored";
-		XwarnUser(NULL, 0, msg, root_file);
-
-		const cstring *advice = 
-			"lemon resolves file dependencies automatically";
-
-		XhelpUser(NULL, 0, advice);
+		XwarnUser(NULL, 0, msg, fname);
 	}
 
-	return root_file;
+	return fname;
 }

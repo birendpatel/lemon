@@ -270,9 +270,9 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 		if (slot.status == SLOT_CLOSED) {		               \
 			const cstring *k = slot.key;			       \
 			T v = slot.value;				       \
-			int err = pfix##MapProbe_private(&new_map, k, v);      \
+			bool ok = pfix##MapProbe_private(&new_map, k, v);      \
 									       \
-			assert(!err && "key already exists in new buffer");    \
+			assert(ok && "key already exists in new buffer");      \
 		}							       \
 	}								       \
 								               \
