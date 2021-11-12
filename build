@@ -66,9 +66,10 @@ common_flags = [
     "-DCOLOURS",
     "-Wno-unused-function",
     "-I./src/",
-    "-I./src/lib",
     "-I./src/assets",
+    "-I./src/lib",
     "-I./src/ir",
+    "-I./src/utils",
     "-I./extern/cexception"
 ]
 
