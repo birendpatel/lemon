@@ -1,6 +1,10 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// Abstract syntax tree nodes
+// This file defines the abstract syntax tree nodes. The documentation in this
+// header makes referneces to the Lemon language specification and the EBNF
+// grammar located at ../langspec.txt. The grammar metasyntax operations '+' and
+// '*' are implemented via vectors. The '|' operator is implemented via tagged
+// anonymous unions.
 
 #pragma once
 

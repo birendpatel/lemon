@@ -4,15 +4,22 @@
 
 #include <assert.h>
 #include <limits.h>
+#include <stdbool.h>
 #include <stdarg.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
 #include "parser.h"
+#include "scanner.h"
+#include "token.h"
+#include "options.h"
 #include "defs.h"
-#include "lib/channel.h"
+#include "xerror.h"
+#include "channel.h"
+#include "vector.h"
 
 typedef struct parser parser;
 
@@ -106,7 +113,7 @@ file *SyntaxTreeInit(const cstring *src, const cstring *alias)
 		SyntaxTreeFree(root);
 		return NULL;
 	}
-	
+
 	return root;
 }
 
@@ -418,7 +425,7 @@ static void ReportInvalidToken(parser *self)
 	}
 }
 
-//if file-level then only declarations are sequence points 
+//if file-level then only declarations are sequence points
 static size_t Synchronize(parser *self, bool file_level)
 {
 	size_t tokens_skipped = 0;
@@ -444,7 +451,7 @@ _Pragma("GCC diagnostic ignored \"-Wpedantic\"")
 			if (file_level) {
 				break;
 			}
-			
+
 			goto found_sequence_point;
 
 		case _INVALID:

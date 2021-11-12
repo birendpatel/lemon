@@ -7,9 +7,12 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdio.h>
 
 #include "scanner.h"
 #include "defs.h"
+#include "options.h"
 #include "assets/kmap.h"
 #include "lib/channel.h"
 
@@ -17,14 +20,7 @@
 //@pos current byte being analysed
 //@curr used with pos to help process multi-char lexemes
 
-typedef struct scanner {
-	Token_channel *chan;
-	const char *pos;
-	const char *curr;
-	const cstring *src;
-	size_t line;
-	token tok;
-} scanner;
+typedef struct scanner scanner;
 
 static void* StartRoutine(void *);
 static void Scan(scanner *);
@@ -49,6 +45,15 @@ static void TokenPrint(scanner *);
 static _Noreturn void Hang(void);
 
 //------------------------------------------------------------------------------
+
+struct scanner {
+	Token_channel *chan;
+	const char *pos;
+	const char *curr;
+	const cstring *src;
+	size_t line;
+	token tok;
+};
 
 xerror ScannerInit(const cstring *src, Token_channel *chan)
 {

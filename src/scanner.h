@@ -4,10 +4,6 @@
 
 #pragma once
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-
 #include "token.h"
 #include "xerror.h"
 #include "channel.h"
