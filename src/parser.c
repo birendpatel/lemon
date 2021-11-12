@@ -94,7 +94,7 @@ static expr *RecAccess(parser *, expr *);
 //-----------------------------------------------------------------------------
 // API implementation
 
-file *SyntaxTreeInit(const cstring *src, const cstring *alias)
+file *const SyntaxTreeInit(const cstring *src, const cstring *alias)
 {
 	assert(src);
 	assert(alias);

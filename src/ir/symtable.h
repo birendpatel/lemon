@@ -1,8 +1,4 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-//
-// The classic symbol table implementation; each symbol resides somewhere in
-// a hash table and each hash table resides somewhere in a parent pointer tree
-// intrusively built into the symtable.
 
 #pragma once
 
@@ -13,6 +9,9 @@
 
 typedef struct symbol symbol;
 typedef struct symtable symtable;
+
+//------------------------------------------------------------------------------
+// symbols are associated with a cstring identifier and placed into a hash table
 
 struct symbol {
 	enum {
@@ -57,6 +56,11 @@ struct symbol {
 };
 
 make_map(symbol, Symbol, static)
+
+//------------------------------------------------------------------------------
+// symbol tables are lexically scoped; all symbol tables in memory together
+// form an n-ary tree which is threaded intrusively through each table via
+// the symtable.parent and symbol.union.table references.
 
 struct symtable {
 	enum {
