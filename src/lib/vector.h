@@ -9,8 +9,10 @@
 #pragma once
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "../xerror.h"
 
@@ -22,12 +24,12 @@
 
 //------------------------------------------------------------------------------
 
-__attribute__((malloc)) static void *VectorMalloc(const size_t bytes)
+__attribute__((malloc)) static void *VectorCalloc(const size_t bytes)
 {
-	void *region = malloc(bytes);
+	void *region = calloc(bytes, 1);
 
 	if (!region) {
-		VectorTrace("malloc failed; aborting program");
+		VectorTrace("calloc failed; aborting program");
 		abort();
 	}
 
@@ -97,8 +99,23 @@ cls void pfix##VectorPush(pfix##_vector *, T);   	                       \
 cls T pfix##VectorGet(const pfix##_vector *, const size_t);                    \
 cls T pfix##VectorSet(pfix##_vector *, const size_t , T);                      \
 cls void pfix##VectorReset(pfix##_vector *, void (*) (T));	               \
+cls bool pfix##VectorIsDummy(pfix##_vector *self);
 
 #define VECTOR_DEFAULT_CAPACITY ((size_t) 8)
+
+//use this macro to return a dummy "error status" vector. The callee can check
+//for this status via impl_vector_zero. 
+#define ZERO_VECTOR(T) (T) {.len = 0, .cap = 0, .buffer = NULL}
+
+#define impl_vector_zero(T, pfix, cls)					       \
+cls bool pfix##VectorIsDummy(pfix##_vector *self)			       \
+{									       \
+	assert(self);							       \
+									       \
+	pfix##_vector dummy = ZERO_VECTOR(pfix##_vector);		       \
+									       \
+	return !memcmp(self, &dummy, sizeof(pfix##_vector));		       \
+}
 
 #define impl_vector_init(T, pfix, cls)				               \
 cls pfix##_vector pfix##VectorInit(const size_t len, const size_t cap)         \
@@ -112,7 +129,7 @@ cls pfix##_vector pfix##VectorInit(const size_t len, const size_t cap)         \
 	};								       \
 									       \
 	const size_t bytes = cap * sizeof(T);				       \
-	v.buffer = VectorMalloc(bytes);  				       \
+	v.buffer = VectorCalloc(bytes);  				       \
 									       \
 	VectorTrace("initialized");				               \
 								               \
@@ -279,6 +296,7 @@ cls void pfix##VectorReset(pfix##_vector *self, void (*vfree) (T))	       \
 	impl_vector_push(T, pfix, cls)					       \
 	impl_vector_get(T, pfix, cls)					       \
 	impl_vector_set(T, pfix, cls)					       \
-	impl_vector_reset(T, pfix, cls)
+	impl_vector_reset(T, pfix, cls)					       \
+	impl_vector_zero(T, pfix, cls)
 
 #define vector(pfix) pfix##_vector

@@ -29,14 +29,11 @@ typedef struct stmt stmt;
 typedef struct expr expr;
 typedef struct import import;
 
-//If initialisation fails, return NULL. If initialisation succeeds, the parsing
-//algorithm will return a non-null pointer to the root node of an abstract
-//syntax tree. But, if file.errors > 0, then the tree is not a complete and
-//accurate representation of the input source code.
+//returns NULL if initialisation fails or the AST associated with the input src
+//is ill formed.
 file *SyntaxTreeInit(const cstring *src, const cstring *alias);
 
-//okay to call when ast == NULL.
-//must be called even if ast.errors > 0 to avoid memory leaks.
+//input ast must not be null
 void SyntaxTreeFree(file *ast);
 
 //------------------------------------------------------------------------------
@@ -349,15 +346,9 @@ impl_vector_set(fiat, Fiat, static)
 impl_vector_reset(fiat, Fiat, static)
 
 //------------------------------------------------------------------------------
-//import nodes in the AST returned by SyntaxTreeInit may have a NULL alias if
-//the user specified the import path as an empty string.
-//
-//The root is guaranteed to always be NULL because SyntaxTreeInit parses a file 
-//in isolation. Therefore, it cannot resolve the import dependencies. This task,
-//if required, is left to the user.
+
 struct import {
-	cstring *alias;
-	file *root;
+	cstring *alias; //NULL if import path is an empty string
 };
 
 make_vector(import, Import, static)

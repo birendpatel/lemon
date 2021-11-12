@@ -81,9 +81,14 @@ void XerrorFlush(void);
 const cstring *XerrorDescription(const xerror err);
 
 //exceptions
-#define XXPARSE ((CEXCEPTION_T) 1) // AST parsing issues
-#define XXIO    ((CEXCEPTION_T) 2) // IO issues
-#define XXUSER  ((CEXCEPTION_T) 3) // generic user issue (compiler is okay)
+#define XXPARSE ((CEXCEPTION_T) 1) // raised when grammar is ill-formed
+#define XXGRAPH ((CEXCEPTION_T) 2) // raised when generic graphing issue found
+
+#define ThrowFatal(exception, msg, ...) 				       \
+do {								               \
+	xerror_fatal(msg, ##__VA_ARGS__);				       \
+	Throw(exception);					               \
+} while (0)
 
 //print a stderr message in red font; does not log to the internal buffer. Prefix
 //a line number when ln > 0 and a file name when fname != NULL.

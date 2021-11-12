@@ -82,8 +82,7 @@ struct symtable {
 };
 
 //------------------------------------------------------------------------------
-// global symbol table; always the first element in the spaghetti stack and once
-// initialized it exists for the lifetime of the compiler.
+// global symbol table; always the first element of the spaghetti stack 
 
 static symtable root = {
 	.tag = TABLE_GLOBAL,
@@ -123,10 +122,8 @@ static symtable root = {
 	}								       \
 }
 
-void SymTableConfigGlobal(void)
+void SymTableGlobalInit(void)
 {
-	assert(root.global.configured == false);
-
 	typedef struct pair {
 		const cstring *key;
 		const symbol value;
@@ -156,10 +153,13 @@ void SymTableConfigGlobal(void)
 	};
 
 	const size_t total_entries = sizeof(table) / sizeof(table[0]);
+	const uint64_t map_capacity = MAP_MINIMUM_CAPACITY(total_entries);
 
 	pthread_mutex_lock(&root.global.mutex);
 
-	root.entries = SymbolMapInit(MAP_MINIMUM_CAPACITY(total_entries));
+	assert(root.global.configured == false);
+
+	root.entries = SymbolMapInit(map_capacity);
 
 	for (size_t i = 0; i < total_entries; i++) {
 		const pair *p = table + i;
@@ -176,4 +176,25 @@ void SymTableConfigGlobal(void)
 #undef NATIVE_TYPE
 #undef NATIVE_FUNC
 
+void SymTableGlobalFree(void)
+{
+	pthread_mutex_lock(&root.global.mutex);
+
+	assert(root.global.configured == true);
+
+	SymbolMapFree(&root.entries, NULL);
+
+	root.entries = (map(Symbol)) {
+		.len = 0,
+		.cap = 0,
+		.buffer = NULL
+	};
+
+	root.global.configured = false;
+
+	pthread_mutex_unlock(&root.global.mutex);
+}
+
 //------------------------------------------------------------------------------
+
+

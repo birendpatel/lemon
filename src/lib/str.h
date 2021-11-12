@@ -34,7 +34,7 @@ static cstring *cStringFromView(const char *data, size_t len)
 {
 	const size_t bytes = sizeof(char) * len;
 
-	char *new = VectorMalloc(bytes + 1);
+	char *new = VectorCalloc(bytes + 1);
 
 	memcpy(new, data, bytes);
 

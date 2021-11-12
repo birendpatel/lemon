@@ -1,5 +1,4 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-
 #include <assert.h>
 #include <stdbool.h>
 #include <stdlib.h>
@@ -16,51 +15,41 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-vector(File) CreateSchedule(char **, xerror *);
+vector(File) CreateSchedule(char **); 
 const cstring *GetRootFileName(char **);
 
 //------------------------------------------------------------------------------
 
 int main(int argc, char **argv)
 {
-	xerror err = XEUNDEFINED;
-
 	OptionsParse(&argc, &argv);
 
-	SymTableConfigGlobal();
+	SymTableGlobalInit();
 
-	vector(File) schedule = CreateSchedule(argv, &err);
+	vector(File) schedule = CreateSchedule(argv);
 
 	//temporary
 	for (size_t i = 0; i < schedule.len; i++) {
 		puts(schedule.buffer[i]->alias);
 	}
 
-	switch (err) {
-	case XESUCCESS:
+	if (FileVectorIsDummy(&schedule)) {
+		xerror_fatal("compilation failed");
+		return EXIT_FAILURE;
+	} else {
 		XerrorFlush();
 		return EXIT_SUCCESS;
-		break;
-
-	case XEUSER:
-		XerrorUser(NULL, 0, "compilation failed");
-		XerrorFlush();
-		return EXIT_FAILURE;
-
-	default:
-		xerror_fatal("%s", XerrorDescription(err));
-		return EXIT_FAILURE;
 	}
 }
 
-//vector.len == 0 on failure and return code is XEFILE, XEPARSE, or XEUSER
-vector(File) CreateSchedule(char **argv, xerror *err)
+//returns the zero vector on failure
+vector(File) CreateSchedule(char **argv)
 {
 	assert(argv);
 
 	const cstring *fname = GetRootFileName(argv);
 
-	return JobsCreate(fname, err);
+	return JobsCreate(fname);
 }
 
 //returns "main" if argv is empty

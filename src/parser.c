@@ -95,18 +95,24 @@ file *SyntaxTreeInit(const cstring *src, const cstring *alias)
 	parser *prs = ParserInit(src);
 
 	if (!prs) {
-		xerror_issue("cannot init parser");
+		xerror_fatal("cannot init parser");
 		return NULL;
 	}
 
-	return RecursiveDescent(prs, alias);
+	file *root = RecursiveDescent(prs, alias);
+
+	if (root->errors) {
+		xerror_fatal("tree is ill-formed");
+		SyntaxTreeFree(root);
+		return NULL;
+	}
+	
+	return root;
 }
 
 void SyntaxTreeFree(file *root)
 {
-	if (!root) {
-		return;
-	}
+	assert(root);
 
 	parser *prs = ParserContainerOf(root);
 
@@ -503,7 +509,6 @@ static import RecImport(parser *self)
 
 	import node = {
 		.alias = self->tok.lexeme,
-		.root = NULL
 	};
 
 	GetNextValidToken(self);

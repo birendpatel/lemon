@@ -57,6 +57,7 @@ common_flags = [
     "-std=gnu17",
     "-Wall",
     "-Wextra",
+    "-Werror",
     "-Wpedantic",
     "-Wconversion",
     "-Wcast-qual",

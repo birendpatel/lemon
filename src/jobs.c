@@ -7,77 +7,57 @@
 #include "jobs.h"
 #include "defs.h"
 #include "file.h"
+#include "xerror.h"
 #include "lib/map.h"
 
 //------------------------------------------------------------------------------
-// The job graph is represented by an adjacency list implemented as a hash table
-// of vertices associated with a filename key. Vertex marks are required for the
-// topological sorting algorithm.
-
-typedef enum mark {
-	UNMARKED,
-	TEMPORARY,
-	PERMANENT
-} mark;
+// The job graph is an adjacency list. It is implemented as a hash table of
+// verticies associated with a filename key. The vertex.on_call_stack member
+// is required for the topological sorting algorithm.
 
 typedef struct vertex {
-	file *root;
-	mark status;
+	file *root; 
+	bool on_call_stack; 
 } vertex;
 
 make_map(vertex, Vertex, static)
 
 typedef map(Vertex) graph;
 
-static vertex VertexInit(const cstring *);
-static void VertexFree(vertex);
-static graph *GraphInit(void);
-static void GraphFree(graph *, bool);
-static bool GraphInsert(graph *, const cstring *, vertex);
-static vertex GraphSearch(graph *, const cstring *);
-static bool GraphModify(graph *, const cstring *, vertex);
-static graph *CreateGraph(const cstring *, xerror *);
-static vertex ResolveDependency(graph *, const cstring *);
-static vertex CreateJob(graph *, const cstring *);
-static vector(File) SortGraph(graph *, const cstring *);
-static const cstring *Visit(graph *, vector(File) *, const cstring *);
-static void ReportCycle(const cstring *, const cstring *);
+#define ZERO_VERTEX (vertex) {.root = NULL, .on_call_stack = false}
 
 //------------------------------------------------------------------------------
 // vertex API
 
-//on failure Throw() either XXIO, XXPARSE, or an XXUSER exception. On success
-//returns an unmarked vertex with a valid root pointer.
+static vertex VertexInit(const cstring *, const mark);
+static void VertexFree(vertex);
+
+//returns the zero vertex on failure
 static vertex VertexInit(const cstring *filename)
 {
 	assert(filename);
 
-	cstring *source_code = FileLoad(filename);
+	RAII(cStringFree) cstring *code = FileLoad(filename);
 
-	if (!source_code) {
-		Throw(XXIO);
+	if (!code) {
+		return ZERO_VERTEX;
 	}
-
-	file *root = SyntaxTreeInit(source_code, filename);
+	
+	file *root = SyntaxTreeInit(code, filename);
 
 	if (!root) {
-		free(source_code);
-		Throw(XXPARSE);
+		return ZERO_VERTEX;
 	}
 
-	if (root->errors) {
-		free(source_code);
-		SyntaxTreeFree(root);
-		Throw(XXUSER);
-	}
-
-	return (vertex) {
+	vertex v = {
 		.root = root,
-		.status = UNMARKED
+		.on_call_stack = false
 	};
+
+	return v;
 }
 
-//okay if v.root == NULL
+//okay if v.root == NULL or v == ZERO_VERTEX
 static void VertexFree(vertex self)
 {
 	SyntaxTreeFree(self.root);
@@ -86,6 +66,13 @@ static void VertexFree(vertex self)
 //------------------------------------------------------------------------------
 // graph API
 
+static graph *GraphInit(void);
+static void GraphFree(graph **, bool);
+static bool GraphInsert(graph *, const cstring *, vertex);
+static vertex GraphSearch(graph *, const cstring *);
+static bool GraphModify(graph *, const cstring *, vertex);
+
+//returned pointer is dynamically allocated
 static graph *GraphInit(void)
 {
 	graph *g = AbortMalloc(sizeof(graph));
@@ -95,18 +82,21 @@ static graph *GraphInit(void)
 	return g;
 }
 
-//okay if g == NULL
-static void GraphFree(graph *self, bool free_vertices)
+//release the graph and *self; set *self to NULL on return
+static void GraphFree(graph **self, bool free_vertices)
 {
-	if (!self) {
-		return;
-	}
+	assert(self);
+	assert(*self);
 
 	if (free_vertices) {
-		VertexMapFree(self, VertexFree);
+		VertexMapFree(*self, VertexFree);
 	} else {
-		VertexMapFree(self, NULL);
+		VertexMapFree(*self, NULL);
 	}
+
+	free(*self);
+
+	*self = NULL;
 }
 
 //returns false if the vertex already exists
@@ -119,19 +109,26 @@ static bool GraphInsert(graph *self, const cstring *key, vertex v)
 	return VertexMapInsert(self, key, v);
 }
 
-//vertex.root == NULL if the vertex does not exist
+//returns a dummy zero vertex if the vertex does not exist
 static vertex GraphSearch(graph *self, const cstring *key)
 {
 	assert(self);
 	assert(key);
 
-	vertex v = {
-		.root = NULL
-	};
+	vertex v = ZERO_VERTEX;
 
 	(void) VertexMapGet(self, key, &v);
 
 	return v;
+}
+
+//returns true if the vertex associated with key exists in the graph
+static bool GraphContainsVertex(graph *self, const cstring *key)
+{
+	assert(self);
+	assert(key);
+
+	return VertexMapGet(self, key, NULL);
 }
 
 //returns false if the vertex does not exist
@@ -145,129 +142,88 @@ static bool GraphModify(graph *self, const cstring *key, vertex v)
 
 //------------------------------------------------------------------------------
 
-vector(File) JobsCreate(const cstring *filename, xerror *err)
+static bool ResolveDependency(graph *, vector(File) *, const cstring *);
+static vertex CreateJob(graph *, const cstring *);
+static bool JobExists(vertex);
+static bool IsCyclic(vertex);
+static void ReportCycle(const cstring *, const cstring *);
+
+vector(File) JobsCreate(const cstring *rootname)
 {
-	assert(filename);
-	assert(err);
+	assert(rootname);
 
-	graph *jobs = CreateGraph(filename, err);
+	CEXCEPTION_T e;
 
-	if (*err) {
-		return (vector(File)) {0};
+	graph *jobs = GraphInit();
+	vector(File) schedule = FileVectorInit(0, VECTOR_DEFAULT_CAPACITY);
+
+	Try {
+		bool cycle = ResolveDependency(jobs, &schedule, rootname);
+		assert(!cycle);
+	} Catch (e) {
+		xerror_fatal("cannot resolve dependencies");
+		GraphFree(&jobs, true);
+		FileVectorReset(&schedule, NULL);
+		return ZERO_VECTOR(vector(File));
 	}
 
-	vector(File) schedule = SortGraph(jobs, filename);
-
-	if (schedule.len == 0) {
-		*err = XEUSER;
-		GraphFree(jobs, true);
-		return (vector(File)) {0};
-	}
-
-	GraphFree(jobs, false);
+	GraphFree(&jobs, false);
 
 	return schedule;
 }
 
-//------------------------------------------------------------------------------
-
-//on failure sets err to one of XEFILE, XEPARSE, XEUSER, or XEUNDEFINED and
-//the returned pointer points to a deinitialized graph
-static graph *CreateGraph(const cstring *first_jobname, xerror *err)
-{
-	assert(first_jobname);
-	assert(err);
-
-	//the const qualifier guarantees thats the call to GraphFree within the
-	//catch block is well defined behavior. On -O2/3 optimisation, gcc may
-	//suspect a possible clobber on the jobs pointer if a longjmp occurs.
-	//
-	//An alternative is to use the volatile qualifier. But this requires
-	//changing signatures for downstream functions and slightly defeats the
-	//point of optimisation. Responsibility for GraphFree may also be
-	//delegated to the caller, but this exposes corrupt graph data. Better
-	//to limit the scope and destroy the data quickly.
-	graph *const jobs = GraphInit();
-
-	//volatile qualifier prevents -Wclobbered on -O2/3 optimisation due to
-	//the catch-block switch statement. 
-	volatile CEXCEPTION_T e;
-
-	Try {
-		(void) ResolveDependency(jobs, first_jobname);
-		*err = XESUCCESS;
-	} Catch (e) {
-		const cstring *msg = "cannot create graph; %s";
-
-		switch(e) {
-		case XXIO:
-			xerror_issue(msg, "IO issue");
-			*err = XEFILE;
-			break;
-
-		case XXPARSE:
-			xerror_issue(msg, "AST parsing failed");
-			*err = XEPARSE;
-			break;
-
-		case XXUSER:
-			*err = XEUSER;
-			break;
-
-		default:
-			xerror_fatal(msg, "unknown exception caught");
-			*err = XEUNDEFINED;
-			assert(0 != 0);
-			break;
-		}
-
-		GraphFree(jobs, true);
-	}
-
-	return jobs;
-}
-
-//As a side effect, this function populates the import.root reference for each
-//import node in a given AST. This reference is a backdoor that bypasses symbol
-//tables to avoid their public/private verification on variable references. For
-//debugging purposes it is occasionally useful to trace through one AST into
-//another via the backdoor.
+//The dependency graph has a well-defined start vertex (the main file) and the
+//sorting and resolution algorithms are both recursive depth-first traversals. 
+//These two facts together imply that the resolution and sort can be performed
+//simultaneously. This is because a dependency graph must be, at a minimum,
+//weakly connected. Therefore by initialising a DFS on the start vertex we can
+//guarantee that all verticies are visited at least once.
 //
-//If necessary, in the future this function might only enable the backdoor
-//on specific files, such as standard library code.
-static vertex ResolveDependency(graph *jobs, const cstring *jobname)
+//when a vertex is visted twice, if its first visit is currently being tracked
+//higher in the call stack then there must be a cycle. If it isn't in the
+//call stack it simply means that the vertex is the child of two independent
+//parent verticies.
+static bool ResolveDependency
+(
+	graph *jobs, 
+	vector(File) *schedule, 
+	const cstring *rootname
+)
 {
 	assert(jobs);
-	assert(jobname);
+	assert(schedule);
+	assert(rootname);
 
-	vertex job = GraphSearch(jobs, jobname);
-	const bool job_exists = job.root;
+	vertex job = GraphSearch(jobs, rootname);
 
-	if (job_exists) {
-		return job;
-	} else {
-		job = CreateJob(jobs, jobname);
+	if (JobIsValid(job)) {
+		return job.on_call_stack;
 	}
 
-	vector(Import) dependencies = job.root->imports;
-	const size_t total_dependencies = dependencies.len;
+	job = CreateJob(rootname);
 
-	size_t i = 0;
+	const vector(Import) imports = job.root->imports;
 
-	while (i < total_dependencies) {
-		import *node = &dependencies.buffer[i];
+	for (size_t i = 0; i < imports.len; i++) {
+		const cstring *jobname = imports.buffer[i].alias;
+		
+		const bool cycle = ResolveDependency(jobs, schedule, jobname);
 
-		vertex referenced_job = ResolveDependency(jobs, node->alias);
-
-		node->root = referenced_job.root;
-
-		i++;
+		if (cycle) {
+			ReportCycle(rootname, jobname);
+			Throw(XXGRAPH);
+		}
 	}
 
-	return job;
+	job.on_call_stack = false;
+	GraphModify(jobs, rootname, job);
+
+	FileVectorPush(schedule, job.root);
+	return false;
 }
 
-//assumes job does not already exist
+//insert a vertex which is known to not exist into the graph; throw an XXGRAPH
+//exception if the vertex cannot be created
 static vertex CreateJob(graph *jobs, const cstring *jobname)
 {
 	assert(jobs);
@@ -275,86 +231,22 @@ static vertex CreateJob(graph *jobs, const cstring *jobname)
 
 	vertex job = VertexInit(jobname);
 
-	const bool okay = GraphInsert(jobs, jobname, job);
+	if (!JobIsValid(job)) {
+		ThrowFatal(XXGRAPH, "cannot create job for %s", jobname);
+	}
 
-	assert(okay);
+	bool ok = GraphInsert(jobs, jobname, job);
+	assert(ok && "contract not upheld; vertex already exists");
 
 	return job;
 }
 
-//------------------------------------------------------------------------------
-// modified topological sort; A dependency graph is at least weakly connected
-// and has a well-defined start vertex. Therefore, initialising the visit using
-// the start vertex will guarantee that every vertex in the graph is visited
-// recursively at least once.
-
-//if a cycle is detected the sorting algorithm fails and vector.len is set to 0.
-//on success the vector contains references, not copies, to file nodes stored
-//in the graph. Deleting the resource in the graph creates a dangling pointer
-//in the vector and vise versa.
-static vector(File) SortGraph(graph *jobs, const cstring *jobname)
+//returns true if the input vertex is not equivalent to the zero vertex
+static bool JobIsValid(vertex job)
 {
-	assert(jobs);
-	assert(jobname);
+	const vertex dummy = ZERO_VERTEX;
 
-	CEXCEPTION_T e;
-
-	vector(File) schedule = FileVectorInit(0, jobs->len);
-
-	Try {
-		const cstring *check = Visit(jobs, &schedule, jobname);
-		assert(check == NULL);
-	} Catch (e) {
-		FileVectorReset(&schedule, NULL);
-	}
-
-	return schedule;
-}
-
-//returns a non-NULL pointer to a jobname when a cycle is detected and then
-//Throw()'s an XXUSER exception. On success returns NULL.
-static const cstring *
-Visit(graph *jobs, vector(File) *schedule, const cstring *jobname)
-{
-	assert(jobs);
-	assert(jobname);
-
-	vertex job = GraphSearch(jobs, jobname);
-
-	if (job.status == PERMANENT) {
-		return NULL;
-	}
-
-	if (job.status == TEMPORARY) {
-		return jobname;
-	}
-
-	job.status = TEMPORARY;
-	GraphModify(jobs, jobname, job);
-
-	vector(Import) dependencies = job.root->imports;
-	const size_t total_dependencies = dependencies.len;
-
-	size_t i = 0;
-
-	while (i < total_dependencies) {
-		const import node = dependencies.buffer[i];
-
-		const cstring *cycle = Visit(jobs, schedule, node.alias);
-
-		if (cycle) {
-			ReportCycle(jobname, cycle);
-			Throw(XXUSER);
-		}
-
-		i++;
-	}
-
-	job.status = PERMANENT;
-	GraphModify(jobs, jobname, job);
-
-	FileVectorPush(schedule, job.root);
-	return NULL;
+	return job.root != dummy.root || job.root != dummy.on_call_stack;
 }
 
 static void ReportCycle(const cstring *job_1, const cstring *job_2)

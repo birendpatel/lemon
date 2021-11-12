@@ -390,7 +390,8 @@ _Pragma("GCC diagnostic pop")	               				       \
 	return false;							       \
 }
 
-//input value pointer may be NULL
+//input value pointer may be NULL; if key does not exist then *value is not
+//modified on return.
 #define impl_map_get(T, pfix, cls)					       \
 cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 {									       \

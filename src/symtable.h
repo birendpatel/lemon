@@ -5,5 +5,6 @@
 typedef struct symbol symbol;
 typedef struct symtable symtable;
 
-//register predeclared types and functions with the global symbol table
-void SymTableConfigGlobal(void);
+//register the predeclared native types and functions in a thread-safe table
+void SymTableGlobalInit(void);
+void SymTableGlobalFree(void);
