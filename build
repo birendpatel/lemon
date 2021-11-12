@@ -64,7 +64,12 @@ common_flags = [
     "-Wnull-dereference",
     "-Wdouble-promotion",
     "-DCOLOURS",
-    "-Wno-unused-function" 
+    "-Wno-unused-function",
+    "-I./src/",
+    "-I./src/lib",
+    "-I./src/assets",
+    "-I./src/ir",
+    "-I./extern/cexception"
 ]
 
 debug_flags = [

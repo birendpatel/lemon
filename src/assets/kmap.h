@@ -7,7 +7,7 @@
 
 #pragma once
 
-#include "../scanner.h"
+#include "scanner.h"
 
 #include <stddef.h>
 

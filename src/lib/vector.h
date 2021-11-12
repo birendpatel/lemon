@@ -14,7 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../xerror.h"
+#include "xerror.h"
 
 #ifdef VECTOR_TRACE
 	#define VectorTrace(msg, ...) xerror_trace(msg, ##__VA_ARGS__)

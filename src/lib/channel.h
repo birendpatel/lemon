@@ -12,7 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "../xerror.h"
+#include "xerror.h"
 
 #ifndef CHANNEL_TRACE
 	#define ChannelTrace(msg, ...) xerror_trace(msg, ##__VA_ARGS__)
