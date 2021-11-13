@@ -38,13 +38,12 @@ install_path = "/usr/local/bin"
 
 files = [
     "./src/main.c",
-    "./src/xerror.c",
-    "./src/options.c",
-    "./src/file.c",
-    "./src/jobs.c",
     "./src/scanner.c",
     "./src/parser.c",
-    "./src/symtable.c",
+    "./src/resolver.c",
+    "./src/utils/xerror.c",
+    "./src/utils/options.c",
+    "./src/utils/file.c",
     "./src/assets/kmap.c",
     "./extern/cexception/CException.c"
 ]
@@ -68,7 +67,6 @@ common_flags = [
     "-I./src/",
     "-I./src/assets",
     "-I./src/lib",
-    "-I./src/ir",
     "-I./src/utils",
     "-I./extern/cexception"
 ]
