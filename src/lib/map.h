@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "str.h"
 #include "xerror.h"
 
 #ifdef MAP_TRACE
@@ -25,8 +26,6 @@
 #else
 	#error "map.h requires 128-bit integer support"
 #endif
-
-typedef char cstring;
 
 //-----------------------------------------------------------------------------
 
@@ -107,9 +106,9 @@ static uint64_t MapGetSlotIndex(const cstring *cstr, const uint64_t upper_bound)
 typedef struct pfix##_slot pfix##_slot;
 
 enum slot_status {
-	SLOT_OPEN = 0,
-	SLOT_CLOSED = 1,
-	SLOT_REMOVED = 2,
+	SLOT_OPEN = 0, //slot is available for a new entry
+	SLOT_CLOSED = 1, //slot is being used by an active entry
+	SLOT_REMOVED = 2, //slot is not active but also not available
 };
 
 //read-only
@@ -137,9 +136,9 @@ struct pfix##_map {						               \
 #define api_map(T, pfix, cls)					               \
 cls pfix##_map pfix##MapInit(const uint64_t capacity);			       \
 cls void pfix##MapFree(pfix##_map *, void (*)(T));		               \
-cls bool pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
+cls const T *pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
 cls void pfix##MapResize_private(pfix##_map *);			               \
-cls bool pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
+cls T *pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
 cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(T));          \
 cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);		       \
 cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value);
@@ -149,8 +148,7 @@ cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value);
 #define MAP_DEFAULT_CAPACITY ((size_t) 16)
 
 //use this when the hash table is going to contain a known or minimum number of
-//elements; helps reduce the chances of a thread from pausing hot spot code to
-//perform dynamic resizing.
+//elements and you need to eliminate or reduce dynamic resizing
 #define MAP_MINIMUM_CAPACITY(capacity) MapGrow(capacity)
 
 #define impl_map_init(T, pfix, cls)					       \
@@ -214,11 +212,20 @@ _Pragma("GCC diagnostic pop")					               \
 }
 
 //abort if map.len == UINT64_MAX
-//return false if key already exists; it must be removed before a new insertion
-//key is duplicated when stored in the hash table; the user is responsible for
-//managing memory for the input key argument on return. The value is copied.
+//
+//returns NULL if key already exists; it must be removed before a new insertion.
+//
+//key is duplicated onto heap when stored in the hash table; the map will clean
+//up this memory during dynamic resize or MapFree but the user is responsible
+//for managing the memory for the input key argument on return.
+//
+//the value is copied into the hash table and on success a pointer to the copy
+//is returned. Due to dynamic resizing, this pointer is only valid until the
+//next MapInsert call. If the MAP_MINIMUM_CAPACITY macro was used on MapInit and
+//the user can guarantee insertions will not exceed the minimum, then the return
+//pointer will always remain valid on subsequent insertions.
 #define impl_map_insert(T, pfix, cls)					       \
-cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
+cls const T *pfix##MapInsert(pfix##_map *self, const cstring *key, T value)    \
 {									       \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -293,7 +300,7 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 //if the key already exists in a closed slot then do nothing and return false.
 //private; see MapInsert docs; key is duplicated and value is copied.
 #define impl_map_linear_probe_private(T, pfix, cls)  			       \
-cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
+cls T *pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value)   \
 {									       \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -306,7 +313,7 @@ cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 	while (slot->status != SLOT_OPEN) {				       \
 		if (slot->status == SLOT_CLOSED && MapMatch(key, slot->key)) { \
 			MapTrace("'%s' already exists in closed slot", key);   \
-			return false;					       \
+			return NULL;					       \
 		}							       \
 									       \
 		i = (i + 1) % self->cap;				       \
@@ -323,7 +330,7 @@ cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 									       \
 	MapTrace("linear probe succeeded");			               \
 									       \
-	return true;							       \
+	return &slot->value;						       \
 }
 
 //if vfree is not null, it is called on the value associated with the key before
