@@ -249,6 +249,7 @@ static module ModuleInit(parser *self, const cstring *alias)
 		.imports = {0},
 		.declarations = {0},
 		.alias = copy,
+		.next = NULL, /* requires semantic analysis */
 		.flag = 0 /* unused by parser.c */
 	};
 

@@ -4,6 +4,8 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
+#include "parser.h"
+
 #include "jobs.h"
 #include "defs.h"
 #include "file.h"
