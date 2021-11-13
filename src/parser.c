@@ -4,10 +4,8 @@
 
 #include <assert.h>
 #include <limits.h>
-#include <stdbool.h>
 #include <stdarg.h>
 #include <stddef.h>
-#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -19,7 +17,6 @@
 #include "defs.h"
 #include "xerror.h"
 #include "channel.h"
-#include "vector.h"
 
 typedef struct parser parser;
 
