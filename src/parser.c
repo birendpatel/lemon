@@ -17,6 +17,7 @@
 #include "defs.h"
 #include "xerror.h"
 #include "channel.h"
+#include "vector.h"
 
 typedef struct parser parser;
 

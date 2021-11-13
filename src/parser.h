@@ -7,7 +7,6 @@
 
 #include "ast.h"
 #include "str.h"
-#include "vector.h"
 
 //------------------------------------------------------------------------------
 // Returns NULL if initialisation fails or the AST is ill-formed. On success all
