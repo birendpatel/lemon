@@ -23,13 +23,13 @@ typedef struct parser parser;
 //parser management
 static parser *ParserInit(const cstring *);
 static void ParserFree(parser *);
-static parser *ParserContainerOf(file *);
+static parser *ParserContainerOf(module *);
 static void ParserMark(parser *, void *);
 static void *ParserMalloc(parser *, const size_t);
-static file *RecursiveDescent(parser *, const cstring *);
+static module *RecursiveDescent(parser *, const cstring *);
 
 //node management
-static file FileInit(parser *, const cstring *);
+static module ModuleInit(parser *, const cstring *);
 static expr *ExprInit(parser *, const exprtag);
 static stmt *CopyStmtToHeap(parser *, const stmt);
 static decl *CopyDeclToHeap(parser *, const decl);
@@ -91,7 +91,7 @@ static expr *RecAccess(parser *, expr *);
 //-----------------------------------------------------------------------------
 // API implementation
 
-file *const SyntaxTreeInit(const cstring *src, const cstring *alias)
+module *const SyntaxTreeInit(const cstring *src, const cstring *alias)
 {
 	assert(src);
 	assert(alias);
@@ -103,7 +103,7 @@ file *const SyntaxTreeInit(const cstring *src, const cstring *alias)
 		return NULL;
 	}
 
-	file *root = RecursiveDescent(prs, alias);
+	module *root = RecursiveDescent(prs, alias);
 
 	if (root->errors) {
 		xerror_fatal("tree is ill-formed");
@@ -114,7 +114,7 @@ file *const SyntaxTreeInit(const cstring *src, const cstring *alias)
 	return root;
 }
 
-void SyntaxTreeFree(file *root)
+void SyntaxTreeFree(module *root)
 {
 	assert(root);
 
@@ -150,7 +150,7 @@ struct parser {
 	vector(Memory) garbage;
 	channel(Token) *chan;
 	token tok;
-	file root;
+	module root;
 };
 
 //returns NULL on failure; does not initialize the root member
@@ -197,7 +197,7 @@ static void ParserFree(parser *self)
 }
 
 //help; see linux kernel containerof macro
-static parser *ParserContainerOf(file *root)
+static parser *ParserContainerOf(module *root)
 {
 	assert(root);
 
@@ -234,7 +234,7 @@ do {								               \
 //------------------------------------------------------------------------------
 //node management
 
-static file FileInit(parser *self, const cstring *alias)
+static module ModuleInit(parser *self, const cstring *alias)
 {
 	assert(self);
 	assert(alias);
@@ -242,7 +242,7 @@ static file FileInit(parser *self, const cstring *alias)
 	cstring *copy = cStringDuplicate(alias);
 	ParserMark(self, copy);
 
-	file node =  {
+	module node =  {
 		.imports = {0},
 		.declarations = {0},
 		.alias = copy,
@@ -422,8 +422,8 @@ static void ReportInvalidToken(parser *self)
 	}
 }
 
-//if file-level then only declarations are sequence points
-static size_t Synchronize(parser *self, bool file_level)
+//if module-level then only declarations are sequence points
+static size_t Synchronize(parser *self, bool module_level)
 {
 	size_t tokens_skipped = 0;
 
@@ -445,7 +445,7 @@ _Pragma("GCC diagnostic ignored \"-Wpedantic\"")
 			fallthrough;
 
 		case _RETURN ... _SWITCH:
-			if (file_level) {
+			if (module_level) {
 				break;
 			}
 
@@ -473,13 +473,13 @@ found_sequence_point:
 //------------------------------------------------------------------------------
 //parsing algorithm
 
-static file *RecursiveDescent(parser *self, const cstring *alias)
+static module *RecursiveDescent(parser *self, const cstring *alias)
 {
 	assert(self);
 
 	CEXCEPTION_T exception;
 
-	self->root = FileInit(self, alias);
+	self->root = ModuleInit(self, alias);
 
 	GetNextValidToken(self);
 
@@ -945,11 +945,11 @@ static stmt RecStmt(parser *self)
 }
 
 //blocks essentially "restart" recursive descent and are even more expressive
-//than file nodes because they allow for statements. A new try block is used
+//than module nodes because they allow for statements. A new try block is used
 //here so that we can synchronise from errors with as little information loss
 //as possible. If we remove the try block and let a function higher in the call
 //stack catch the exception, that function might or might not synchronize at
-//the file level. This would drop the remaining statements within the block.
+//the module level. This would drop the remaining statements within the block.
 //Catching here means that we can present more errors to the user in a single
 //compliation attempt.
 static stmt RecBlock(parser *self)
@@ -992,7 +992,7 @@ static void ParseFiats(parser *self, vector(Fiat) *const fiats)
 		}
 
 		if (self->tok.type == _EOF) {
-			usererror("missing closing '}' at end of file");
+			usererror("missing closing '}' at end of module");
 			Throw(XXPARSE);
 		}
 	}
@@ -1623,7 +1623,7 @@ static expr *RecPrimary(parser *self)
 		check_move(self, _RIGHTPAREN, "missing ')' after grouping");
 		break;
 
-	//imports cannot exist other than at the start of a file. The default
+	//imports cannot exist other than at the start of a module. The default
 	//case message is too generic to make sense for most end-users in this
 	//situation.
 	case _IMPORT:

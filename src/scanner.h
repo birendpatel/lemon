@@ -55,7 +55,7 @@ typedef enum token_type {
 	_DIV,		// /
 	_MOD,		// %
 
-	//sequence point keywords; file level
+	//sequence point keywords; module level
 	_STRUCT,
 	_FUNC,
 	_METHOD,

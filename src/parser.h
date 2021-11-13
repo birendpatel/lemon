@@ -15,7 +15,7 @@
 #include "vector.h"
 
 //AST nodes
-typedef struct file file;
+typedef struct module module;
 typedef struct fiat fiat;
 typedef struct type type;
 typedef struct decl decl;
@@ -27,14 +27,14 @@ typedef struct import import;
 //Returns NULL if initialisation fails or the AST is ill-formed. On success all
 //node members are valid except symtable references.
 
-file *const SyntaxTreeInit(const cstring *src, const cstring *alias);
+module *const SyntaxTreeInit(const cstring *src, const cstring *alias);
 
 //------------------------------------------------------------------------------
 // The input AST must not be null. Only allocations made by SyntaxTreeInit are
 // cleaned up. Any node modifications or deletions made to the AST after the
 // SyntaxTreeInit call are not released by this function.
 
-void SyntaxTreeFree(file *ast);
+void SyntaxTreeFree(module *ast);
 
 //------------------------------------------------------------------------------
 //<member list>
@@ -353,7 +353,7 @@ struct import {
 
 make_vector(import, Import, static)
 
-struct file {
+struct module {
 	vector(Import) imports;
 	vector(Decl) declarations;
 	const cstring *alias;
