@@ -353,9 +353,17 @@ struct import {
 
 make_vector(import, Import, static)
 
+//------------------------------------------------------------------------------
+// the module.flag member is free to read/write for any purpose. As far as the
+// lemon compiler as a whole is concerned, the flag is convenient for various
+// bookkeeping algorithms. It avoids having to embed the module within another
+// struct and dealing with all the extra init/free/reference overhead. The
+// leaky encapsulation resulting from this generic use-everywhere flag is 100%
+// worth the tradeoff for simple easy-to-read downstream code.
+
 struct module {
 	vector(Import) imports;
 	vector(Decl) declarations;
 	const cstring *alias;
-	size_t errors;
+	bool flag;
 };

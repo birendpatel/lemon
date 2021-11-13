@@ -105,7 +105,7 @@ module *const SyntaxTreeInit(const cstring *src, const cstring *alias)
 
 	module *root = RecursiveDescent(prs, alias);
 
-	if (root->errors) {
+	if (prs->errors) {
 		xerror_fatal("tree is ill-formed");
 		SyntaxTreeFree(root);
 		return NULL;
@@ -151,6 +151,7 @@ struct parser {
 	channel(Token) *chan;
 	token tok;
 	module root;
+	size_t errors;
 };
 
 //returns NULL on failure; does not initialize the root member
@@ -166,6 +167,8 @@ static parser *ParserInit(const cstring *src)
 	prs->garbage = MemoryVectorInit(0, KiB(1));
 
 	prs->tok = INVALID_TOKEN;
+
+	prs->errors = 0;
 
 	xerror err = ScannerInit(src, prs->chan);
 
@@ -246,7 +249,7 @@ static module ModuleInit(parser *self, const cstring *alias)
 		.imports = {0},
 		.declarations = {0},
 		.alias = copy,
-		.errors = 0
+		.flag = 0 /* unused by parser.c */
 	};
 
 	const size_t import_capacity = 8;
@@ -305,7 +308,7 @@ static stmt *CopyStmtToHeap(parser *self, const stmt src)
 #define usererror(msg, ...) 					               \
 do {								               \
 	XerrorUser(self->root.alias, self->tok.line, msg, ##__VA_ARGS__);      \
-	self->root.errors++;					               \
+	self->errors++;					               \
 } while (0)
 
 //if the extracted index is not a simple nonnegative integer less than LLONG_MAX
