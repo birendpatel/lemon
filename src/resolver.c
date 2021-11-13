@@ -1,379 +1,138 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <assert.h>
-#include <stdbool.h>
-#include <stdlib.h> 
-#include "parser.h"
+#include <stddef.h>
 
-#include "jobs.h"
 #include "defs.h"
 #include "file.h"
+#include "resolver.h"
+#include "vector.h"
 #include "xerror.h"
-#include "lib/map.h"
 
-//------------------------------------------------------------------------------
-// The job graph is an adjacency list. It is implemented as a hash table of
-// verticies associated with a filename key. The vertex.on_call_stack member
-// is required for the topological sorting algorithm.
-
-typedef struct vertex {
-	file *root; 
-	bool on_call_stack; 
-} vertex;
-
-make_map(vertex, Vertex, static)
-
-typedef map(Vertex) graph;
-
-#define ZERO_VERTEX (vertex) {.root = NULL, .on_call_stack = false}
-
-//------------------------------------------------------------------------------
-// vertex API
-
-static vertex VertexInit(const cstring *, const mark);
-static void VertexFree(vertex);
-
-//returns the zero vertex on failure
-static vertex VertexInit(const cstring *filename)
+graph(Module) ResolverInit(const cstring *filename)
 {
 	assert(filename);
 
-	RAII(cStringFree) cstring *code = FileLoad(filename);
+	graph(Module) graph = ModuleGraphInit();
 
-	if (!code) {
-		return ZERO_VERTEX;
+	bool error = ResolveImports(&graph, filename);
+
+	if (error) {
+		ResolverFree(&graph);
+		return ModuleGraphGetZero();
 	}
-	
-	file *root = SyntaxTreeInit(code, filename);
-
-	if (!root) {
-		return ZERO_VERTEX;
-	}
-
-	vertex v = {
-		.root = root,
-		.on_call_stack = false
-	};
-
-	return v;
 }
 
-//okay if v.root == NULL or v == ZERO_VERTEX
-static void VertexFree(vertex self)
+void ResolverFree(graph(Module) *graph)
 {
-	SyntaxTreeFree(self.root);
+	assert(graph);
+
+	ModuleGraphFree(graph, SyntaxTreeFree);
 }
 
 //------------------------------------------------------------------------------
-// graph API
+// Recursive dependency resolution combined with simultaneous topological sort.
+// Considered separately, the sorting and resolution algorithms are depth-first
+// recursive traversals. The dependency graph, by the definition of an import,
+// has a well-defined start vertex (the ResolverInit input filename). These two
+// facts together imply the dependency graph must be at least weakly connected.
+// Therefore, if a DFS is initialised on the start vertex then it is guaranteed
+// that every vertex will be visited at least once. And so the sorting algorithm
+// can not only be simplified (no O(n) start loop) but also embedded into the
+// resolution algorithm.
+//
+// When a vertex is visited twice, if its first visit is currently being tracked
+// higher in the call stack then there must be a cycle. If it isn't in the call
+// stack then the vertex must be the child of two independent parent verticies.
 
-static graph *GraphInit(void);
-static void GraphFree(graph **, bool);
-static bool GraphInsert(graph *, const cstring *, vertex);
-static vertex GraphSearch(graph *, const cstring *);
-static bool GraphModify(graph *, const cstring *, vertex);
+enum {
+	ON_CALL_STACK = false,
+	OFF_CALL_STACK = true
+};
 
-//returned pointer is dynamically allocated
-static graph *GraphInit(void)
-{
-	graph *g = AbortMalloc(sizeof(graph));
-
-	*g = VertexMapInit(MAP_DEFAULT_CAPACITY);
-
-	return g;
-}
-
-//release the graph and *self; set *self to NULL on return
-static void GraphFree(graph **self, bool free_vertices)
-{
-	assert(self);
-	assert(*self);
-
-	if (free_vertices) {
-		VertexMapFree(*self, VertexFree);
-	} else {
-		VertexMapFree(*self, NULL);
-	}
-
-	free(*self);
-
-	*self = NULL;
-}
-
-//returns false if the vertex already exists
-static bool GraphInsert(graph *self, const cstring *key, vertex v)
+static bool ResolveImports(graph(Module) *self, const cstring *filename)
 {
 	assert(self);
-	assert(key);
-	assert(v.root);
-
-	return VertexMapInsert(self, key, v);
-}
-
-//returns a dummy zero vertex if the vertex does not exist
-static vertex GraphSearch(graph *self, const cstring *key)
-{
-	assert(self);
-	assert(key);
-
-	vertex v = ZERO_VERTEX;
-
-	(void) VertexMapGet(self, key, &v);
-
-	return v;
-}
-
-//returns true if the vertex associated with key exists in the graph
-static bool GraphContainsVertex(graph *self, const cstring *key)
-{
-	assert(self);
-	assert(key);
-
-	return VertexMapGet(self, key, NULL);
-}
-
-//returns false if the vertex does not exist
-static bool GraphModify(graph *self, const cstring *key, vertex v)
-{
-	assert(self);
-	assert(key);
-
-	return VertexMapSet(self, key, v);
-}
-
-//------------------------------------------------------------------------------
-
-static bool ResolveDependency(graph *, vector(File) *, const cstring *);
-static vertex CreateJob(graph *, const cstring *);
-static bool JobExists(vertex);
-static bool IsCyclic(vertex);
-static void ReportCycle(const cstring *, const cstring *);
-
-vector(File) JobsCreate(const cstring *rootname)
-{
-	assert(rootname);
+	assert(filename);
 
 	CEXCEPTION_T e;
 
-	graph *jobs = GraphInit();
-	vector(File) schedule = FileVectorInit(0, VECTOR_DEFAULT_CAPACITY);
-
 	Try {
-		bool cycle = ResolveDependency(jobs, &schedule, rootname);
-		assert(!cycle);
+		module *root = NewModule(filename);
+		(void) Insert(self, root, filename);
 	} Catch (e) {
 		xerror_fatal("cannot resolve dependencies");
-		GraphFree(&jobs, true);
-		FileVectorReset(&schedule, NULL);
-		return ZERO_VECTOR(vector(File));
+		return false;
 	}
 
-	GraphFree(&jobs, false);
-
-	return schedule;
+	return true;
 }
 
-//The dependency graph has a well-defined start vertex (the main file) and the
-//sorting and resolution algorithms are both recursive depth-first traversals. 
-//These two facts together imply that the resolution and sort can be performed
-//simultaneously. This is because a dependency graph must be, at a minimum,
-//weakly connected. Therefore by initialising a DFS on the start vertex we can
-//guarantee that all verticies are visited at least once.
-//
-//when a vertex is visted twice, if its first visit is currently being tracked
-//higher in the call stack then there must be a cycle. If it isn't in the
-//call stack it simply means that the vertex is the child of two independent
-//parent verticies.
-static bool ResolveDependency
-(
-	graph *jobs, 
-	vector(File) *schedule, 
-	const cstring *rootname
-)
+static bool Insert(graph(Module) *self, module *parent, const cstring *filename)
 {
-	assert(jobs);
-	assert(schedule);
-	assert(rootname);
+	assert(self);
+	assert(parent);
+	assert(filename);
 
-	vertex job = GraphSearch(jobs, rootname);
+	module *ast = NULL;
 
-	if (JobIsValid(job)) {
-		return job.on_call_stack;
+	//base case
+	if (GraphSearch(self, filename, &ast)) {
+		return ast->flag;
 	}
 
-	job = CreateJob(rootname);
+	ast = NewModule(filename);
+	(void) GraphInsert(self, filename, ast);
 
-	const vector(Import) imports = job.root->imports;
+	const vector(Import) imports = ast->imports;
 
+	//depth-first traversal
 	for (size_t i = 0; i < imports.len; i++) {
-		const cstring *jobname = imports.buffer[i].alias;
+		const cstring *childname = imports.buffer[i].alias;
 		
-		const bool cycle = ResolveDependency(jobs, schedule, jobname);
+		const bool status = Insert(self, ast, childname);
 
-		if (cycle) {
-			ReportCycle(rootname, jobname);
+		if (status == ON_CALL_STACK) {
+			ReportCycle(filename, childname);
 			Throw(XXGRAPH);
 		}
 	}
 
-	job.on_call_stack = false;
-	GraphModify(jobs, rootname, job);
-
-	FileVectorPush(schedule, job.root);
-	return false;
+	//thread the intrusive list (sort)
+	parent->next = ast;
+	ast->next = NULL;
+	
+	ast->flag = OFF_CALL_STACK;
+	return ast->flag;
 }
 
-//insert a vertex which is known to not exist into the graph; throw an XXGRAPH
-//exception if the vertex cannot be created
-static vertex CreateJob(graph *jobs, const cstring *jobname)
+//create a module with module.flag == ON_CALL_STACK. Throw XXGRAPH on failure.
+static module *NewModule(const cstring *filename)
 {
-	assert(jobs);
-	assert(jobname);
+	assert(filename);
 
-	vertex job = VertexInit(jobname);
+	module *ast = SyntaxTreeInit(filename);
 
-	if (!JobIsValid(job)) {
-		ThrowFatal(XXGRAPH, "cannot create job for %s", jobname);
+	if (!ast) {
+		ThrowFatal(XXGRAPH, "cannot create ast; %s", filename);
 	}
 
-	bool ok = GraphInsert(jobs, jobname, job);
-	assert(ok && "contract not upheld; vertex already exists");
+	ast->flag = ON_CALL_STACK;
 
-	return job;
+	return ast;
 }
 
-//returns true if the input vertex is not equivalent to the zero vertex
-static bool JobIsValid(vertex job)
-{
-	const vertex dummy = ZERO_VERTEX;
-
-	return job.root != dummy.root || job.root != dummy.on_call_stack;
-}
-
-static void ReportCycle(const cstring *job_1, const cstring *job_2)
+//inform user of the circular dependency
+//note; the dependency might not actually exist. the user might have just
+//imported the name without using it. But at this stage symbol resolution has
+//not occured so usage statistics are not available.
+static void ReportCycle(const cstring *name1, const cstring *name2)
 {
 	const cstring *msg = "%s, %s: circular dependency detected";
 
-	RAII(cStringFree) cstring *file_1 = FileGetDiskName(job_1);
-	RAII(cStringFree) cstring *file_2 = FileGetDiskName(job_2);
+	RAII(cStringFree) cstring *fname1 = FileGetDiskName(name1);
+	RAII(cStringFree) cstring *fname2 = FileGetDiskName(name2);
 
-	XerrorUser(NULL, 0, msg, file_1, file_2);
+	XerrorUser(NULL, 0, msg, fname1, fname2);
 }
-
-//------------------------------------------------------------------------------
-// global symbol table; always the first element of the spaghetti stack 
-
-static symtable root = {
-	.tag = TABLE_GLOBAL,
-	.parent = NULL,
-	.entries = {
-		.len = 0,
-		.cap = 0,
-		.buffer = NULL
-	},
-	.global = {
-		.configured = false,
-		.mutex = PTHREAD_MUTEX_INITIALIZER
-	}
-};
-
-#define NATIVE_TYPE(keyname, size) 				               \
-{								               \
-	.key = keyname,							       \
-	.value = {							       \
-		.tag = SYMBOL_NATIVE,					       \
-		.native = {						       \
-			.bytes = size					       \
-		}							       \
-	}								       \
-}
-
-#define NATIVE_FUNC(keyname) 				               	       \
-{								               \
-	.key = keyname,							       \
-	.value = {							       \
-		.tag = SYMBOL_FUNCTION,					       \
-		.function = {						       \
-			.table = NULL,					       \
-			.node = NULL,					       \
-			.referenced = false				       \
-		}							       \
-	}								       \
-}
-
-void SymTableGlobalInit(void)
-{
-	typedef struct pair {
-		const cstring *key;
-		const symbol value;
-	} pair;
-
-	static const pair table[] = {
-		NATIVE_TYPE("bool", 1),
-		NATIVE_TYPE("byte", 1),
-		NATIVE_TYPE("addr", 8),
-		NATIVE_TYPE("int8", 1),
-		NATIVE_TYPE("int16", 2),
-		NATIVE_TYPE("int32", 4),
-		NATIVE_TYPE("int64", 8),
-		NATIVE_TYPE("uint8", 1),
-		NATIVE_TYPE("uint16", 2),
-		NATIVE_TYPE("uint32", 4),
-		NATIVE_TYPE("uint64", 8),
-		NATIVE_TYPE("float32", 4),
-		NATIVE_TYPE("float64", 8),
-		NATIVE_TYPE("complex64", 8),
-		NATIVE_TYPE("complex128", 16),
-		NATIVE_TYPE("string", 8),
-		NATIVE_FUNC("assert"),
-		NATIVE_FUNC("print"),
-		NATIVE_FUNC("sizeof"),
-		NATIVE_FUNC("typeof"),
-	};
-
-	const size_t total_entries = sizeof(table) / sizeof(table[0]);
-	const uint64_t map_capacity = MAP_MINIMUM_CAPACITY(total_entries);
-
-	pthread_mutex_lock(&root.global.mutex);
-
-	assert(root.global.configured == false);
-
-	root.entries = SymbolMapInit(map_capacity);
-
-	for (size_t i = 0; i < total_entries; i++) {
-		const pair *p = table + i;
-
-		bool ok = SymbolMapInsert(&root.entries, p->key, p->value);
-		assert(ok && "duplicate entry in global symbol table");
-
-	}
-
-	root.global.configured = true;
-	pthread_mutex_unlock(&root.global.mutex);
-}
-
-#undef NATIVE_TYPE
-#undef NATIVE_FUNC
-
-void SymTableGlobalFree(void)
-{
-	pthread_mutex_lock(&root.global.mutex);
-
-	assert(root.global.configured == true);
-
-	SymbolMapFree(&root.entries, NULL);
-
-	root.entries = (map(Symbol)) {
-		.len = 0,
-		.cap = 0,
-		.buffer = NULL
-	};
-
-	root.global.configured = false;
-
-	pthread_mutex_unlock(&root.global.mutex);
-}
-
-//------------------------------------------------------------------------------
-
 

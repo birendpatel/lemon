@@ -5,6 +5,9 @@
 // grammar located at ../langspec.txt. The grammar metasyntax operations '+' and
 // '*' are implemented via vectors. The '|' operator is implemented via tagged
 // anonymous unions.
+//
+// Most of the AST may be created via SyntaxTreeInit in parser.c but several
+// node members must be delayed until semantic analysis in resolver.c
 
 #include <stdbool.h>
 #include <stdint.h>
@@ -349,5 +352,6 @@ struct module {
 	vector(Decl) declarations;
 	const cstring *alias;
 	struct module *next;
+	symtable *table;
 	bool flag;
 };

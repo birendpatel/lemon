@@ -6,6 +6,9 @@
 
 #pragma once
 
+#include <stdbool.h>
+#include <string.h>
+
 #include "map.h"
 #include "xerror.h"
 
@@ -25,7 +28,28 @@ cls pfix##_graph pfix##GraphInit(void);					       \
 cls void pfix##GraphFree(pfix##_graph *, void (*)(T));		               \
 cls bool pfix##GraphInsert(pfix##_graph *, const cstring *, T);                \
 cls bool pfix##GraphSearch(pfix##_graph *, const cstring *, T *);              \
-cls bool pfix##GraphModify(pfix##_graph *, const cstring *, T );
+cls bool pfix##GraphModify(pfix##_graph *, const cstring *, T );	       \
+cls pfix##_graph pfix##GraphGetZero(void);				       \
+cls bool pfix##GraphIsZero(void);
+
+#define impl_graph_get_zero(T, pfix, cls)				       \
+cls pfix##_graph pfix##GraphGetZero(void)				       \
+{									       \
+	return (pfix##_graph) {						       \
+		.len = 0,						       \
+		.cap = 0,						       \
+		.buffer = NULL						       \
+	};								       \
+}
+
+#define impl_graph_is_zero(T, pfix, cls)				       \
+cls bool pfix##GraphIsZero(pfix##_graph *self)				       \
+{									       \
+	pfix##_graph dummy = pfix##GraphGetDummy();			       \
+									       \
+	/*safe, underlying map is calloc'd and members are shallow */	       \
+	return !memcmp(self, &dummy, sizeof(pfix##_graph));		       \
+}
 
 #define impl_graph_init(T, pfix, cls)					       \
 cls pfix##_graph pfix##GraphInit(void)                                         \
@@ -86,6 +110,8 @@ cls bool pfix##GraphModify(pfix##_graph *self, const cstring *key, T vertex)   \
 	impl_graph_free(T, pfix, cls)					       \
 	impl_graph_insert(T, pfix, cls)				               \
 	impl_graph_search(T, pfix, cls)	 			               \
-	impl_graph_modify(T, pfix, cls)
+	impl_graph_modify(T, pfix, cls)				               \
+	impl_graph_get_zero(T, pfix, cls)				       \
+	impl_graph_is_zero(T, pfix, cls)
 
 #define graph(pfix) pfix##_graph

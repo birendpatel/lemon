@@ -5,11 +5,13 @@
 #include <assert.h>
 #include <limits.h>
 #include <stdarg.h>
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 
+#include "file.h"
 #include "parser.h"
 #include "scanner.h"
 #include "token.h"
@@ -92,10 +94,15 @@ static expr *RecAccess(parser *, expr *);
 //-----------------------------------------------------------------------------
 // API implementation
 
-module *const SyntaxTreeInit(const cstring *src, const cstring *alias)
+module *const SyntaxTreeInit(const cstring *filename)
 {
-	assert(src);
-	assert(alias);
+	assert(filename);
+
+	RAII(cStringFree) cstring *src = FileLoad(filename);
+
+	if (!src) {
+		return NULL;
+	}
 
 	parser *prs = ParserInit(src);
 
@@ -104,7 +111,7 @@ module *const SyntaxTreeInit(const cstring *src, const cstring *alias)
 		return NULL;
 	}
 
-	module *root = RecursiveDescent(prs, alias);
+	module *root = RecursiveDescent(prs, filename);
 
 	if (prs->errors) {
 		xerror_fatal("tree is ill-formed");
@@ -251,7 +258,8 @@ static module ModuleInit(parser *self, const cstring *alias)
 		.declarations = {0},
 		.alias = copy,
 		.next = NULL, /* requires semantic analysis */
-		.flag = 0 /* unused by parser.c */
+		.table = NULL, /* required semantic analysis */
+		.flag = false /* unused by parser.c */
 	};
 
 	const size_t import_capacity = 8;
