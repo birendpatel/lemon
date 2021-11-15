@@ -1,5 +1,4 @@
-// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-//
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.  //
 // This file orchestrates the major compiler phases and performs all cleanup,
 // initialisation, and error handling required before, after, and between each
 // phase.

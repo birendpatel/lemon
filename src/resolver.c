@@ -29,9 +29,9 @@ network *ResolverInit(const cstring *filename)
 	net->head = NULL;
 	net->global = NULL;
 
-	bool error = ResolveImports(net, filename);
+	bool ok = ResolveImports(net, filename);
 
-	if (error) {
+	if (!ok) {
 		return ResolverFree(net);
 	}
 
@@ -58,6 +58,7 @@ void *ResolverFree(network *net)
 // simultaneously. This halves the algorithmic complexity constant by avoiding
 // two separate but identical DFS traversals.
 
+//returns false if failed
 static bool ResolveImports(network *net, const cstring *filename)
 {
 	assert(net);
