@@ -6,6 +6,7 @@
 
 #include <assert.h>
 #include <stdlib.h>
+#include <stdio.h>
 
 #include "defs.h"
 #include "options.h"
@@ -26,34 +27,21 @@ int main(int argc, char **argv)
 {
 	OptionsParse(&argc, &argv);
 
-	graph(Module) te
+	const cstring *filename = GetRootFileName(argv);
 
-	SymTableGlobalInit();
+	network *net = ResolverInit(filename);
 
-	vector(File) schedule = CreateSchedule(argv);
-
-	//temporary
-	for (size_t i = 0; i < schedule.len; i++) {
-		puts(schedule.buffer[i]->alias);
-	}
-
-	if (FileVectorIsDummy(&schedule)) {
-		xerror_fatal("compilation failed");
+	if (!net) {
+		xerror_fatal("cannot resolve %s", filename);
 		return EXIT_FAILURE;
-	} else {
-		XerrorFlush();
-		return EXIT_SUCCESS;
 	}
-}
 
-//returns the zero vector on failure
-vector(File) CreateSchedule(char **argv)
-{
-	assert(argv);
+	for (module *curr = net->head; curr != NULL; curr = curr->next) {
+		puts(curr->alias);
+	}
 
-	const cstring *fname = GetRootFileName(argv);
-
-	return JobsCreate(fname);
+	XerrorFlush();
+	return EXIT_SUCCESS:
 }
 
 //returns "main" if argv is empty
