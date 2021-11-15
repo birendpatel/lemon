@@ -14,7 +14,7 @@
 
 #include "xerror.h"
 
-#ifndef CHANNEL_TRACE
+#ifdef CHANNEL_TRACE
 	#define ChannelTrace(msg, ...) xerror_trace(msg, ##__VA_ARGS__)
 #else
 	#define ChannelTrace(msg, ...)
