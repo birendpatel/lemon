@@ -1,15 +1,17 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+//
+// This file orchestrates the major compiler phases and performs all cleanup,
+// initialisation, and error handling required before, after, and between each
+// phase.
+
 #include <assert.h>
-#include <stdbool.h>
 #include <stdlib.h>
 
 #include "defs.h"
 #include "options.h"
-#include "parser.h"
-#include "jobs.h"
-#include "symtable.h"
+#include "resolver.h"
+#include "str.h"
 #include "xerror.h"
-#include "lib/str.h"
 
 #if GCC_VERSION < 80300
 	#error "Lemon requires GCC 8.3.0 or greater."
@@ -23,6 +25,8 @@ const cstring *GetRootFileName(char **);
 int main(int argc, char **argv)
 {
 	OptionsParse(&argc, &argv);
+
+	graph(Module) te
 
 	SymTableGlobalInit();
 
