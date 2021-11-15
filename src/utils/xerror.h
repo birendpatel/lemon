@@ -19,7 +19,7 @@
 
 #include <stddef.h>
 
-#include "../extern/cexception/CException.h"
+#include "CException.h"
 
 //TODO cannot use str.h until it is independent of vector.h; both require xerror
 //but including str.h in this header creates a circular dependency.

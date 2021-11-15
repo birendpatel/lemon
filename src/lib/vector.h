@@ -97,25 +97,9 @@ cls void pfix##VectorFree(pfix##_vector *, void (*)(T));           	       \
 cls void pfix##VectorFreeReverse(pfix##_vector *self, void (*vfree) (T));      \
 cls void pfix##VectorPush(pfix##_vector *, T);   	                       \
 cls T pfix##VectorGet(const pfix##_vector *, const size_t);                    \
-cls T pfix##VectorSet(pfix##_vector *, const size_t , T);                      \
-cls void pfix##VectorReset(pfix##_vector *, void (*) (T));	               \
-cls bool pfix##VectorIsDummy(pfix##_vector *self);
+cls T pfix##VectorSet(pfix##_vector *, const size_t , T);
 
 #define VECTOR_DEFAULT_CAPACITY ((size_t) 8)
-
-//use this macro to return a dummy "error status" vector. The callee can check
-//for this status via impl_vector_zero. 
-#define ZERO_VECTOR(T) (T) {.len = 0, .cap = 0, .buffer = NULL}
-
-#define impl_vector_zero(T, pfix, cls)					       \
-cls bool pfix##VectorIsDummy(pfix##_vector *self)			       \
-{									       \
-	assert(self);							       \
-									       \
-	pfix##_vector dummy = ZERO_VECTOR(pfix##_vector);		       \
-									       \
-	return !memcmp(self, &dummy, sizeof(pfix##_vector));		       \
-}
 
 #define impl_vector_init(T, pfix, cls)				               \
 cls pfix##_vector pfix##VectorInit(const size_t len, const size_t cap)         \
@@ -296,7 +280,6 @@ cls void pfix##VectorReset(pfix##_vector *self, void (*vfree) (T))	       \
 	impl_vector_push(T, pfix, cls)					       \
 	impl_vector_get(T, pfix, cls)					       \
 	impl_vector_set(T, pfix, cls)					       \
-	impl_vector_reset(T, pfix, cls)					       \
-	impl_vector_zero(T, pfix, cls)
+	impl_vector_reset(T, pfix, cls)
 
 #define vector(pfix) pfix##_vector

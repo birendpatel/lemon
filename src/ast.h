@@ -9,9 +9,12 @@
 // Most of the AST may be created via SyntaxTreeInit in parser.c but several
 // node members must be delayed until semantic analysis in resolver.c
 
+#pragma once
+
 #include <stdbool.h>
 #include <stdint.h>
 
+#include "scanner.h"
 #include "str.h"
 #include "symtable.h"
 #include "vector.h"

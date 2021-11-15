@@ -14,7 +14,6 @@
 #include "file.h"
 #include "parser.h"
 #include "scanner.h"
-#include "token.h"
 #include "options.h"
 #include "defs.h"
 #include "xerror.h"
@@ -90,46 +89,6 @@ static expr *RecArrayLiteral(parser *);
 static expr *RecArrayLiteral(parser *);
 static expr *RecIdentifier(parser *);
 static expr *RecAccess(parser *, expr *);
-
-//-----------------------------------------------------------------------------
-// API implementation
-
-module *const SyntaxTreeInit(const cstring *filename)
-{
-	assert(filename);
-
-	RAII(cStringFree) cstring *src = FileLoad(filename);
-
-	if (!src) {
-		return NULL;
-	}
-
-	parser *prs = ParserInit(src);
-
-	if (!prs) {
-		xerror_fatal("cannot init parser");
-		return NULL;
-	}
-
-	module *root = RecursiveDescent(prs, filename);
-
-	if (prs->errors) {
-		xerror_fatal("tree is ill-formed");
-		SyntaxTreeFree(root);
-		return NULL;
-	}
-
-	return root;
-}
-
-void SyntaxTreeFree(module *root)
-{
-	assert(root);
-
-	parser *prs = ParserContainerOf(root);
-
-	ParserFree(prs);
-}
 
 //-----------------------------------------------------------------------------
 // parser management
@@ -241,6 +200,45 @@ do {								               \
 	ParserMark(self, recv.buffer);				               \
 } while(0)
 
+//-----------------------------------------------------------------------------
+// API implementation
+
+module *SyntaxTreeInit(const cstring *filename)
+{
+	assert(filename);
+
+	RAII(cStringFree) cstring *src = FileLoad(filename);
+
+	if (!src) {
+		return NULL;
+	}
+
+	parser *prs = ParserInit(src);
+
+	if (!prs) {
+		xerror_fatal("cannot init parser");
+		return NULL;
+	}
+
+	module *root = RecursiveDescent(prs, filename);
+
+	if (prs->errors) {
+		xerror_fatal("tree is ill-formed");
+		SyntaxTreeFree(root);
+		return NULL;
+	}
+
+	return root;
+}
+
+void SyntaxTreeFree(module *root)
+{
+	assert(root);
+
+	parser *prs = ParserContainerOf(root);
+
+	ParserFree(prs);
+}
 
 //------------------------------------------------------------------------------
 //node management

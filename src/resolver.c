@@ -5,10 +5,17 @@
 
 #include "defs.h"
 #include "file.h"
+#include "parser.h"
 #include "resolver.h"
 #include "vector.h"
 #include "xerror.h"
 
+static bool ResolveImports(network *, const cstring *);
+static bool Insert(network *, const cstring *);
+static module *InsertNewModule(network *, const cstring *);
+static void InsertChildren(network *, module *, const cstring *);
+static void Sort(network *, module *);
+static void ReportCycle(const cstring *, const cstring *);
 
 //------------------------------------------------------------------------------
 
@@ -85,7 +92,7 @@ static bool Insert(network *net, const cstring *filename)
 	module *vertex = NULL;
 
 	//base case
-	if (GraphSearch(net->dependencies, filename, &vertex)) {
+	if (ModuleGraphSearch(&net->dependencies, filename, &vertex)) {
 		return vertex->flag;
 	}
 
@@ -111,7 +118,7 @@ static module *InsertNewModule(network *net, const cstring *filename)
 
 	ast->flag = ON_CALL_STACK;
 
-	bool ok = GraphInsert(&net->dependencies, filename, ast);
+	bool ok = ModuleGraphInsert(&net->dependencies, filename, ast);
 	assert(ok && "parent inserted on base case");
 
 	return ast;

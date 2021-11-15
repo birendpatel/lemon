@@ -18,7 +18,6 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-vector(File) CreateSchedule(char **); 
 const cstring *GetRootFileName(char **);
 
 //------------------------------------------------------------------------------
@@ -41,7 +40,7 @@ int main(int argc, char **argv)
 	}
 
 	XerrorFlush();
-	return EXIT_SUCCESS:
+	return EXIT_SUCCESS;
 }
 
 //returns "main" if argv is empty

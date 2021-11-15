@@ -2,7 +2,12 @@
 //
 //Compiler phase 2: syntactic analysis: tokens -> parser -> abstract syntax tree
 
-module *const SyntaxTreeInit(const cstring *filename);
+#pragma once
+
+#include "ast.h"
+#include "str.h"
+
+module *SyntaxTreeInit(const cstring *filename);
 
 //------------------------------------------------------------------------------
 // The input AST must not be null. Only allocations made by SyntaxTreeInit are

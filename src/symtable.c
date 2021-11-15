@@ -1,5 +1,10 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
+#include <assert.h>
+
+#include "str.h"
+#include "symtable.h"
+
 //------------------------------------------------------------------------------
 // global symbol table; always the first element of the spaghetti stack 
 
@@ -35,7 +40,6 @@ static symtable root = {
 		.tag = SYMBOL_FUNCTION,					       \
 		.function = {						       \
 			.table = NULL,					       \
-			.node = NULL,					       \
 			.referenced = false				       \
 		}							       \
 	}								       \

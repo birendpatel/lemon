@@ -134,11 +134,11 @@ struct pfix##_map {						               \
 //------------------------------------------------------------------------------
 
 #define api_map(T, pfix, cls)					               \
-cls pfix##_map pfix##MapInit(const uint64_t capacity);			       \
+cls pfix##_map pfix##MapInit(const uint64_t);				       \
 cls void pfix##MapFree(pfix##_map *, void (*)(T));		               \
-cls const T *pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
+cls T * pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
 cls void pfix##MapResize_private(pfix##_map *);			               \
-cls T *pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
+cls T * pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
 cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(T));          \
 cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);		       \
 cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value);
@@ -225,7 +225,7 @@ _Pragma("GCC diagnostic pop")					               \
 //the user can guarantee insertions will not exceed the minimum, then the return
 //pointer will always remain valid on subsequent insertions.
 #define impl_map_insert(T, pfix, cls)					       \
-cls const T *pfix##MapInsert(pfix##_map *self, const cstring *key, T value)    \
+cls T * pfix##MapInsert(pfix##_map *self, const cstring *key, T value)          \
 {									       \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -300,7 +300,7 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 //if the key already exists in a closed slot then do nothing and return false.
 //private; see MapInsert docs; key is duplicated and value is copied.
 #define impl_map_linear_probe_private(T, pfix, cls)  			       \
-cls T *pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value)   \
+cls T * pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value)  \
 {									       \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -343,7 +343,8 @@ cls bool pfix##MapRemove						       \
 (									       \
 	pfix##_map *self,						       \
 	const cstring *key,						       \
-	void (*vfree)(T))						       \
+	void (*vfree)(T)						       \
+)							                       \
 {								               \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -492,6 +493,7 @@ cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value)	       \
 	MapTrace("exhaustive search; '%s' does not exist", key);	       \
 	return false;							       \
 }
+
 //------------------------------------------------------------------------------
 
 //make_map declares a map<T> type named pfix_map which may contain values of

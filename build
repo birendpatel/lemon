@@ -53,7 +53,16 @@ library_flags = [
     "-lpthread"
 ]
 
+include_flags = [
+    "-I./src/",
+    "-I./src/assets",
+    "-I./src/lib",
+    "-I./src/utils",
+    "-I./extern/cexception"
+]
+
 common_flags = [
+    *include_flags,
     "-std=gnu17",
     "-Wall",
     "-Wextra",
@@ -64,12 +73,7 @@ common_flags = [
     "-Wnull-dereference",
     "-Wdouble-promotion",
     "-DCOLOURS",
-    "-Wno-unused-function",
-    "-I./src/",
-    "-I./src/assets",
-    "-I./src/lib",
-    "-I./src/utils",
-    "-I./extern/cexception"
+    "-Wno-unused-function"
 ]
 
 debug_flags = [
@@ -154,9 +158,11 @@ def build(target: str) -> str:
 
 #create a makefile rule for the input C source file
 def create_object_rule(target: str, file: str) -> str:
-    command = "gcc -MM {}".format(file)
+    command = "gcc -MM {} {}".format(file, ' '.join(include_flags))
 
     result = run(command, check=True, shell=True, capture_output=True)
+
+    print(result.stdout.decode())
 
     directory = "./{}/".format(target)
     prerequisites = result.stdout.decode()

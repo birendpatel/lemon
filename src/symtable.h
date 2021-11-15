@@ -1,5 +1,13 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
+#pragma once
+
+#include <pthread.h>
+#include <stdbool.h>
+#include <stddef.h>
+
+#include "map.h"
+
 typedef struct symbol symbol;
 typedef struct symtable symtable;
 
@@ -44,7 +52,7 @@ struct symbol {
 		struct {
 			bool referenced;
 			bool parameter;
-		};
+		} variable;
 	};
 };
 
@@ -68,6 +76,7 @@ struct symtable {
 	union {
 		struct {
 			bool configured;
+			pthread_mutex_t mutex;
 		} global;
 	};
 };
