@@ -3,7 +3,7 @@
 #include <assert.h>
 #include <stdint.h>
 
-#incldue "defs.h"
+#include "defs.h"
 #include "str.h"
 #include "symtable.h"
 
@@ -67,7 +67,6 @@ symtable *SymTableInit(void)
 	};
 
 	const size_t total_entries = sizeof(table) / sizeof(table[0]);
-	const uint64_t capacity = MAP_MINIMUM_CAPACITY(total_entries);
 
 	symtable *global = SymTableSpawn(NULL, TABLE_GLOBAL, total_entries);
 
@@ -86,14 +85,14 @@ symtable *SymTableInit(void)
 void SymTableFree(symtable *global)
 {
 	assert(global);
-	assert(global->tag = TABLE_GLOBAL);
+	assert(global->tag == TABLE_GLOBAL);
 
 	//TODO
 }
 
 symtable *SymTableSpawn(symtable *parent, const tabletag tag, const size_t cap)
 {
-	assert(parent ^ tag == TABLE_GLOBAL);
+	assert((parent != NULL) ^ (tag == TABLE_GLOBAL)); //logical xor
 
 	symtable *child = AbortMalloc(sizeof(symtable));
 
@@ -101,7 +100,7 @@ symtable *SymTableSpawn(symtable *parent, const tabletag tag, const size_t cap)
 		.tag = tag,
 		.parent = parent,
 		.entries = SymbolMapInit(MAP_MINIMUM_CAPACITY(cap))
-	}
+	};
 
 	return child;
 }
