@@ -1,26 +1,13 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <assert.h>
+#include <stdint.h>
 
+#incldue "defs.h"
 #include "str.h"
 #include "symtable.h"
 
 //------------------------------------------------------------------------------
-// global symbol table; always the first element of the spaghetti stack 
-
-static symtable root = {
-	.tag = TABLE_GLOBAL,
-	.parent = NULL,
-	.entries = {
-		.len = 0,
-		.cap = 0,
-		.buffer = NULL
-	},
-	.global = {
-		.configured = false,
-		.mutex = PTHREAD_MUTEX_INITIALIZER
-	}
-};
 
 #define NATIVE_TYPE(keyname, size) 				               \
 {								               \
@@ -45,13 +32,17 @@ static symtable root = {
 	}								       \
 }
 
-void SymTableGlobalInit(void)
+symtable *SymTableInit(void)
 {
 	typedef struct pair {
 		const cstring *key;
 		const symbol value;
 	} pair;
 
+	//the global hash table can be mostly constructed at compile time if 
+	//we precalculate the FNV1a hashes and then memcpy to heap at runtime.
+	//That is 100% premature optimisation so for now we sit each key-value
+	//pair in the .data segment and pay the full runtime transfer penalty.
 	static const pair table[] = {
 		NATIVE_TYPE("bool", 1),
 		NATIVE_TYPE("byte", 1),
@@ -76,48 +67,74 @@ void SymTableGlobalInit(void)
 	};
 
 	const size_t total_entries = sizeof(table) / sizeof(table[0]);
-	const uint64_t map_capacity = MAP_MINIMUM_CAPACITY(total_entries);
+	const uint64_t capacity = MAP_MINIMUM_CAPACITY(total_entries);
 
-	pthread_mutex_lock(&root.global.mutex);
-
-	assert(root.global.configured == false);
-
-	root.entries = SymbolMapInit(map_capacity);
+	symtable *global = SymTableSpawn(NULL, TABLE_GLOBAL, total_entries);
 
 	for (size_t i = 0; i < total_entries; i++) {
 		const pair *p = table + i;
-
-		bool ok = SymbolMapInsert(&root.entries, p->key, p->value);
-		assert(ok && "duplicate entry in global symbol table");
-
+		symbol *entry = SymTableInsert(global, p->key, p->value);
+		assert(entry && "duplicate entry");
 	}
 
-	root.global.configured = true;
-	pthread_mutex_unlock(&root.global.mutex);
+	return global;
 }
 
 #undef NATIVE_TYPE
 #undef NATIVE_FUNC
 
-void SymTableGlobalFree(void)
+void SymTableFree(symtable *global)
 {
-	pthread_mutex_lock(&root.global.mutex);
+	assert(global);
+	assert(global->tag = TABLE_GLOBAL);
 
-	assert(root.global.configured == true);
-
-	SymbolMapFree(&root.entries, NULL);
-
-	root.entries = (map(Symbol)) {
-		.len = 0,
-		.cap = 0,
-		.buffer = NULL
-	};
-
-	root.global.configured = false;
-
-	pthread_mutex_unlock(&root.global.mutex);
+	//TODO
 }
 
-//------------------------------------------------------------------------------
+symtable *SymTableSpawn(symtable *parent, const tabletag tag, const size_t cap)
+{
+	assert(parent ^ tag == TABLE_GLOBAL);
 
+	symtable *child = AbortMalloc(sizeof(symtable));
 
+	*child = (symtable) {
+		.tag = tag,
+		.parent = parent,
+		.entries = SymbolMapInit(MAP_MINIMUM_CAPACITY(cap))
+	}
+
+	return child;
+}
+
+symbol *SymTableInsert(symtable *table, const cstring *key, symbol value)
+{
+	assert(table);
+	assert(key);
+	
+	return SymbolMapInsert(&table->entries, key, value);
+}
+
+symbol *SymTableLookup(symtable *table, const cstring *key, symtable **target)
+{
+	assert(table);
+	assert(key);
+
+	symbol *entry = NULL;
+
+	//base case
+	if (SymbolMapGetRef(&table->entries, key, &entry)) {
+		if (target) {
+			*target = table;
+		}
+
+		return entry;
+	}
+
+        //recursive case
+	if (table->parent) {
+		return SymTableLookup(table->parent, key, target);
+	}
+
+	//else table is global and therefore the symbol cannot exist
+	return NULL;
+}

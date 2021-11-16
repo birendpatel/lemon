@@ -45,7 +45,7 @@ static uint64_t MapGrow(uint64_t curr_capacity)
 {
 	const uint64_t overflow_threshold = UINT64_MAX / 2;
 	const uint64_t growth_rate = 2;
-	
+
 	if (curr_capacity == 0) {
 		return 1;
 	}
@@ -141,6 +141,7 @@ cls void pfix##MapResize_private(pfix##_map *);			               \
 cls T * pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
 cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(T));          \
 cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);		       \
+cls bool pfix##MapGetRef(pfix##_map *self, const cstring *key, T **value);     \
 cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value);
 
 //------------------------------------------------------------------------------
@@ -448,6 +449,58 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 	return false;							       \
 }
 
+//identical to impl_map_get except it copies a pointer to the hash table slot
+//rather than copying the value at the slot. Not particularly useful when the
+//underlying T is itself a pointer; but very useful when the underyling T is
+//a struct and you want to perform a get + set operation without incurring the
+//cost of a second call to impl_map_set.
+#define impl_map_get_ref(T, pfix, cls)					       \
+cls bool pfix##MapGetRef(pfix##_map *self, const cstring *key, T **value)      \
+{									       \
+	assert(self);							       \
+	assert(self->buffer);						       \
+	assert(key);							       \
+									       \
+	uint64_t i = MapGetSlotIndex(key, self->cap);			       \
+	const uint64_t start = i;					       \
+	pfix##_slot *slot = self->buffer + i;				       \
+									       \
+	MapTrace("searching for '%s' slot", key);			       \
+									       \
+	do {								       \
+		switch (slot->status) {					       \
+		case SLOT_OPEN:						       \
+			MapTrace("found open slot; '%s' cannot exist", key);   \
+			return false;					       \
+									       \
+		case SLOT_CLOSED:					       \
+			if (MapMatch(slot->key, key)) {			       \
+				MapTrace("found '%s'", key);		       \
+									       \
+				if (value) {				       \
+					*value = &slot->value;		       \
+				}					       \
+									       \
+				return true;				       \
+			}						       \
+									       \
+			break;						       \
+								               \
+		case SLOT_REMOVED:					       \
+			break;						       \
+									       \
+		default:						       \
+			assert(0 != 0 && "bad status flag");		       \
+		}							       \
+									       \
+		i = (i + 1) % self->cap;				       \
+		slot = self->buffer + i;				       \
+	} while (i != start);						       \
+									       \
+	/* reach here when key doesn't exist and map.len == map.cap */	       \
+	MapTrace("exhaustive search; '%s' does not exist", key);	       \
+	return false;							       \
+}
 //set an existing map value associated with the input key to a new value. If
 //the key doesn't exist, return false.
 #define impl_map_set(T, pfix, cls)					       \
@@ -513,6 +566,7 @@ cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value)	       \
 	impl_map_linear_probe_private(T, pfix, cls)			       \
 	impl_map_remove(T, pfix, cls)				               \
 	impl_map_get(T, pfix, cls)					       \
+	impl_map_get_ref(T, pfix, cls)				               \
 	impl_map_set(T, pfix, cls)
 
 #define map(pfix) pfix##_map
