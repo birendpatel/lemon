@@ -6,10 +6,20 @@
 #pragma once
 
 #include <assert.h>
+#include <inttypes.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
+
+#include "str.h"
+#include "xerror.h"
+
+#ifdef MAP_TRACE
+	#define MapTrace(msg, ...) xerror_trace(msg, ##__VA_ARGS__)
+#else
+	#define MapTrace(msg, ...)
+#endif
 
 #ifdef __SIZEOF_INT128__
 	#define uint128_t __uint128_t
@@ -17,28 +27,7 @@
 	#error "map.h requires 128-bit integer support"
 #endif
 
-typedef char cstring;
-
 //-----------------------------------------------------------------------------
-
-//thread IDs may collide; the pthread_t transformation is not injective
-#ifdef MAP_TRACE_STDERR
-	#include <pthread.h>
-	#include <stdio.h>
-
-	static void MapTrace(const cstring *msg)
-	{
-		const void *thread_id = ((void *) pthread_self());
-		const cstring *fmt = "map: thread %p: %s\n";
-
-		(void) fprintf(stderr, fmt, thread_id, msg);
-	}
-#else
-	static void MapTrace(__attribute__((unused)) const cstring *msg)
-	{
-		return;
-	}
-#endif
 
 __attribute__((malloc)) static void *MapCalloc(const size_t bytes)
 {
@@ -117,9 +106,9 @@ static uint64_t MapGetSlotIndex(const cstring *cstr, const uint64_t upper_bound)
 typedef struct pfix##_slot pfix##_slot;
 
 enum slot_status {
-	SLOT_OPEN = 0,
-	SLOT_CLOSED = 1,
-	SLOT_REMOVED = 2,
+	SLOT_OPEN = 0, //slot is available for a new entry
+	SLOT_CLOSED = 1, //slot is being used by an active entry
+	SLOT_REMOVED = 2, //slot is not active but also not available
 };
 
 //read-only
@@ -145,18 +134,23 @@ struct pfix##_map {						               \
 //------------------------------------------------------------------------------
 
 #define api_map(T, pfix, cls)					               \
-cls pfix##_map pfix##MapInit(const uint64_t capacity);			       \
+cls pfix##_map pfix##MapInit(const uint64_t);				       \
 cls void pfix##MapFree(pfix##_map *, void (*)(T));		               \
-cls bool pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
+cls T * pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
 cls void pfix##MapResize_private(pfix##_map *);			               \
-cls bool pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
+cls T * pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
 cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(T));          \
 cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);		       \
+cls bool pfix##MapGetRef(pfix##_map *self, const cstring *key, T **value);     \
 cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value);
 
 //------------------------------------------------------------------------------
 
-#define MAP_DEFAULT_CAPACITY ((size_t) 8)
+#define MAP_DEFAULT_CAPACITY ((size_t) 16)
+
+//use this when the hash table is going to contain a known or minimum number of
+//elements and you need to eliminate or reduce dynamic resizing
+#define MAP_MINIMUM_CAPACITY(capacity) MapGrow(capacity)
 
 #define impl_map_init(T, pfix, cls)					       \
 cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
@@ -175,7 +169,7 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 		assert(new.buffer[i].status == SLOT_OPEN);		       \
 	}								       \
 									       \
-	MapTrace("map initialized");					       \
+	MapTrace("new map initialized with %" PRIu64 " slots", capacity);      \
 									       \
 	return new;							       \
 }
@@ -185,12 +179,12 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 cls void pfix##MapFree(pfix##_map *self, void (*vfree)(T))	               \
 {									       \
 	if (!self) {							       \
-		MapTrace("null input; nothing to free");		       \
+		MapTrace("null input; no-op");				       \
 		return;							       \
 	}								       \
 									       \
 	if (!self->buffer) {						       \
-		MapTrace("map buffer is null; nothing to free");	       \
+		MapTrace("null buffer; no-op");		         	       \
 		return;							       \
 	}								       \
 								               \
@@ -219,11 +213,20 @@ _Pragma("GCC diagnostic pop")					               \
 }
 
 //abort if map.len == UINT64_MAX
-//return false if key already exists; it must be removed before a new insertion
-//key is duplicated when stored in the hash table; the user is responsible for
-//managing memory for the input key argument on return. The value is copied.
+//
+//returns NULL if key already exists; it must be removed before a new insertion.
+//
+//key is duplicated onto heap when stored in the hash table; the map will clean
+//up this memory during dynamic resize or MapFree but the user is responsible
+//for managing the memory for the input key argument on return.
+//
+//the value is copied into the hash table and on success a pointer to the copy
+//is returned. Due to dynamic resizing, this pointer is only valid until the
+//next MapInsert call. If the MAP_MINIMUM_CAPACITY macro was used on MapInit and
+//the user can guarantee insertions will not exceed the minimum, then the return
+//pointer will always remain valid on subsequent insertions.
 #define impl_map_insert(T, pfix, cls)					       \
-cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
+cls T * pfix##MapInsert(pfix##_map *self, const cstring *key, T value)          \
 {									       \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -233,16 +236,18 @@ cls bool pfix##MapInsert(pfix##_map *self, const cstring *key, T value)	       \
 		MapTrace("fail; map is full");				       \
 		abort();						       \
 	}								       \
+								               \
+	MapTrace("inserting '%s'", key);				       \
 									       \
 	const double load_factor_threshold = 0.5;			       \
 	const double load_factor = (double) self->len / (double) self->cap;    \
 									       \
 	if (load_factor > load_factor_threshold) {			       \
-		MapTrace("load factor exceeds threshold");		       \
+		MapTrace("load factor %g exceeds threshold", load_factor);     \
+		MapTrace("suspending insert of '%s'", key);		       \
 		pfix##MapResize_private(self);				       \
+		MapTrace("resume insert of '%s'", key);			       \
 	}								       \
-								               \
-	MapTrace("inserting key value pair");			               \
 									       \
 	return pfix##MapProbe_private(self, key, value);		       \
 }
@@ -255,14 +260,12 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 	assert(self->buffer);						       \
 									       \
 	if (self->cap == UINT64_MAX) {					       \
-		MapTrace("fail; cannot resize map; maximum capacity reached"); \
+		MapTrace("cannot resize map; maximum capacity reached");       \
 		return;							       \
 	}								       \
 									       \
 	const uint64_t new_capacity = MapGrow(self->cap);		       \
 	pfix##_map new_map = pfix##MapInit(new_capacity);		       \
-									       \
-	MapTrace("resized map");					       \
 									       \
 	for (uint64_t i = 0; i < self->cap; i++) {			       \
 		const pfix##_slot slot = self->buffer[i];		       \
@@ -270,17 +273,20 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 		if (slot.status == SLOT_CLOSED) {		               \
 			const cstring *k = slot.key;			       \
 			T v = slot.value;				       \
-			int err = pfix##MapProbe_private(&new_map, k, v);      \
 									       \
-			assert(!err && "key already exists in new buffer");    \
+			MapTrace("new map; inserting' %s'", k);		       \
+									       \
+			bool ok = pfix##MapProbe_private(&new_map, k, v);      \
+									       \
+			assert(ok && "key already exists in new buffer");      \
 		}							       \
 	}								       \
 								               \
-	MapTrace("inserted closed slots from old map");			       \
+	MapTrace("old map; all closed slots copied");			       \
 									       \
 	free(self->buffer);						       \
 									       \
-	MapTrace("released internal buffer from old map");		       \
+	MapTrace("old map; released internal buffer");	          	       \
 									       \
 	*self = (pfix##_map) {						       \
 		.len = new_map.len,					       \
@@ -288,14 +294,14 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 		.buffer = new_map.buffer				       \
 	};								       \
 									       \
-	MapTrace("copied new map members to old map");			       \
+	MapTrace("new map; finalized");					       \
 }
 
 //this function assumes there is at least one open slot in the map buffer.
 //if the key already exists in a closed slot then do nothing and return false.
 //private; see MapInsert docs; key is duplicated and value is copied.
 #define impl_map_linear_probe_private(T, pfix, cls)  			       \
-cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
+cls T * pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value)  \
 {									       \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -307,8 +313,8 @@ cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 									       \
 	while (slot->status != SLOT_OPEN) {				       \
 		if (slot->status == SLOT_CLOSED && MapMatch(key, slot->key)) { \
-			MapTrace("fail; key already exists in closed slot");   \
-			return false;					       \
+			MapTrace("'%s' already exists in closed slot", key);   \
+			return NULL;					       \
 		}							       \
 									       \
 		i = (i + 1) % self->cap;				       \
@@ -325,7 +331,7 @@ cls bool pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value) \
 									       \
 	MapTrace("linear probe succeeded");			               \
 									       \
-	return true;							       \
+	return &slot->value;						       \
 }
 
 //if vfree is not null, it is called on the value associated with the key before
@@ -338,7 +344,8 @@ cls bool pfix##MapRemove						       \
 (									       \
 	pfix##_map *self,						       \
 	const cstring *key,						       \
-	void (*vfree)(T))						       \
+	void (*vfree)(T)						       \
+)							                       \
 {								               \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -348,11 +355,12 @@ cls bool pfix##MapRemove						       \
 	const uint64_t start = i;					       \
 	pfix##_slot *slot = self->buffer + i;				       \
 									       \
-	MapTrace("searching for removal slot");				       \
+	MapTrace("searching for '%s' removal slot", key); 		       \
 									       \
 	do {								       \
 		switch (slot->status) {					       \
 		case SLOT_OPEN:						       \
+			MapTrace("found open slot; '%s' cannot exist", key);   \
 			return false;					       \
 									       \
 		case SLOT_CLOSED:					       \
@@ -368,7 +376,7 @@ _Pragma("GCC diagnostic pop")	               				       \
 								               \
 				slot->status = SLOT_REMOVED;		       \
 									       \
-				MapTrace("key-value pair removed");	       \
+				MapTrace("'%s' removed", key);   	       \
 									       \
 				return true;				       \
 			}						       \
@@ -387,10 +395,12 @@ _Pragma("GCC diagnostic pop")	               				       \
 	} while (i != start);						       \
 								               \
 	/* reach here when key doesn't exist and map.len == map.cap */	       \
+	MapTrace("exhaustive search; '%s' does not exist", key);	       \
 	return false;							       \
 }
 
-//input value pointer may be NULL
+//input value pointer may be NULL; if key does not exist then *value is not
+//modified on return.
 #define impl_map_get(T, pfix, cls)					       \
 cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 {									       \
@@ -402,13 +412,18 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 	const uint64_t start = i;					       \
 	pfix##_slot *slot = self->buffer + i;				       \
 									       \
+	MapTrace("searching for '%s' slot", key);			       \
+									       \
 	do {								       \
 		switch (slot->status) {					       \
 		case SLOT_OPEN:						       \
+			MapTrace("found open slot; '%s' cannot exist", key);   \
 			return false;					       \
 									       \
 		case SLOT_CLOSED:					       \
 			if (MapMatch(slot->key, key)) {			       \
+				MapTrace("found '%s'", key);		       \
+									       \
 				if (value) {				       \
 					*value = slot->value;		       \
 				}					       \
@@ -430,9 +445,62 @@ cls bool pfix##MapGet(pfix##_map *self, const cstring *key, T *value)	       \
 	} while (i != start);						       \
 									       \
 	/* reach here when key doesn't exist and map.len == map.cap */	       \
+	MapTrace("exhaustive search; '%s' does not exist", key);	       \
 	return false;							       \
 }
 
+//identical to impl_map_get except it copies a pointer to the hash table slot
+//rather than copying the value at the slot. Not particularly useful when the
+//underlying T is itself a pointer; but very useful when the underyling T is
+//a struct and you want to perform a get + set operation without incurring the
+//cost of a second call to impl_map_set.
+#define impl_map_get_ref(T, pfix, cls)					       \
+cls bool pfix##MapGetRef(pfix##_map *self, const cstring *key, T **value)      \
+{									       \
+	assert(self);							       \
+	assert(self->buffer);						       \
+	assert(key);							       \
+									       \
+	uint64_t i = MapGetSlotIndex(key, self->cap);			       \
+	const uint64_t start = i;					       \
+	pfix##_slot *slot = self->buffer + i;				       \
+									       \
+	MapTrace("searching for '%s' slot", key);			       \
+									       \
+	do {								       \
+		switch (slot->status) {					       \
+		case SLOT_OPEN:						       \
+			MapTrace("found open slot; '%s' cannot exist", key);   \
+			return false;					       \
+									       \
+		case SLOT_CLOSED:					       \
+			if (MapMatch(slot->key, key)) {			       \
+				MapTrace("found '%s'", key);		       \
+									       \
+				if (value) {				       \
+					*value = &slot->value;		       \
+				}					       \
+									       \
+				return true;				       \
+			}						       \
+									       \
+			break;						       \
+								               \
+		case SLOT_REMOVED:					       \
+			break;						       \
+									       \
+		default:						       \
+			assert(0 != 0 && "bad status flag");		       \
+		}							       \
+									       \
+		i = (i + 1) % self->cap;				       \
+		slot = self->buffer + i;				       \
+	} while (i != start);						       \
+									       \
+	/* reach here when key doesn't exist and map.len == map.cap */	       \
+	MapTrace("exhaustive search; '%s' does not exist", key);	       \
+	return false;							       \
+}
 //set an existing map value associated with the input key to a new value. If
 //the key doesn't exist, return false.
 #define impl_map_set(T, pfix, cls)					       \
@@ -446,13 +514,17 @@ cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value)	       \
 	const uint64_t start = i;					       \
 	pfix##_slot *slot = self->buffer + i;				       \
 									       \
+	MapTrace("searching for '%s' slot", key);			       \
+								               \
 	do {								       \
 		switch (slot->status) {					       \
 		case SLOT_OPEN:						       \
+			MapTrace("found open slot; '%s' cannot exist", key);   \
 			return false;					       \
 									       \
 		case SLOT_CLOSED:					       \
 			if (MapMatch(slot->key, key)) {			       \
+				MapTrace("found '%s'; exchanging value", key); \
 				slot->value = value;			       \
 				return true;				       \
 			}						       \
@@ -471,8 +543,10 @@ cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value)	       \
 	} while (i != start);						       \
 									       \
 	/* reach here when key doesn't exist and map.len == map.cap */	       \
+	MapTrace("exhaustive search; '%s' does not exist", key);	       \
 	return false;							       \
 }
+
 //------------------------------------------------------------------------------
 
 //make_map declares a map<T> type named pfix_map which may contain values of
@@ -492,6 +566,7 @@ cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value)	       \
 	impl_map_linear_probe_private(T, pfix, cls)			       \
 	impl_map_remove(T, pfix, cls)				               \
 	impl_map_get(T, pfix, cls)					       \
+	impl_map_get_ref(T, pfix, cls)				               \
 	impl_map_set(T, pfix, cls)
 
 #define map(pfix) pfix##_map

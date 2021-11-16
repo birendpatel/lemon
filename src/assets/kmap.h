@@ -1,13 +1,10 @@
-/**
- * @file kmap.h
- * @author Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
- * @brief Encapsulation for the gperf auto-generated C code.
- * @note kmap_hash is not exported.
- */
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+//
+// Encapsulation for the gperf auto-generated C code.
 
 #pragma once
 
-#include "../scanner.h"
+#include "scanner.h"
 
 #include <stddef.h>
 

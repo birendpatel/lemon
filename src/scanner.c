@@ -7,20 +7,20 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <stdint.h>
+#include <stdio.h>
 
 #include "scanner.h"
 #include "defs.h"
+#include "options.h"
 #include "assets/kmap.h"
 #include "lib/channel.h"
 
-typedef struct scanner {
-	Token_channel *chan;
-	const char *pos; //current byte being analysed
-	const char *curr; //works with pos to process multi-char lexemes
-	const cstring *src;
-	size_t line;
-	token tok;
-} scanner;
+//------------------------------------------------------------------------------
+//@pos current byte being analysed
+//@curr used with pos to help process multi-char lexemes
+
+typedef struct scanner scanner;
 
 static void* StartRoutine(void *);
 static void Scan(scanner *);
@@ -43,6 +43,17 @@ static void SendEOF(scanner *);
 static const cstring *GetTokenName(token_type);
 static void TokenPrint(scanner *);
 static _Noreturn void Hang(void);
+
+//------------------------------------------------------------------------------
+
+struct scanner {
+	Token_channel *chan;
+	const char *pos;
+	const char *curr;
+	const cstring *src;
+	size_t line;
+	token tok;
+};
 
 xerror ScannerInit(const cstring *src, Token_channel *chan)
 {
@@ -108,6 +119,101 @@ static void *StartRoutine(void *pthread_payload)
 
 	return NULL;
 }
+
+static const cstring *GetTokenName(token_type type)
+{
+	static const cstring *lookup[] = {
+		[_INVALID] = "INVALID",
+		[_EOF] = "EOF",
+		[_IDENTIFIER] = "IDENTIFIER",
+		[_LITERALINT] = "INT LITERAL",
+		[_LITERALFLOAT] = "FLOAT LITERAL",
+		[_LITERALSTR] = "STRING LITERAL",
+		[_SEMICOLON] = "SEMICOLON",
+		[_LEFTBRACKET] = "LEFTBRACKET",
+		[_RIGHTBRACKET] = "RIGHTBRACKET",
+		[_LEFTPAREN] = "LEFT PARENTHESIS",
+		[_RIGHTPAREN] = "RIGHT PARENTHESIS",
+		[_LEFTBRACE] = "LEFT BRACE",
+		[_RIGHTBRACE] = "RIGHT BRACE",
+		[_DOT] = "DOT",
+		[_TILDE] = "TILDE",
+		[_COMMA] = "COMMA",
+		[_COLON] = "COLON",
+		[_EQUAL] = "EQUAL",
+		[_EQUALEQUAL] = "EQUAL EQUAL",
+		[_NOTEQUAL] = "NOT EQUAL",
+		[_NOT] = "NOT",
+		[_AND] = "AND",
+		[_OR] = "OR",
+		[_BITNOT] = "BITWISE NOT",
+		[_AMPERSAND] = "AMPERSAND",
+		[_BITOR] = "BITWISE OR",
+		[_BITXOR] = "BITWISE XOR",
+		[_LSHIFT] = "LEFT SHIFT",
+		[_RSHIFT] = "RIGHT SHIFT",
+		[_GREATER] = "GREATER THAN",
+		[_LESS] = "LESS THAN",
+		[_GEQ] = "GREATER OR EQUAL",
+		[_LEQ] = "LESS OR EQUAL",
+		[_ADD] = "ADD",
+		[_MINUS] = "MINUS",
+		[_STAR] = "STAR",
+		[_DIV] = "DIVISION",
+		[_MOD] = "MODULO",
+		[_FOR] = "FOR",
+		[_WHILE] = "WHILE LOOP",
+		[_BREAK] = "BREAK",
+		[_CONTINUE] = "CONTINUE",
+		[_IF] = "IF BRANCH",
+		[_ELSE] = "ELSE BRANCH",
+		[_SWITCH] = "SWITCH",
+		[_CASE] = "CASE",
+		[_DEFAULT] = "DEFAULT",
+		[_FALLTHROUGH] = "FALLTHROUGH",
+		[_GOTO] = "GOTO",
+		[_LABEL] = "LABEL",
+		[_LET] = "LET",
+		[_MUT] = "MUTABLE",
+		[_STRUCT] = "STRUCT",
+		[_IMPORT] = "IMPORT",
+		[_SELF] = "SELF",
+		[_FUNC] = "FUNCTION",
+		[_METHOD] = "METHOD",
+		[_PUB] = "PUBLIC",
+		[_RETURN] = "RETURN",
+		[_VOID] = "VOID",
+		[_NULL] = "NULL",
+		[_TRUE] = "TRUE",
+		[_FALSE] = "FALSE",
+	};
+
+	if (type <= _INVALID && type >= _TOKEN_TYPE_COUNT) {
+		return lookup[type];
+	}
+
+	return "LOOKUP ERROR";
+}
+
+static void TokenPrint(scanner *self)
+{
+	const cstring *lexfmt = "TOKEN { line %-10zu: %-20s: %s: %d %d }\n";
+	const cstring *nolexfmt = "TOKEN { line %-10zu: %-20s: %d %d }\n";
+
+	const size_t line = self->tok.line;
+	const cstring *name = GetTokenName(self->tok.type);
+	const cstring *lexeme  = self->tok.lexeme;
+	const int valid = self->tok.flags.valid;
+	const int badstr = self->tok.flags.bad_string;
+
+	if (lexeme) {
+		fprintf(stderr, lexfmt, line, name, lexeme, valid, badstr);
+	} else {
+		fprintf(stderr, nolexfmt, line, name, valid, badstr);
+	}
+}
+
+//------------------------------------------------------------------------------
 
 static void Scan(scanner *self)
 {
@@ -278,98 +384,7 @@ exit:
 	return;
 }
 
-static const cstring *GetTokenName(token_type type)
-{
-	static const cstring *lookup[] = {
-		[_INVALID] = "INVALID",
-		[_EOF] = "EOF",
-		[_IDENTIFIER] = "IDENTIFIER",
-		[_LITERALINT] = "INT LITERAL",
-		[_LITERALFLOAT] = "FLOAT LITERAL",
-		[_LITERALSTR] = "STRING LITERAL",
-		[_SEMICOLON] = "SEMICOLON",
-		[_LEFTBRACKET] = "LEFTBRACKET",
-		[_RIGHTBRACKET] = "RIGHTBRACKET",
-		[_LEFTPAREN] = "LEFT PARENTHESIS",
-		[_RIGHTPAREN] = "RIGHT PARENTHESIS",
-		[_LEFTBRACE] = "LEFT BRACE",
-		[_RIGHTBRACE] = "RIGHT BRACE",
-		[_DOT] = "DOT",
-		[_TILDE] = "TILDE",
-		[_COMMA] = "COMMA",
-		[_COLON] = "COLON",
-		[_EQUAL] = "EQUAL",
-		[_EQUALEQUAL] = "EQUAL EQUAL",
-		[_NOTEQUAL] = "NOT EQUAL",
-		[_NOT] = "NOT",
-		[_AND] = "AND",
-		[_OR] = "OR",
-		[_BITNOT] = "BITWISE NOT",
-		[_AMPERSAND] = "AMPERSAND",
-		[_BITOR] = "BITWISE OR",
-		[_BITXOR] = "BITWISE XOR",
-		[_LSHIFT] = "LEFT SHIFT",
-		[_RSHIFT] = "RIGHT SHIFT",
-		[_GREATER] = "GREATER THAN",
-		[_LESS] = "LESS THAN",
-		[_GEQ] = "GREATER OR EQUAL",
-		[_LEQ] = "LESS OR EQUAL",
-		[_ADD] = "ADD",
-		[_MINUS] = "MINUS",
-		[_STAR] = "STAR",
-		[_DIV] = "DIVISION",
-		[_MOD] = "MODULO",
-		[_FOR] = "FOR",
-		[_WHILE] = "WHILE LOOP",
-		[_BREAK] = "BREAK",
-		[_CONTINUE] = "CONTINUE",
-		[_IF] = "IF BRANCH",
-		[_ELSE] = "ELSE BRANCH",
-		[_SWITCH] = "SWITCH",
-		[_CASE] = "CASE",
-		[_DEFAULT] = "DEFAULT",
-		[_FALLTHROUGH] = "FALLTHROUGH",
-		[_GOTO] = "GOTO",
-		[_LABEL] = "LABEL",
-		[_LET] = "LET",
-		[_MUT] = "MUTABLE",
-		[_STRUCT] = "STRUCT",
-		[_IMPORT] = "IMPORT",
-		[_SELF] = "SELF",
-		[_FUNC] = "FUNCTION",
-		[_METHOD] = "METHOD",
-		[_PUB] = "PUBLIC",
-		[_RETURN] = "RETURN",
-		[_VOID] = "VOID",
-		[_NULL] = "NULL",
-		[_TRUE] = "TRUE",
-		[_FALSE] = "FALSE",
-	};
-
-	if (type <= _INVALID && type >= _TOKEN_TYPE_COUNT) {
-		return lookup[type];
-	}
-
-	return "LOOKUP ERROR";
-}
-
-static void TokenPrint(scanner *self)
-{
-	const cstring *lexfmt = "TOKEN { line %-10zu: %-20s: %s: %d %d }\n";
-	const cstring *nolexfmt = "TOKEN { line %-10zu: %-20s: %d %d }\n";
-
-	const size_t line = self->tok.line;
-	const cstring *name = GetTokenName(self->tok.type);
-	const cstring *lexeme  = self->tok.lexeme;
-	const int valid = self->tok.flags.valid;
-	const int badstr = self->tok.flags.bad_string;
-
-	if (lexeme) {
-		fprintf(stderr, lexfmt, line, name, lexeme, valid, badstr);
-	} else {
-		fprintf(stderr, nolexfmt, line, name, valid, badstr);
-	}
-}
+//------------------------------------------------------------------------------
 
 static _Noreturn void Hang(void)
 {

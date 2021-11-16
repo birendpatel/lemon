@@ -1,7 +1,6 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// A simple dynamic array data structure implemented via C-style templating.
-// Some operations performed on vectors may cause the application program to
+// A simple dynamic array data structure implemented via C-style templating.  // Some operations performed on vectors may cause the application program to
 // abort. Enable vector tracing to locate the root cause.
 //
 // If application code covertly modifies vector struct members it is highly
@@ -10,34 +9,27 @@
 #pragma once
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <string.h>
 
-//thread IDs may collide; the pthread_t transformation is not injective
-#ifdef VECTOR_TRACE_STDERR
-	#include <pthread.h>
-	#include <stdio.h>
+#include "xerror.h"
 
-	static void VectorTrace(const char *msg)
-	{
-		const void *thread_id = ((void *) pthread_self());
-		const char *fmt = "vector: thread %p: %s\n";
-
-		fprintf(stderr, fmt, thread_id, msg);
-	}
+#ifdef VECTOR_TRACE
+	#define VectorTrace(msg, ...) xerror_trace(msg, ##__VA_ARGS__)
 #else
-	static void VectorTrace(__attribute__((unused)) const char *msg)
-	{
-		return;
-	}
+	#define VectorTrace(msg, ...)
 #endif
 
-__attribute__((malloc)) static void *VectorMalloc(const size_t bytes)
+//------------------------------------------------------------------------------
+
+__attribute__((malloc)) static void *VectorCalloc(const size_t bytes)
 {
-	void *region = malloc(bytes);
+	void *region = calloc(bytes, 1);
 
 	if (!region) {
-		VectorTrace("malloc failed; aborting program");
+		VectorTrace("calloc failed; aborting program");
 		abort();
 	}
 
@@ -105,8 +97,7 @@ cls void pfix##VectorFree(pfix##_vector *, void (*)(T));           	       \
 cls void pfix##VectorFreeReverse(pfix##_vector *self, void (*vfree) (T));      \
 cls void pfix##VectorPush(pfix##_vector *, T);   	                       \
 cls T pfix##VectorGet(const pfix##_vector *, const size_t);                    \
-cls T pfix##VectorSet(pfix##_vector *, const size_t , T);                      \
-cls void pfix##VectorReset(pfix##_vector *, void (*) (T));	               \
+cls T pfix##VectorSet(pfix##_vector *, const size_t , T);
 
 #define VECTOR_DEFAULT_CAPACITY ((size_t) 8)
 
@@ -122,7 +113,7 @@ cls pfix##_vector pfix##VectorInit(const size_t len, const size_t cap)         \
 	};								       \
 									       \
 	const size_t bytes = cap * sizeof(T);				       \
-	v.buffer = VectorMalloc(bytes);  				       \
+	v.buffer = VectorCalloc(bytes);  				       \
 									       \
 	VectorTrace("initialized");				               \
 								               \
@@ -158,7 +149,7 @@ cls void pfix##VectorFree(pfix##_vector *self, void (*vfree) (T))	       \
 		self->cap = 0;						       \
 		self->buffer= NULL;					       \
 	} else {							       \
-		VectorTrace("vector not initialized; nothing to free");	       \
+		VectorTrace("vector not initialized; nothing to free");        \
 	}								       \
 }
 

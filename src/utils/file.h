@@ -6,7 +6,7 @@
 
 #include <stdio.h>
 
-#include "lib/str.h"
+#include "str.h"
 
 //load the file named fname into memory as a null-terminated dynamically
 //allocated C string. On failure returns NULL and errors are reported to

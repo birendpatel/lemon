@@ -4,13 +4,22 @@
 #
 # This script builds the C Lemon compiler in various modes and controls test
 # suite and memory leak detection. Invoke the script with one of the following
-# arguments. If no arugments are passed, the script will default to 'debug'.
+# arguments. 
 #
-# (0) debug     : Build with assertions, debug info, and no optimisations
-# (1) trace     : Build in debug mode and enable all possible trace output
-# (2) release   : Build with optimisations; no trace, no debug, no assertions
-# (3) install   : Build in release mode and copy Lemon to config install path
-# (4) uninstall : Remove Lemon from config install path
+# (0) debug     : Build with assertions, debug info, and no optimisations. This
+#                 is the default if no script arguments are passed.
+#
+# (1) trace     : Build in debug mode and enable all possible stderr output. The
+#                 output is extremely detailed; keep grep and awk handy.
+#
+# (2) release   : Build with optimisations; no trace, no debug, no assertions.
+#                 Only use for development to check optimisation bugs such as
+#                 register clobbering.
+#
+# (3) install   : Build in release mode and copy Lemon to config install path.
+#
+# (4) uninstall : Remove Lemon from config install path.
+#
 # (5) clean     : Remove files created by modes 0 thru 2; does not uninstall
 
 from subprocess import run 
@@ -29,13 +38,13 @@ install_path = "/usr/local/bin"
 
 files = [
     "./src/main.c",
-    "./src/xerror.c",
-    "./src/options.c",
-    "./src/file.c",
-    "./src/jobs.c",
     "./src/scanner.c",
     "./src/parser.c",
-    "./src/symtab.c",
+    "./src/symtable.c",
+    "./src/resolver.c",
+    "./src/utils/xerror.c",
+    "./src/utils/options.c",
+    "./src/utils/file.c",
     "./src/assets/kmap.c",
     "./extern/cexception/CException.c"
 ]
@@ -44,17 +53,27 @@ library_flags = [
     "-lpthread"
 ]
 
+include_flags = [
+    "-I./src/",
+    "-I./src/assets",
+    "-I./src/lib",
+    "-I./src/utils",
+    "-I./extern/cexception"
+]
+
 common_flags = [
+    *include_flags,
     "-std=gnu17",
     "-Wall",
     "-Wextra",
+    "-Werror",
     "-Wpedantic",
     "-Wconversion",
     "-Wcast-qual",
     "-Wnull-dereference",
     "-Wdouble-promotion",
     "-DCOLOURS",
-    "-Wno-unused-function" 
+    "-Wno-unused-function"
 ]
 
 debug_flags = [
@@ -66,9 +85,9 @@ debug_flags = [
 trace_flags = [
     *debug_flags,
     "-DXERROR_DEBUG",
-    "-DCHANNEL_TRACE_STDERR",
-    "-DMAP_TRACE_STDERR",
-    "-DVECTOR_TRACE_STDERR"
+    "-DMAP_TRACE",
+    "-DVECTOR_TRACE",
+    "-DCHANNEL_TRACE"
 ]
 
 release_flags = [
@@ -139,9 +158,11 @@ def build(target: str) -> str:
 
 #create a makefile rule for the input C source file
 def create_object_rule(target: str, file: str) -> str:
-    command = "gcc -MM {}".format(file)
+    command = "gcc -MM {} {}".format(file, ' '.join(include_flags))
 
     result = run(command, check=True, shell=True, capture_output=True)
+
+    print(result.stdout.decode())
 
     directory = "./{}/".format(target)
     prerequisites = result.stdout.decode()

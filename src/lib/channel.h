@@ -1,42 +1,7 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
 // Multi-producer multi-consumer thread-safe FIFO blocking queue with a fixed
-// buffer length. Channels are implemented via C-style templates. This header 
-// requires a POSIX compliant system or a POSIX compatibility layer.
-//
-// Example:
-//
-// make_channel(void *, Pointer, static inline)
-// 
-// /* Thread A */
-// int main(void) {
-// 	int *data = malloc(sizeof(int));
-// 	*data = 0;
-//
-// 	Pointer_channel chan = {0};
-//
-// 	PointerChannelInit(&chan, 128);
-//
-// 	PointerChannelSend(&chan, data);
-//
-// 	PointerChannelFree(&chan, NULL);
-// }
-//
-// /* Thread B; Assuming provided channel is the one initialized by Thread A */
-// void get(Pointer_channel *chan) {
-// 	...
-// 	int *data = NULL;
-//
-// 	PointerChannelRecv(chan, &data);
-//
-// 	/* *data == 0 */
-// 	...
-// }
-//
-// /* a single translation unit can contain multiple channels. The pfix argument
-// to make_channel() ensures a unique naming scheme. */
-// make_channel(int, Error, static) //Error_channel, ErrorChannelInit
-// make channel(pthread_t, Thread, extern) //Thread_channel, ThreadChannelInit
+// buffer length. 
 
 #pragma once
 
@@ -47,15 +12,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-//tracing provides thread IDs but two different threads may have an ID collision
-//because the pthread_t transformation is not an injective function.
-#ifdef CHANNEL_TRACE_STDERR
-	#include <stdio.h>
-	#define TID ((void *) pthread_self())
-	static const char *fmt = "channel: thread %p: %s\n";
-	#define CHANNEL_TRACE(msg) fprintf(stderr, fmt, TID, msg)
+#include "xerror.h"
+
+#ifdef CHANNEL_TRACE
+	#define ChannelTrace(msg, ...) xerror_trace(msg, ##__VA_ARGS__)
 #else
-	#define CHANNEL_TRACE(msg) do {} while (0)
+	#define ChannelTrace(msg, ...)
 #endif
 
 //channel functions may return any integer error code s.t. INT_MIN < x < INT_MAX
@@ -141,7 +103,7 @@ cls void pfix##ChannelInit(pfix##_channel *self, const size_t n)	       \
 									       \
 	self->flags = CHANNEL_OPEN;					       \
 									       \
-	CHANNEL_TRACE("initialized");		                               \
+	ChannelTrace("initialized");		                               \
 }
 
 //cfree is invoked on each element in the channel before the channel is
@@ -173,10 +135,10 @@ cls int pfix##ChannelFree(pfix##_channel *self, void (*cfree) (T))	       \
 		goto unlock;						       \
 	}								       \
 									       \
-	CHANNEL_TRACE("cond variables removed");		               \
+	ChannelTrace("cond variables removed");		                       \
 									       \
 	if (cfree) {							       \
-		CHANNEL_TRACE("purging queue");             		       \
+		ChannelTrace("purging queue");             		       \
 									       \
 		for (size_t i = self->head; i < self->len; i++) {	       \
 			cfree(self->data[i]);				       \
@@ -187,7 +149,7 @@ cls int pfix##ChannelFree(pfix##_channel *self, void (*cfree) (T))	       \
 	memset(self, 0, sizeof(struct pfix##_channel));			       \
 	self->flags = CHANNEL_CLOSED;					       \
 									       \
-	CHANNEL_TRACE("destroyed and closed");		                       \
+	ChannelTrace("destroyed and closed");		                       \
 									       \
 unlock:									       \
 	pthread_mutex_unlock(&self->mutex);				       \
@@ -205,14 +167,14 @@ cls void pfix##ChannelClose(pfix##_channel *self)			       \
 									       \
 	self->flags = CHANNEL_CLOSED;					       \
 									       \
-	CHANNEL_TRACE("closed");				               \
+	ChannelTrace("closed");				                       \
 									       \
 	pthread_mutex_unlock(&self->mutex);				       \
 }
 
 //calling thread will suspend without timeout if the channel is full.
 #define impl_channel_send(T, pfix, cls)					       \
-cls int pfix##ChannelSend(pfix##_channel *self, const T datum)	       \
+cls int pfix##ChannelSend(pfix##_channel *self, const T datum)	               \
 {									       \
 	assert(self);							       \
 									       \
@@ -222,22 +184,22 @@ cls int pfix##ChannelSend(pfix##_channel *self, const T datum)	       \
 									       \
 	if (self->flags & CHANNEL_CLOSED) {				       \
 		err = CHANNEL_ECLOSED;					       \
-		CHANNEL_TRACE("attempted send on closed queue");               \
+		ChannelTrace("attempted send on closed queue");                \
 		goto unlock;						       \
 	}								       \
 									       \
 	while (self->len == self->cap) {				       \
-		CHANNEL_TRACE("full; suspending thread");	               \
+		ChannelTrace("full; suspending thread");	               \
 		pthread_cond_wait(&self->cond_full, &self->mutex);	       \
 	}								       \
 									       \
-	CHANNEL_TRACE("sending data");			                       \
+	ChannelTrace("sending data");			                       \
 	self->data[self->tail] = datum;					       \
 	self->tail = (self->tail + 1) % self->cap;			       \
 	self->len++;							       \
 									       \
 	if (self->len == 1) {						       \
-		CHANNEL_TRACE("signal; now non-empty");	                       \
+		ChannelTrace("signal; now non-empty");	                       \
 		pthread_cond_signal(&self->cond_empty);			       \
 	}								       \
 									       \
@@ -259,22 +221,22 @@ cls int pfix##ChannelRecv(pfix##_channel *self, T *datum)		       \
 									       \
 	if (self->flags & CHANNEL_CLOSED && self->len == 0) {		       \
 		err = CHANNEL_ECLOSED;					       \
-		CHANNEL_TRACE("recv fail; closed empty queue");                \
+		ChannelTrace("recv fail; closed empty queue");                 \
 		goto unlock;						       \
 	}							               \
 									       \
 	while (self->len == 0) {					       \
-		CHANNEL_TRACE("empty; suspending thread");	               \
+		ChannelTrace("empty; suspending thread");	               \
 		pthread_cond_wait(&self->cond_empty, &self->mutex);	       \
 	}								       \
 									       \
-	CHANNEL_TRACE("receiving data");				       \
+	ChannelTrace("receiving data");				       	       \
 	*datum = self->data[self->head];			               \
 	self->head = (self->head + 1) % self->cap;			       \
 	self->len--;							       \
 									       \
 	if (self->len == self->cap - 1) {				       \
-		CHANNEL_TRACE("signal; now non-full");	                       \
+		ChannelTrace("signal; now non-full");	                       \
 		pthread_cond_signal(&self->cond_full);			       \
 	}								       \
 									       \
