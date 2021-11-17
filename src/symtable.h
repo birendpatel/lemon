@@ -10,16 +10,26 @@
 typedef struct symbol symbol;
 typedef struct symtable symtable;
 
+typedef struct module module;
+typedef struct decl decl;
+typedef struct stmt stmt;
+typedef struct member member;
+typedef struct param param;
+
 //------------------------------------------------------------------------------
 // Symbols are associated with a cstring identifier and placed into a hash table
 
 typedef enum symboltag {
 	SYMBOL_NATIVE,
-	SYMBOL_FILE,
+	SYMBOL_MODULE,
+	SYMBOL_IMPORT,
 	SYMBOL_FUNCTION,
 	SYMBOL_METHOD,
 	SYMBOL_UDT,
+	SYMBOL_FIELD,
 	SYMBOL_VARIABLE,
+	SYMBOL_PARAMETER,
+	SYMBOL_LABEL,
 } symboltag;
 
 struct symbol {
@@ -31,29 +41,52 @@ struct symbol {
 
 		struct {
 			symtable *table;
+			module *node;
 			bool referenced;
-		} file;
+		} module;
+
+		struct {
+			bool referenced;
+		} import;
 
 		struct {
 			symtable *table;
+			decl *node;
 			bool referenced;
 		} function;
 
 		struct {
 			symtable *table;
+			decl *node;
 			bool referenced;
 		} method;
 
 		struct {
 			symtable *table;
+			decl *node;
 			size_t bytes;
 			bool referenced;
 		} udt;
 
 		struct {
+			member *node;
 			bool referenced;
-			bool parameter;
+		} field;
+
+		struct {
+			decl *node;
+			bool referenced;
 		} variable;
+
+		struct {
+			param *node;
+			bool referenced;
+		} parameter;
+
+		struct {
+			stmt *node;
+			bool referenced;
+		} label;
 	};
 };
 
@@ -67,7 +100,7 @@ make_map(symbol, Symbol, static)
 
 typedef enum tabletag {
 	TABLE_GLOBAL,
-	TABLE_FILE,
+	TABLE_MODULE,
 	TABLE_FUNCTION,
 	TABLE_METHOD,
 	TABLE_UDT,

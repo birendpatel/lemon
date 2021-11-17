@@ -865,21 +865,21 @@ static type *RecType(parser *self)
 	switch (self->tok.type) {
 	case _IDENTIFIER:
 		node->tag = NODE_BASE;
-		node->base = self->tok.lexeme;
+		node->base.name = self->tok.lexeme;
 		GetNextValidToken(self);
 		break;
 
 	case _STAR:
 		node->tag = NODE_POINTER;
 		GetNextValidToken(self);
-		node->pointer = RecType(self);
+		node->pointer.reference = RecType(self);
 		break;
 
 	case _LEFTBRACKET:
 		move_check(self, _LITERALINT, "missing array size");
 		node->array.len = ExtractArrayIndex(self);
 		move_check_move(self, _RIGHTBRACKET, "missing ']'");
-		node->array.base = RecType(self);
+		node->array.element = RecType(self);
 		break;
 
 	default:

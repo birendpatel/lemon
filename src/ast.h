@@ -5,9 +5,6 @@
 // grammar located at ../langspec.txt. The grammar metasyntax operations '+' and
 // '*' are implemented via vectors. The '|' operator is implemented via tagged
 // anonymous unions.
-//
-// Most of the AST may be created via SyntaxTreeInit in parser.c but several
-// node members must be delayed until semantic analysis in resolver.c
 
 #pragma once
 
@@ -16,10 +13,8 @@
 
 #include "scanner.h"
 #include "str.h"
-#include "symtable.h"
 #include "vector.h"
 
-//AST nodes
 typedef struct module module;
 typedef struct fiat fiat;
 typedef struct type type;
@@ -27,36 +22,48 @@ typedef struct decl decl;
 typedef struct stmt stmt;
 typedef struct expr expr;
 typedef struct import import;
+typedef struct member member;
+typedef struct param param;
+typedef struct test test;
+
+typedef struct symbol symbol;
+typedef struct symtable symtable;
 
 //------------------------------------------------------------------------------
 //<member list>
+//@entry: tag == SYMBOL_FIELD
 
-typedef struct member {
+struct member {
 	cstring *name;
 	type *typ;
+	symbol *entry;
 	bool public;
-} member;
+};
 
 make_vector(member, Member, static)
 
 //------------------------------------------------------------------------------
 //<parameter list>
+//@entry: tag = SYMBOL_PARAMETER
 
-typedef struct param {
+struct param {
 	cstring *name;
 	type *typ;
+	symbol *entry; 
 	bool mutable;
-} param;
+};
 
 make_vector(param, Param, static)
 
 //------------------------------------------------------------------------------
 //<case statement>
+//@cond: NULL for the default case
+//@pass: tag == BLOCK_STMT
 
-typedef struct test {
-	expr *cond; //NULL for the default case
-	stmt *pass; //guaranteed to be a block statement
-} test;
+struct test {
+	expr *cond; 
+	stmt *pass;
+};
 
 make_vector(test, Test, static)
 
@@ -92,13 +99,23 @@ typedef enum typetag {
 struct type {
 	typetag tag;
 	union {
-		cstring *base;
-		type *pointer;
-
+		//@reference: non-null
 		struct {
-			type *base;
+			type *reference;
+		} pointer;
+
+		//@element: non-null
+		//@len: may be zero
+		struct {
+			type *element;
 			intmax_t len;
 		} array;
+
+		//@entry: tag == SYMBOL_NATIVE
+		struct {
+			cstring *name;
+			symbol *entry;
+		} base;
 	};
 };
 
@@ -117,31 +134,41 @@ typedef enum decltag {
 struct decl {
 	decltag tag;
 	union {
+		//@entry: tag == SYMBOL_UDT
 		struct {
 			cstring *name;
+			symbol *entry;
 			vector(Member) members;
 			bool public;
 		} udt;
 
+		//@entry: tag == SYMBOL_FUNCTION
+		//@ret: NULL if function returns void
 		struct {
 			cstring *name;
-			type *ret; //NULL if function returns void
+			symbol *entry;
+			type *ret; 
 			stmt *block;
 			vector(Param) params;
 			bool public;
 		} function;
 
+		//@entry: tag == SYMBOL_METHOD
+		//@ret: NULL if method returns void
 		struct {
 			cstring *name;
-			type *ret; //NULL if method returns void
+			symbol *entry;
+			type *ret;
 			type *recv; 
 			stmt *block;
 			vector(Param) params;
 			bool public;
 		} method;
 
+		//@entry: tag == SYMBOL_VARIABLE
 		struct {
 			cstring *name;
+			symbol *entry;
 			type *vartype;
 			expr *value;
 			bool mutable;
@@ -185,6 +212,7 @@ struct stmt {
 		cstring *gotolabel;
 
 		struct {
+			symtable *table;
 			vector(Fiat) fiats;
 		} block;
 
@@ -207,11 +235,13 @@ struct stmt {
 			stmt *block;
 		} whileloop;
 
+		//@shortvar: NULL if no short declaration
+		//@fail: NULL if no else clause
 		struct {
-			decl *shortvar; //NULL if no short declaration
+			decl *shortvar; 
 			expr *cond;
 			stmt *pass;
-			stmt *fail; //NULL if no else clause
+			stmt *fail; 
 		} branch;
 
 		struct {
@@ -219,8 +249,10 @@ struct stmt {
 			vector(Test) tests;
 		} switchstmt;
 
+		//@entry: tag == SYMBOL_LABEL
 		struct {
 			cstring *name;
+			symbol *entry;
 			stmt *target;
 		} label;
 	};
@@ -281,9 +313,10 @@ struct expr {
 			vector(Expr) args;
 		} call;
 
+		//@attr: tag == NODE_IDENT
 		struct {
 			expr *name;
-			expr *attr; //attr->tag == NODE_IDENT
+			expr *attr; 
 		} selector;
 
 		struct {
@@ -338,17 +371,19 @@ impl_vector_set(fiat, Fiat, static)
 impl_vector_reset(fiat, Fiat, static)
 
 //------------------------------------------------------------------------------
+// @alias: NULL if import path is the empty string
 
 struct import {
-	cstring *alias; //NULL if import path is an empty string
+	cstring *alias; 
 };
 
 make_vector(import, Import, static)
 
 //------------------------------------------------------------------------------
-// The module.flag member is free to read/write for any purpose. The intrusive 
-// linked list via module.next is not populated by SyntaxTreeInit as this must
-// be determined via semantic analysis.
+// @alias: non-null
+// @next: intrusive linked list; not populated by parser
+// @table: tag == TABLE_MODULE
+// @flag: unused; free to read or write for any purpose
 
 struct module {
 	vector(Import) imports;

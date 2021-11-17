@@ -106,7 +106,8 @@ STRING_LITERAL ::= "\"" [^"]* "\""
 #-------------------------------------------------------------------------------
 # A struct declaration introduces a scoped user defined type. Together with its
 # method set, a struct enables object orientation via composition. Members are
-# defaulted to immutable attributes.
+# defaulted to private attributes, meaning they can only be accessed from other
+# methods belonging to the same method set.
 #-------------------------------------------------------------------------------
 
 <struct declaration> ::= "struct" "pub"? IDENTIFIER "{" <member list> "}" ";"
