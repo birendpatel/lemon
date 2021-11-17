@@ -213,6 +213,10 @@ struct frame {
 	size_t line;
 };
 
+//note; the try-catch is placed outside of the loop because once one symbol
+//fails to resolve the active table in the frame is corrupt. Since symbols are
+//resolved in topological order, a try-block inside the lop means that all of 
+//the dependent modules may unleash a cascade of repetitive error messages.
 static bool ResolveSymbols(network *net)
 {
 	assert(net);
@@ -221,10 +225,10 @@ static bool ResolveSymbols(network *net)
 
 	CEXCEPTION_T e;
 
-	module *node = net->head;
+	Try {
+		module *node = net->head;
 
-	while (node) {
-		Try {
+		while (node) {
 			frame active = {
 				.ast = node,
 				.top = net->global,
@@ -232,12 +236,10 @@ static bool ResolveSymbols(network *net)
 			};
 
 			ResolveModule(&active);
-		} Catch (e) {
-			xerror_fatal("cannot resolve symbols; %s", node->alias);
-			return false;
 		}
-
-		node = node->next;
+	} Catch (e) {
+		xerror_fatal("symbol resolution failed");
+		return false;
 	}
 
 	return true;
