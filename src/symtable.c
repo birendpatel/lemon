@@ -14,7 +14,7 @@
 	.key = keyname,							       \
 	.value = {							       \
 		.tag = SYMBOL_NATIVE,					       \
-		.native = {						       \
+		.native_data = {					       \
 			.bytes = size					       \
 		}							       \
 	}								       \
@@ -25,7 +25,7 @@
 	.key = keyname,							       \
 	.value = {							       \
 		.tag = SYMBOL_FUNCTION,					       \
-		.function = {						       \
+		.function_data = {					       \
 			.table = NULL,					       \
 			.referenced = false				       \
 		}							       \

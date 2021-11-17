@@ -29,7 +29,6 @@ typedef enum symboltag {
 	SYMBOL_UDT,
 	SYMBOL_VARIABLE,
 	SYMBOL_FIELD,
-	SYMBOL_VARIABLE,
 	SYMBOL_PARAMETER,
 	SYMBOL_LABEL,
 } symboltag;

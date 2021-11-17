@@ -10,6 +10,8 @@
 #include "vector.h"
 #include "xerror.h"
 
+typedef struct frame frame;
+
 static bool ResolveDependencies(network *, const cstring *);
 static bool Insert(network *, const cstring *);
 static module *InsertNewModule(network *, const cstring *);
@@ -205,11 +207,11 @@ static void ReportCycle(const cstring *parent, const cstring *child)
 // code symbols. No linker is required as imported ASTs are fully accessible
 // via their graph neighbors.
 
-typedef struct frame {
+struct frame {
 	module *ast;
 	symtable *top;
 	size_t line;
-} frame;
+};
 
 static bool ResolveSymbols(network *net)
 {
@@ -221,10 +223,10 @@ static bool ResolveSymbols(network *net)
 
 	module *node = net->head;
 
-	while (ast) {
+	while (node) {
 		Try {
-			frame active = (frame) {
-				.modname = node->alias,
+			frame active = {
+				.ast = node,
 				.top = net->global,
 				.line = 0
 			};
@@ -272,7 +274,7 @@ static void ReportRedeclaration(frame *self, const cstring *key)
 
 	const cstring *fname = self->ast->alias;
 	const size_t line = self->line;
-	const size_t prev_line = 0;
+	size_t prev_line = 0;
 	symtable *container = NULL;
 
 	symbol *current = SymTableLookup(self->top, key, &container);
@@ -299,7 +301,7 @@ static void ReportRedeclaration(frame *self, const cstring *key)
 		prev_line = current->function_data.node->line;
 		break;
 
-	case SYMBOL_VARIBLE:
+	case SYMBOL_VARIABLE:
 		prev_line = current->function_data.node->line;
 		break;
 
@@ -354,6 +356,8 @@ static void ResolveModule(frame *self)
 	node->table = PushSymTable(self, TABLE_MODULE, capacity);
 
 	ResolveImports(self);
+
+	PopSymTable(self);
 }
 
 static void ResolveImports(frame *self)
@@ -362,12 +366,12 @@ static void ResolveImports(frame *self)
 
 	symbol entry = {
 		.tag = SYMBOL_IMPORT,
-		.import = {
+		.import_data = {
 			.referenced = false
 		}
 	};
 
-	vector(Import) imports = self->imports;
+	vector(Import) imports = self->ast->imports;
 
 	for (size_t i = 0; i < imports.len; i++) {
 		import *node = &imports.buffer[i];
