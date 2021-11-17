@@ -374,7 +374,9 @@ impl_vector_reset(fiat, Fiat, static)
 // @alias: NULL if import path is the empty string
 
 struct import {
-	cstring *alias; 
+	cstring *alias;
+	symbol *entry;
+	size_t line;
 };
 
 make_vector(import, Import, static)

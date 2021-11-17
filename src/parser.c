@@ -524,6 +524,7 @@ static import RecImport(parser *self)
 
 	import node = {
 		.alias = self->tok.lexeme,
+		.line = self->tok.line
 	};
 
 	GetNextValidToken(self);

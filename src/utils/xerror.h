@@ -81,8 +81,9 @@ void XerrorFlush(void);
 const cstring *XerrorDescription(const xerror err);
 
 //exceptions
-#define XXPARSE ((CEXCEPTION_T) 1) // raised when grammar is ill-formed
-#define XXGRAPH ((CEXCEPTION_T) 2) // raised when generic graphing issue found
+#define XXPARSE  ((CEXCEPTION_T) 1) // raised when grammar is ill-formed
+#define XXGRAPH  ((CEXCEPTION_T) 2) // raised when generic graphing issue found
+#define XXSYMBOL ((CEXCEPTION_T) 3) // raised when symbol resolution fails
 
 #define ThrowFatal(exception, msg, ...) 				       \
 do {								               \

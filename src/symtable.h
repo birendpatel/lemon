@@ -13,6 +13,7 @@ typedef struct symtable symtable;
 typedef struct module module;
 typedef struct decl decl;
 typedef struct stmt stmt;
+typedef struct import import;
 typedef struct member member;
 typedef struct param param;
 
@@ -26,6 +27,7 @@ typedef enum symboltag {
 	SYMBOL_FUNCTION,
 	SYMBOL_METHOD,
 	SYMBOL_UDT,
+	SYMBOL_VARIABLE,
 	SYMBOL_FIELD,
 	SYMBOL_VARIABLE,
 	SYMBOL_PARAMETER,
@@ -37,56 +39,57 @@ struct symbol {
 	union {
 		struct {
 			size_t bytes;
-		} native;
+		} native_data;
 
 		struct {
 			symtable *table;
 			module *node;
 			bool referenced;
-		} module;
+		} module_data;
 
 		struct {
+			import *node;
 			bool referenced;
-		} import;
-
-		struct {
-			symtable *table;
-			decl *node;
-			bool referenced;
-		} function;
+		} import_data;
 
 		struct {
 			symtable *table;
 			decl *node;
 			bool referenced;
-		} method;
+		} function_data;
+
+		struct {
+			symtable *table;
+			decl *node;
+			bool referenced;
+		} method_data;
 
 		struct {
 			symtable *table;
 			decl *node;
 			size_t bytes;
 			bool referenced;
-		} udt;
-
-		struct {
-			member *node;
-			bool referenced;
-		} field;
+		} udt_data;
 
 		struct {
 			decl *node;
 			bool referenced;
-		} variable;
+		} variable_data;
 
+		struct {
+			member *node;
+			bool referenced;
+		} field_data;
+		
 		struct {
 			param *node;
 			bool referenced;
-		} parameter;
+		} parameter_data;
 
 		struct {
 			stmt *node;
 			bool referenced;
-		} label;
+		} label_data;
 	};
 };
 
@@ -116,7 +119,7 @@ struct symtable {
 //API
 
 //create the global symbol table and populate it with the predeclared native
-//types and functions; returns NULL on failure
+//types and functions; returned pointer is non-NULL
 symtable *SymTableInit(void);
 
 //recursively release all symbol tables in memory; input must not be NULL

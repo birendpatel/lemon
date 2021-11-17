@@ -69,6 +69,7 @@ symtable *SymTableInit(void)
 	const size_t total_entries = sizeof(table) / sizeof(table[0]);
 
 	symtable *global = SymTableSpawn(NULL, TABLE_GLOBAL, total_entries);
+	assert(global);
 
 	for (size_t i = 0; i < total_entries; i++) {
 		const pair *p = table + i;
