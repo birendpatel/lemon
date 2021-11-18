@@ -19,13 +19,18 @@ static void Sort(network *, module *);
 static void ReportCycle(const cstring *, const cstring *);
 
 static bool ResolveSymbols(network *);
+static symbol *LookupSymbol(frame *, const cstring *, symtable **);
 static symbol *InsertSymbol(frame *, const cstring *, symbol);
 static void ReportRedeclaration(frame *, const cstring *);
 static symtable *PushSymTable(frame *, const tabletag, const size_t);
 static symtable *PopSymTable(frame *);
-static type *GetBaseType(frame *, type *);
+static type *UnwindType(type *);
 static void ResolveModule(frame *);
 static void ResolveImports(frame *);
+static void ResolveDeclarations(frame *);
+static void ResolveUDT(frame *, decl *);
+static void ResolveMembers(frame *, vector(Member));
+static symbol *LookupMemberType(frame *, type *);
 
 //------------------------------------------------------------------------------
 
@@ -222,6 +227,25 @@ static bool ResolveSymbols(network *net)
 
 //------------------------------------------------------------------------------
 
+static symbol *LookupSymbol(frame *self, const cstring *key, symtable **target)
+{
+	assert(self);
+	assert(key);
+
+	const cstring *msg = "%s not declared before use";
+
+	symbol *ref = SymTableLookup(self->top, key, target);
+
+	//TODO need line numbers on type nodes and more verbose description
+	if (!ref) {
+		const cstring *fname = self->ast->alias;
+		XerrorUser(fname, 0, msg, key);
+		Throw(XXSYMBOL);
+	}
+
+	return ref;
+}
+
 //throws XXSYMBOL exception if symbol alredy exists in the active table
 static symbol *InsertSymbol(frame *self, const cstring *key, symbol value)
 {
@@ -319,21 +343,24 @@ static symtable *PopSymTable(frame *self)
 	return old_top;
 }
 
-//recursively unwind the type list and return the tail node
-static type *GetBaseType(frame *self, type *node)
+//return the tail (NODE_BASE) or penultimate node (NODE_NAMED) in the singly
+//linked type list.
+static type *UnwindType(type *node)
 {
-	assert(self);
 	assert(node);
 
 	switch (node->tag) {
 	case NODE_BASE:
+		fallthrough;
+
+	case NODE_NAMED:
 		return node;
 
 	case NODE_POINTER:
-		return GetBaseType(self, node->pointer.reference);
+		return UnwindType(node->pointer.reference);
 
 	case NODE_ARRAY:
-		return GetBaseType(self, node->array.element);
+		return UnwindType(node->array.element);
 
 	default:
 		assert(0 != 0 && "invalid type tag");
@@ -391,7 +418,7 @@ static void ResolveDeclarations(frame *self)
 		[NODE_UDT] = ResolveUDT,
 	};
 
-	vector(Decl) declarations = self->ast.declarations;
+	vector(Decl) declarations = self->ast->declarations;
 
 	size_t i = 0;
 
@@ -409,7 +436,7 @@ static void ResolveUDT(frame *self, decl *node)
 {
 	assert(self);
 	assert(node);
-	assert(node->tag = NODE_UDT);
+	assert(node->tag == NODE_UDT);
 
 	symbol sym = {
 		.tag = SYMBOL_UDT,
@@ -422,14 +449,14 @@ static void ResolveUDT(frame *self, decl *node)
 	};
 
 	//place udt symbol in the parent
-	symbol *symref = InsertSymbol(self, node->name, sym);
+	symbol *symref = InsertSymbol(self, node->udt.name, sym);
 
 	//THEN load the udt table itself; returned pointer from PushSymTable
 	//lets us backfill the child pointer in order to doubly link the tables
-	const size_t capacity = node->members.len;
+	const size_t capacity = node->udt.members.len;
 	symref->udt_data.table = PushSymTable(self, TABLE_UDT, capacity);
 
-	ResolveMembers(self, node->members);
+	ResolveMembers(self, node->udt.members);
 
 	(void) PopSymTable(self);
 }
@@ -439,11 +466,12 @@ static void ResolveUDT(frame *self, decl *node)
 //types have no public/private qualifier and so the compiler refuses to resolve
 //the reference. In any case, even if the compiler could resolve it, it doesnt
 //make sense to do so because something like math.bool is obviously meaningless
-static void ResolveMembers(frame *self, vector(Member) *members)
+static void ResolveMembers(frame *self, vector(Member) members)
 {
 	assert(self);
 	assert(members.len > 0);
 
+	size_t fail = 0;
 	size_t i = 0;
 
 	symbol sym = {
@@ -460,8 +488,90 @@ static void ResolveMembers(frame *self, vector(Member) *members)
 		sym.field_data.node = node;
 		node->entry = InsertSymbol(self, node->name, sym);
 
-		//TODO check type
+		if (!LookupMemberType(self, node->typ)) {
+			fail++;
+		}
 
 		i++;
 	}
+
+	if (fail) {
+		Throw(XXSYMBOL);
+	}
 }
+
+//if the node is a base type, returns a reference to the type symbol entry. If
+//the node is a named type, returns a reference to its base type symbol entry.
+//returns NULL if any lookup fails or if the lookup succeeds but the referenced
+//symbol is semantically meaningless.
+static symbol *LookupMemberType(frame *self, type *node)
+{
+	assert(self);
+	assert(node);
+
+	node = UnwindType(node);
+	const cstring *fname = self->ast->alias;
+	symtable *container = NULL;
+	symbol *ref = NULL;
+	cstring *key = NULL;
+
+	switch (node->tag) {
+	case NODE_BASE:
+		key = node->base.name;
+		ref = LookupSymbol(self, key, NULL);
+
+		switch (ref->tag) {
+		case SYMBOL_UDT:
+			ref->udt_data.referenced = true;
+			fallthrough;
+
+		case SYMBOL_NATIVE:
+			return ref;
+
+		default:
+			//TODO line info
+			XerrorUser(fname, 0, "'%s' not a declared type", key);
+		}
+
+		return NULL;
+
+	case NODE_NAMED:
+		key = node->named.name;
+		ref = LookupSymbol(self, key, &container);
+
+		if (ref->tag != SYMBOL_IMPORT) {
+			XerrorUser(fname, 0 , "'%s' is not an import", key);
+			return NULL;
+		}
+
+		ref->import_data.referenced = true;
+
+		ref = LookupMemberType(self, node->named.reference);
+
+		if (!ref) {
+			return NULL;
+		}
+
+		if (ref->tag == SYMBOL_NATIVE) {
+			const cstring *msg = "named global type is redundant";
+			XerrorUser(fname, 0, msg);
+			return NULL;
+		}
+
+		assert(ref->tag == SYMBOL_UDT);
+
+		if (!ref->udt_data.node->udt.public) {
+			const cstring *msg = "reference to private type";
+			XerrorUser(fname, 0, msg);
+			return NULL;
+		}
+
+		return ref;
+
+	default:
+		assert(0 != 0 && "invalid node tag");
+		__builtin_unreachable();
+	}
+}
+
+//------------------------------------------------------------------------------

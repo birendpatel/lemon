@@ -862,14 +862,15 @@ static type *RecType(parser *self)
 	assert(self);
 
 	type *node = ParserMalloc(self, sizeof(type));
+	token prev = INVALID_TOKEN; 
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
-		token prev = self->tok;
+		prev = self->tok;
 
 		GetNextValidToken(self);
 
-		if (self->tok.type != DOT) {
+		if (self->tok.type != _DOT) {
 			node->tag = NODE_BASE;
 			node->base.name = prev.lexeme;
 			break;
