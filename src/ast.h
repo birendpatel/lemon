@@ -92,6 +92,7 @@ typedef enum typetag {
 	NODE_BASE,
 	NODE_POINTER,
 	NODE_ARRAY,
+	NODE_NAMED,
 } typetag;
 
 //<type> rule; composite types form a singly linked list where the tail node
@@ -110,6 +111,12 @@ struct type {
 			type *element;
 			intmax_t len;
 		} array;
+
+		//@reference: non-null
+		struct {
+			cstring *name;
+			type *reference;
+		} named;
 
 		//@entry: tag == SYMBOL_NATIVE
 		struct {

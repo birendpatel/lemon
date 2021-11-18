@@ -13,8 +13,7 @@
 typedef struct frame frame;
 
 static bool ResolveDependencies(network *, const cstring *);
-static bool Insert(network *, const cstring *);
-static module *InsertNewModule(network *, const cstring *);
+static bool InsertModule(network *, const cstring *);
 static void InsertChildren(network *, module *, const cstring *);
 static void Sort(network *, module *);
 static void ReportCycle(const cstring *, const cstring *);
@@ -24,6 +23,7 @@ static symbol *InsertSymbol(frame *, const cstring *, symbol);
 static void ReportRedeclaration(frame *, const cstring *);
 static symtable *PushSymTable(frame *, const tabletag, const size_t);
 static symtable *PopSymTable(frame *);
+static type *GetBaseType(frame *, type *);
 static void ResolveModule(frame *);
 static void ResolveImports(frame *);
 
@@ -68,14 +68,13 @@ void *ResolverFree(network *net)
 }
 
 //------------------------------------------------------------------------------
-// Phase 1:
-// Recursive dependency resolution combined with simultaneous topological sort.
-// A dependency graph is rooted, acyclic, and directed. By the very definition
-// of an import, all verticies are reachable via the root. Since both dependency
-// resolution and topological sort algorithms can be implemented via a recusive 
-// DFS, all of these facts together imply that the two algorithms can execute
-// simultaneously. This halves the algorithmic complexity constant by avoiding
-// two separate but identical DFS traversals.
+// Phase 1: resolve import directives
+//
+// Dependency resolution is combined with a simultaneous topological sort. This
+// is possible because a well-formed dependency digraph is rooted and acyclic
+// and all vertices are reachable via the root (by the definition of an import).
+// Since both dependency resolution and sorting are recursive DFS algorithms
+// they can share the traversal logic.
 
 //returns false if failed
 static bool ResolveDependencies(network *net, const cstring *filename)
@@ -86,7 +85,7 @@ static bool ResolveDependencies(network *net, const cstring *filename)
 	CEXCEPTION_T e;
 
 	Try {
-		bool ok = Insert(net, filename);
+		bool ok = InsertModule(net, filename);
 		assert(ok && "base case triggered on first insertion");
 	} Catch (e) {
 		xerror_fatal("cannot resolve dependencies");
@@ -104,48 +103,33 @@ enum {
 	OFF_CALL_STACK = true
 };
 
-static bool Insert(network *net, const cstring *filename)
+static bool InsertModule(network *net, const cstring *filename)
 {
 	assert(net);
 	assert(filename);
 
 	module *vertex = NULL;
 
-	//base case
 	if (ModuleGraphSearch(&net->dependencies, filename, &vertex)) {
 		return vertex->flag;
 	}
 
-	//recursive case
-	vertex = InsertNewModule(net, filename);
+	vertex = SyntaxTreeInit(filename);
+
+	if (!vertex) {
+		ThrowFatal(XXGRAPH, "cannot create AST; %s", filename);
+	}
+
+	(void) ModuleGraphInsert(&net->dependencies, filename, vertex);
+	vertex->flag = ON_CALL_STACK;
 	InsertChildren(net, vertex, filename);
 	Sort(net, vertex);
 
 	return (vertex->flag = OFF_CALL_STACK);
 }
 
-//create a module with module.flag == ON_CALL_STACK. Throw XXGRAPH on failure.
-static module *InsertNewModule(network *net, const cstring *filename)
-{
-	assert(net);
-	assert(filename);
-
-	module *ast = SyntaxTreeInit(filename);
-
-	if (!ast) {
-		ThrowFatal(XXGRAPH, "cannot create ast; %s", filename);
-	}
-
-	ast->flag = ON_CALL_STACK;
-
-	bool ok = ModuleGraphInsert(&net->dependencies, filename, ast);
-	assert(ok && "parent inserted on base case");
-
-	return ast;
-}
-
-//depth-first traversal; indirect recursion on Insert(); Throw XXGRAPH on cycle
-static 
+//indirect recursion via InsertModule(); Throw XXGRAPH on cycle
+static
 void InsertChildren(network *net, module *parent, const cstring *parentname)
 {
 	assert(net);
@@ -156,8 +140,8 @@ void InsertChildren(network *net, module *parent, const cstring *parentname)
 
 	for (size_t i = 0; i < imports.len; i++) {
 		const cstring *childname = imports.buffer[i].alias;
-		
-		const bool status = Insert(net, childname);
+
+		const bool status = InsertModule(net, childname);
 
 		if (status == ON_CALL_STACK) {
 			ReportCycle(parentname, childname);
@@ -168,8 +152,8 @@ void InsertChildren(network *net, module *parent, const cstring *parentname)
 
 }
 
-//since C does not have closures a cheeky static variable lets us keep track 
-//of the last vertex that was threaded through the intrusive list.
+//since C does not allow closures a cheeky static variable keeps track of the
+//previous vertex that was threaded through the intrusive list.
 static void Sort(network *net, module *curr)
 {
 	assert(net);
@@ -187,13 +171,9 @@ static void Sort(network *net, module *curr)
 	prev = curr;
 }
 
-//inform user of the circular dependency
-//note; the dependency might not actually exist. the user might have just
-//imported the name without using it. But at this stage symbol resolution has
-//not occured so usage statistics are not available.
 static void ReportCycle(const cstring *parent, const cstring *child)
 {
-	const cstring *msg = "%s, %s: circular dependency detected";
+	const cstring *msg = "%s has circular dependency with %s";
 
 	RAII(cStringFree) cstring *fparent = FileGetDiskName(parent);
 	RAII(cStringFree) cstring *fchild = FileGetDiskName(child);
@@ -202,10 +182,7 @@ static void ReportCycle(const cstring *parent, const cstring *child)
 }
 
 //------------------------------------------------------------------------------
-// Phase 2:
-// A well defined dependency graph now makes it possible to resolve all source
-// code symbols. No linker is required as imported ASTs are fully accessible
-// via their graph neighbors.
+// Phase 2: resolve symbols
 
 struct frame {
 	module *ast;
@@ -213,10 +190,6 @@ struct frame {
 	size_t line;
 };
 
-//note; the try-catch is placed outside of the loop because once one symbol
-//fails to resolve the active table in the frame is corrupt. Since symbols are
-//resolved in topological order, a try-block inside the lop means that all of 
-//the dependent modules may unleash a cascade of repetitive error messages.
 static bool ResolveSymbols(network *net)
 {
 	assert(net);
@@ -248,7 +221,6 @@ static bool ResolveSymbols(network *net)
 }
 
 //------------------------------------------------------------------------------
-// helper functions for symbol resolution
 
 //throws XXSYMBOL exception if symbol alredy exists in the active table
 static symbol *InsertSymbol(frame *self, const cstring *key, symbol value)
@@ -272,7 +244,7 @@ static void ReportRedeclaration(frame *self, const cstring *key)
 {
 	assert(self);
 	assert(key);
-	
+
 	const cstring *longmsg = "%s redeclared; previously on line %zu";
 	const cstring *shortmsg = "%s redeclared";
 
@@ -315,7 +287,7 @@ static void ReportRedeclaration(frame *self, const cstring *key)
 	}
 
 	if (prev_line) {
-		XerrorUser(fname, line, longmsg, key, prev_line); 
+		XerrorUser(fname, line, longmsg, key, prev_line);
 	} else {
 		XerrorUser(fname, line, shortmsg, key);
 	}
@@ -347,6 +319,27 @@ static symtable *PopSymTable(frame *self)
 	return old_top;
 }
 
+//recursively unwind the type list and return the tail node
+static type *GetBaseType(frame *self, type *node)
+{
+	assert(self);
+	assert(node);
+
+	switch (node->tag) {
+	case NODE_BASE:
+		return node;
+
+	case NODE_POINTER:
+		return GetBaseType(self, node->pointer.reference);
+
+	case NODE_ARRAY:
+		return GetBaseType(self, node->array.element);
+
+	default:
+		assert(0 != 0 && "invalid type tag");
+		__builtin_unreachable();
+	}
+}
 //------------------------------------------------------------------------------
 
 static void ResolveModule(frame *self)
@@ -354,14 +347,16 @@ static void ResolveModule(frame *self)
 	assert(self);
 
 	module *node = self->ast;
-	
+
 	const size_t capacity = node->imports.len + node->declarations.len;
-	
+
 	node->table = PushSymTable(self, TABLE_MODULE, capacity);
 
 	ResolveImports(self);
 
-	PopSymTable(self);
+	ResolveDeclarations(self);
+
+	(void) PopSymTable(self);
 }
 
 static void ResolveImports(frame *self)
@@ -379,11 +374,94 @@ static void ResolveImports(frame *self)
 
 	for (size_t i = 0; i < imports.len; i++) {
 		import *node = &imports.buffer[i];
-		
+
 		const cstring *name = node->alias;
 		self->line = node->line;
 
 		symbol *ref = InsertSymbol(self, name, entry);
 		node->entry = ref;
+	}
+}
+
+static void ResolveDeclarations(frame *self)
+{
+	assert(self);
+
+	static void (*const jump[])(frame *, decl *) = {
+		[NODE_UDT] = ResolveUDT,
+	};
+
+	vector(Decl) declarations = self->ast.declarations;
+
+	size_t i = 0;
+
+	while (i < declarations.len) {
+		decl *node = &declarations.buffer[i];
+		jump[node->tag](self, node);
+
+		i++;
+	}
+}
+
+//------------------------------------------------------------------------------
+
+static void ResolveUDT(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag = NODE_UDT);
+
+	symbol sym = {
+		.tag = SYMBOL_UDT,
+		.udt_data = {
+			.table = NULL,
+			.node = node,
+			.bytes = 0, // not calculated by resolver
+			.referenced = false
+		}
+	};
+
+	//place udt symbol in the parent
+	symbol *symref = InsertSymbol(self, node->name, sym);
+
+	//THEN load the udt table itself; returned pointer from PushSymTable
+	//lets us backfill the child pointer in order to doubly link the tables
+	const size_t capacity = node->members.len;
+	symref->udt_data.table = PushSymTable(self, TABLE_UDT, capacity);
+
+	ResolveMembers(self, node->members);
+
+	(void) PopSymTable(self);
+}
+
+//note; resolves the member's type but if the type is a named reference to a
+//global native then an error is issued. The type must be public, but native
+//types have no public/private qualifier and so the compiler refuses to resolve
+//the reference. In any case, even if the compiler could resolve it, it doesnt
+//make sense to do so because something like math.bool is obviously meaningless
+static void ResolveMembers(frame *self, vector(Member) *members)
+{
+	assert(self);
+	assert(members.len > 0);
+
+	size_t i = 0;
+
+	symbol sym = {
+		.tag = SYMBOL_FIELD,
+		.field_data = {
+			.node = NULL,
+			.referenced = false
+		}
+	};
+
+	while (i < members.len) {
+		member *node = &members.buffer[i];
+
+		sym.field_data.node = node;
+		node->entry = InsertSymbol(self, node->name, sym);
+
+		//TODO check type
+
+		i++;
 	}
 }

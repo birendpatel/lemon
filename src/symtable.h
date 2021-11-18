@@ -36,6 +36,7 @@ typedef enum symboltag {
 struct symbol {
 	symboltag tag;
 	union {
+		//@bytes: not calculated by compiler front-end
 		struct {
 			size_t bytes;
 		} native_data;
@@ -63,6 +64,7 @@ struct symbol {
 			bool referenced;
 		} method_data;
 
+		//@bytes: not calculated by compiler front-end
 		struct {
 			symtable *table;
 			decl *node;

@@ -865,9 +865,27 @@ static type *RecType(parser *self)
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
-		node->tag = NODE_BASE;
-		node->base.name = self->tok.lexeme;
+		token prev = self->tok;
+
 		GetNextValidToken(self);
+
+		if (self->tok.type != DOT) {
+			node->tag = NODE_BASE;
+			node->base.name = prev.lexeme;
+			break;
+		}
+
+		node->tag = NODE_NAMED;
+		node->named.name = prev.lexeme;
+
+		move_check(self, _IDENTIFIER, "missing type after '.'");
+		node->named.reference = RecType(self);
+
+		if (node->named.reference->tag != NODE_BASE) {
+			usererror("nested named types are not allowed");
+			Throw(XXPARSE);
+		}
+
 		break;
 
 	case _STAR:
