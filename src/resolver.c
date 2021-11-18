@@ -236,6 +236,8 @@ static bool ResolveSymbols(network *net)
 			};
 
 			ResolveModule(&active);
+
+			node = node->next;
 		}
 	} Catch (e) {
 		xerror_fatal("symbol resolution failed");
