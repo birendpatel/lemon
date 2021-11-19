@@ -188,11 +188,11 @@ static const cstring *GetTokenName(token_type type)
 		[_FALSE] = "FALSE",
 	};
 
-	if (type <= _INVALID && type >= _TOKEN_TYPE_COUNT) {
-		return lookup[type];
+	if (type <= _INVALID || type >= _TOKEN_TYPE_COUNT) {
+		return "LOOKUP ERROR";
 	}
 
-	return "LOOKUP ERROR";
+	return lookup[type];
 }
 
 static void TokenPrint(scanner *self)

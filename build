@@ -79,7 +79,6 @@ common_flags = [
 debug_flags = [
     "-ggdb",
     "-O0",
-    "-DDEBUG"
 ]
 
 trace_flags = [

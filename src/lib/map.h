@@ -1,5 +1,4 @@
-// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-//
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.  //
 // Associative array from string keys to any type T, implemented as a linear
 // probing hash table.
 

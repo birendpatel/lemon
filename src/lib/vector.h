@@ -26,6 +26,8 @@
 
 __attribute__((malloc)) static void *VectorCalloc(const size_t bytes)
 {
+	VectorTrace("requesting %zu byte region", bytes);
+
 	void *region = calloc(bytes, 1);
 
 	if (!region) {
@@ -40,6 +42,8 @@ static void *VectorRealloc(void *ptr, size_t bytes)
 {
 	assert(ptr);
 	assert(bytes != 0);
+
+	VectorTrace("requesting %zu byte region", bytes);
 
 	void *region = realloc(ptr, bytes);
 
@@ -105,6 +109,8 @@ cls T pfix##VectorSet(pfix##_vector *, const size_t , T);
 cls pfix##_vector pfix##VectorInit(const size_t len, const size_t cap)         \
 {                                                                              \
 	assert(len <= cap);						       \
+									       \
+	VectorTrace("initializing vector");				       \
 									       \
 	pfix##_vector v = {						       \
 		.len = len,						       \
@@ -202,10 +208,16 @@ cls void pfix##VectorPush(pfix##_vector *self, T datum)                        \
 	}                                                                      \
 									       \
 	if (self->len == self->cap) {					       \
-		VectorTrace("maximum capacity; reallocating...");	       \
+		VectorTrace("maximum capacity %zu reached", self->cap);	       \
+		VectorTrace("(%zu bytes)", self->cap * sizeof(T));             \
 									       \
 		self->cap = VectorGrow(self->cap);                             \
-		self->buffer = VectorRealloc(self->buffer, self->cap);	       \
+									       \
+		VectorTrace("realloc buffer to %zu elements", self->cap);      \
+		VectorTrace("(%zu bytes)", self->cap * sizeof(T));             \
+								               \
+		const size_t bytes = self->cap * sizeof(T);		       \
+		self->buffer = VectorRealloc(self->buffer, bytes);	       \
 									       \
 		VectorTrace("reallocated");                                    \
 	}								       \

@@ -471,6 +471,10 @@ static void ResolveMembers(frame *self, vector(Member) members)
 	assert(self);
 	assert(members.len > 0);
 
+	for (size_t i = 0; i < members.len; i++) {
+		xerror_trace("%s", members.buffer[i].name);
+	}
+
 	size_t fail = 0;
 	size_t i = 0;
 
@@ -488,6 +492,10 @@ static void ResolveMembers(frame *self, vector(Member) members)
 		sym.field_data.node = node;
 		node->entry = InsertSymbol(self, node->name, sym);
 
+		xerror_trace("looking up type for member %s", node->name);
+		xerror_trace("member has type tag %d", node->typ->tag);
+		xerror_trace("member has type name %s", node->typ->base.name);
+		//TODO for type int8 (foo) the node name is mysteriously null
 		if (!LookupMemberType(self, node->typ)) {
 			fail++;
 		}
@@ -511,13 +519,17 @@ static symbol *LookupMemberType(frame *self, type *node)
 
 	node = UnwindType(node);
 	const cstring *fname = self->ast->alias;
-	symtable *container = NULL;
 	symbol *ref = NULL;
 	cstring *key = NULL;
 
 	switch (node->tag) {
 	case NODE_BASE:
 		key = node->base.name;
+
+		if (!key) {
+			xerror_trace("key is null!!!");
+		}
+		xerror_trace("key; %s", key);
 		ref = LookupSymbol(self, key, NULL);
 
 		switch (ref->tag) {
@@ -537,7 +549,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 
 	case NODE_NAMED:
 		key = node->named.name;
-		ref = LookupSymbol(self, key, &container);
+		ref = LookupSymbol(self, key, NULL);
 
 		if (ref->tag != SYMBOL_IMPORT) {
 			XerrorUser(fname, 0 , "'%s' is not an import", key);
@@ -546,6 +558,8 @@ static symbol *LookupMemberType(frame *self, type *node)
 
 		ref->import_data.referenced = true;
 
+		//TODO have to actually load the other module's symbol table..
+		//this is still searching in the local spaghetti stack
 		ref = LookupMemberType(self, node->named.reference);
 
 		if (!ref) {
