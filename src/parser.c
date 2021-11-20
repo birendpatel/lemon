@@ -90,6 +90,33 @@ static expr *RecArrayLiteral(parser *);
 static expr *RecIdentifier(parser *);
 static expr *RecAccess(parser *, expr *);
 
+//cleanup
+static void FreeImport(import);
+static void FreeDeclarationRef(decl *);
+static void FreeDeclaration(decl);
+static void FreeType(type *);
+static void FreeUDT(decl);
+static void FreeMember(member);
+static void FreeFunction(decl);
+static void FreeParam(param);
+static void FreeMethod(decl);
+static void FreeVariable(decl);
+static void FreeStatement(stmt);
+static void FreeStatementRef(stmt *);
+static void FreeStmtDummy(__attribute__((unused)) stmt);
+static void FreeExprStmt(stmt);
+static void FreeBlock(stmt);
+static void FiatFree(fiat);
+static void FreeFor(stmt);
+static void FreeWhile(stmt);
+static void FreeExpressionRef(expr *);
+static void FreeBranch(stmt);
+static void FreeReturn(stmt);
+static void FreeGoto(stmt);
+static void FreeSwitch(stmt);
+static void FreeTest(test);
+static void Freelabel(stmt);
+
 //-----------------------------------------------------------------------------
 // parser management
 //
@@ -1261,7 +1288,7 @@ static stmt RecNamedTarget(parser *self)
 	case _GOTO:
 		node.tag = NODE_GOTOLABEL;
 		move_check(self, _IDENTIFIER, "missing goto target");
-		node.gotolabel = self->tok.lexeme;
+		node.goto.name = self->tok.lexeme;
 		move_check_move(self, _SEMICOLON, "missing ';' after goto");
 		break;
 
@@ -1861,4 +1888,345 @@ static expr *RecArrayLiteral(parser *self)
 	assert(node->arraylit.indicies.len == node->arraylit.values.len);
 
 	return node;
+}
+
+//------------------------------------------------------------------------------
+//node memory management; simple and relatively straightforward DFS postorder
+//traversal; note that the module node does not have to be the entry point - any
+//subtree can be completely freed via its associated free function.
+
+void SyntaxTreeFree(module *ast)
+{
+	assert(ast);
+
+	ImportVectorFree(&ast->imports, FreeImport);
+
+	DeclVectorFree(&ast->declarations, FreeDeclaration);
+
+	FreeDecls(&ast->declarations);
+
+	free(alias);
+}
+
+static void FreeImport(import node)
+{
+	free(node.alias);
+}
+
+static void FreeDeclarationRef(decl *node)
+{
+	if (!node) {
+		return;
+	}
+
+	FreeDeclaration(*node);
+
+	free(node);
+}
+
+static void FreeDeclaration(decl node)
+{
+	static void (*const jump[])(decl) = {
+		[NODE_UDT] = FreeUDT,
+		[NODE_FUNCTION] = FreeFunction,
+		[NODE_METHOD] = FreeMethod,
+		[NODE_VARIABLE] = FreeVariable
+	};
+
+	jump[node->tag](node);
+}
+
+//okay if input is null; frees input node on return
+static void FreeType(type *node)
+{
+	if (!node) {
+		return;
+	}
+
+	switch (node->tag) {
+	case NODE_BASE:
+		free(node->base.name);
+		break;
+
+	case NODE_NAMED:
+		free(node->named.name);
+		FreeType(node->named.reference);
+		break;
+
+	case NODE_POINTER:
+		FreeType(node->pointer.reference);
+		break;
+
+	case NODE_ARRAY:
+		FreeType(node->array.element);
+		break;
+
+	default:
+		assert(0 != 0 && "invalid type tag");
+		__builtin_unreachable();
+	}
+
+	free(node);
+}
+
+static void FreeUDT(decl node)
+{
+	assert(node.tag = NODE_UDT);
+
+	free(node.udt.name);
+	MemberVectorFree(&node->udt.members, FreeMember);
+}
+
+static void FreeMember(member node)
+{
+	free(node.name);
+	FreeType(node.typ);
+}
+
+static void FreeFunction(decl node)
+{
+	assert(node.tag == NODE_FUNCTION);
+
+	free(node.function.name);
+
+	FreeType(node.function.free);
+
+	FreeStatementRef(node.function.block);
+
+	ParamVectorFree(&node.function.params, FreeParam);
+}
+
+static void FreeParam(param node)
+{
+	free(node.name);
+	FreeType(node.typ);
+}
+
+static void FreeMethod(decl node)
+{
+	assert(node.tag == NODE_METHOD);
+
+	free(node.method.name);
+
+	FreeType(node.method.ret);
+
+	FreeType(node.method.recv);
+
+	FreeStatementRef(node.method.block);
+
+	ParamVectorFree(&node.function.params, FreeParam);
+}
+
+static void FreeVariable(decl node)
+{
+	assert(node.tag == NODE_VARIABLE);
+
+	free(node.variable.name);
+
+	FreeType(node.variable.vartype);
+
+	FreeExpressionRef(node.variable.value);
+}
+
+static void FreeStatement(stmt node)
+{
+	static void (*const jump[])(stmt) = {
+		[NODE_EXPRSTMT] = FreeExprStmt,
+		[NODE_BLOCK] = FreeBlock,
+		[NODE_FORLOOP] = FreeFor,
+		[NODE_WHILELOOP] = FreeWhile,
+		[NODE_SWITCHSTMT] = FreeSwitch,
+		[NODE_BRANCH] = FreeBranch,
+		[NODE_RETURNSTMT] = FreeReturn,
+		[NODE_BREAKSTMT] = FreeStmtDummy,
+		[NODE_CONTINUESTMT] = FreeStmtDummy,
+		[NODE_GOTOLABEL] = FreeGoto,
+		[NODE_LABEL] = FreeLabel,
+		[NODE_FALLTHROUGHSTMT] = FreeStmtDummy
+	};
+
+	jump[node.tag](node);
+}
+
+static void FreeStmtDummy(__attribute__((unused)) stmt node)
+{
+	return;
+}
+
+static void FreeStatementRef(stmt *node)
+{
+	assert(node);
+
+	FreeStatement(*node);
+
+	free(node);
+}
+
+static void FreeExprStmt(stmt node)
+{
+	FreeExpressionRef(node.exprstmt);
+}
+
+static void FreeBlock(stmt node)
+{
+	assert(node->tag == NODE_BLOCK);
+
+	FiatVectorFree(&node->fiats, FiatFree);
+}
+
+static void FiatFree(fiat node)
+{
+	switch (node.tag) {
+	case NODE_DECL:
+		FreeDeclaration(node.declaration);
+
+	case NODE_STMT:
+		FreeStatement(node.statement);
+		break;
+
+	default:
+		assert(0 != 0 && "invalid fiat tag");
+		__builtin_unreachable();
+	}
+}
+
+static void FreeFor(stmt node)
+{
+	assert(node.tag == NODE_FORLOOP);
+
+	if (node.forloop.tag == FOR_DECL) {
+		FreeDeclarationRef(node.forloop.shortvar);
+	} else {
+		assert(node.forloop.tag = FOR_INIT);
+		FreeExpressionRef(node.forloop.init);
+	}
+
+	FreeExpressionRef(node.forloop.cond);
+	FreeExpressionRef(node.forloop.post);
+
+	FreeStatementRef(node.forloop.block);
+}
+
+static void FreeWhile(stmt node)
+{
+	assert(node.tag == NODE_WHILELOOP);
+
+	FreeExpressionRef(node.whileloop.cond);
+
+	FreeStatementRef(node.whileloop.block);
+}
+
+static void FreeBranch(stmt node)
+{
+	assert(node.tag == NODE_BRANCH);
+
+	FreeDeclarationRef(node.branch.shortvar);
+	FreeExpressionRef(node.branch.cond);
+	FreeStatementRef(node.branch.pass);
+	FreeStatementRef(node.branch.fail);
+}
+
+static void FreeReturn(stmt node)
+{
+	assert(node.tag == NODE_RETURNSTMT);
+
+	FreeExpressionRef(node.returnstmt);
+}
+
+static void FreeGoto(stmt node)
+{
+	assert(node.tag == NODE_GOTOLABEL);
+
+	free(node.goto.name);
+}
+
+static void FreeSwitch(stmt node)
+{
+	assert(node.tag = NODE_SWITCHSTMT);
+
+	FreeExpressionRef(node.switchstmt.controller);
+
+	TestVectorFree(&node.switchstmt.tests, FreeTest);
+}
+
+static void FreeTest(test node)
+{
+	FreeExpressionRef(node.cond);
+	FreeStatementRef(node.pass);
+}
+
+static void Freelabel(stmt node)
+{
+	assert(node.tag == NODE_LABEL);
+
+	free(node.label.name);
+	FreeStatementRef(node.label.target);
+}
+
+//okay if input is null; frees input pointer
+static void FreeExpressionRef(expr *node)
+{
+	if (!node) {
+		return;
+	}
+
+	switch (node->tag) {
+	case NODE_ASSIGNMENT:
+		FreeExpressionRef(node->assignment.lvalue);
+		FreeExpressionRef(node->assignment.rvalue);
+		break;
+
+	case NODE_BINARY:
+		FreeExpressionRef(node->binary.left);
+		FreeExpressionRef(node->binary.right);
+		break;
+
+	case NODE_UNARY:
+		FreeExpressionRef(node->unary.operand);
+		break;
+
+	case NODE_CAST:
+		FreeExpressionRef(node->cast.operand);
+		FreeType(node->cast.casttype);
+		break;
+
+	case NODE_CALL:
+		FreeExpressionRef(node->call.name);
+		ExprVectorFree(&node->call.args, FreeExpressionRef);
+		break;
+
+	case NODE_SELECTOR:
+		FreeExpressionRef(node->selector.name);
+		FreeExpressionRef(node->selector.attr);
+		break;
+
+	case NODE_INDEX:
+		FreeExpressionRef(node->index.name);
+		FreeExpressionRef(node->index.key);
+		break;
+
+	case NODE_ARRAYLIT:
+		ExprVectorFree(&node->arraylit.indicies, NULL);
+		ExprVectorFree(&node->arraylit.values, FreeExpressionRef);
+		break;
+
+	case NODE_RVARLIT:
+		free(node->rvarlit.dist);
+		ExprVectorFree(&node->rvarlit.args, FreeExpressionRef);
+		break;
+
+	case NODE_LIT:
+		free(node->lit.rep);
+		break;
+
+	case NODE_IDENT:
+		free(node->ident.name);
+		break;
+
+	default:
+		assert(0 != 0 && "invalid node tag");
+		__builtin_unreachable();
+	}
+
+	free(node);
 }
