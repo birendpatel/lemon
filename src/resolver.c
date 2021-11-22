@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stddef.h>
 
+#include "arena.h"
 #include "defs.h"
 #include "file.h"
 #include "resolver.h"
@@ -37,7 +38,7 @@ network *ResolverInit(const cstring *filename)
 {
 	assert(filename);
 
-	network *net = AbortMalloc(sizeof(network));
+	network *net = ArenaAllocate(sizeof(network));
 
 	net->dependencies = ModuleGraphInit();
 	net->head = NULL;
@@ -46,29 +47,16 @@ network *ResolverInit(const cstring *filename)
 	bool ok = ResolveDependencies(net, filename);
 
 	if (!ok) {
-		return ResolverFree(net);
+		return NULL; 
 	}
 
 	ok = ResolveSymbols(net);
 
 	if (!ok) {
-		return ResolverFree(net);
+		return NULL;
 	}
 
 	return net;
-}
-
-void *ResolverFree(network *net)
-{
-	assert(net);
-
-	ModuleGraphFree(&net->dependencies, SyntaxTreeFree);
-
-	SymTableFree(net->global);
-
-	free(net);
-
-	return NULL;
 }
 
 //------------------------------------------------------------------------------
@@ -179,8 +167,8 @@ static void ReportCycle(const cstring *parent, const cstring *child)
 {
 	const cstring *msg = "%s has circular dependency with %s";
 
-	RAII(cStringFree) cstring *fparent = FileGetDiskName(parent);
-	RAII(cStringFree) cstring *fchild = FileGetDiskName(child);
+	cstring *fparent = FileGetDiskName(parent);
+	cstring *fchild = FileGetDiskName(child);
 
 	XerrorUser(NULL, 0, msg, fparent, fchild);
 }
@@ -350,7 +338,7 @@ static type *UnwindType(type *node)
 
 	switch (node->tag) {
 	case NODE_BASE:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case NODE_NAMED:
 		return node;
@@ -521,7 +509,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 		switch (ref->tag) {
 		case SYMBOL_UDT:
 			ref->udt_data.referenced = true;
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case SYMBOL_NATIVE:
 			return ref;

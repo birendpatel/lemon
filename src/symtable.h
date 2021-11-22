@@ -6,16 +6,10 @@
 #include <stddef.h>
 
 #include "map.h"
+#include "str.h"
 
 typedef struct symbol symbol;
 typedef struct symtable symtable;
-
-typedef struct module module;
-typedef struct decl decl;
-typedef struct stmt stmt;
-typedef struct import import;
-typedef struct member member;
-typedef struct param param;
 
 //------------------------------------------------------------------------------
 // Symbols are associated with a cstring identifier and placed into a hash table
@@ -36,59 +30,56 @@ typedef enum symboltag {
 struct symbol {
 	symboltag tag;
 	union {
-		//@bytes: not calculated by compiler front-end
 		struct {
 			size_t bytes;
 		} native_data;
 
 		struct {
 			symtable *table;
-			module *node;
 			bool referenced;
 		} module_data;
 
 		struct {
-			import *node;
 			bool referenced;
 		} import_data;
 
 		struct {
 			symtable *table;
-			decl *node;
+			cstring *signature;
 			bool referenced;
 		} function_data;
 
 		struct {
 			symtable *table;
-			decl *node;
+			cstring *signature;
 			bool referenced;
 		} method_data;
 
-		//@bytes: not calculated by compiler front-end
 		struct {
 			symtable *table;
-			decl *node;
-			size_t bytes;
+			size_t bytes; //not calculated by front-end
 			bool referenced;
+			bool public;
 		} udt_data;
 
 		struct {
-			decl *node;
+			cstring *type;
 			bool referenced;
+			bool public;
 		} variable_data;
 
 		struct {
-			member *node;
+			cstring *type;
 			bool referenced;
+			bool public;
 		} field_data;
 		
 		struct {
-			param *node;
+			cstring *type;
 			bool referenced;
 		} parameter_data;
 
 		struct {
-			stmt *node;
 			bool referenced;
 		} label_data;
 	};
@@ -122,9 +113,6 @@ struct symtable {
 //create the global symbol table and populate it with the predeclared native
 //types and functions; returned pointer is non-NULL
 symtable *SymTableInit(void);
-
-//recursively release all symbol tables in memory; input must not be NULL
-void SymTableFree(symtable *global);
 
 //always returns a valid child symbol table; input capacity guarantees that the
 //underlying hash table buffer will not issue a dynamic resize when the total

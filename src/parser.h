@@ -10,9 +10,7 @@
 // operator is implemented via tagged anonymous unions.
 //
 // Unless otherwise specified via a comment, all pointers within the nodes
-// must be dynamically allocated and non-NULL. The SyntaxTreeInit function
-// guarantees this requirement. But, any application code which modifies and 
-// deletes subtrees must follow this rule otherwise SyntaxTreeFree will crash.
+// are dynamically allocated and set to non-NULL by SyntaxTreeInit. 
 
 #pragma once
 
@@ -38,10 +36,6 @@ typedef struct test test;
 //returns NULL if tree is ill-formed. On success all of the symbol and symtable
 //pointers in the returned tree are set to NULL.
 module *SyntaxTreeInit(const cstring *filename);
-
-//the input AST must not be null. Release all dynamic allocations made during
-//SyntaxTreeInit, which crucially doesnt include symtable and symbol references
-void SyntaxTreeFree(module *ast);
 
 //------------------------------------------------------------------------------
 //<member list>
@@ -71,8 +65,8 @@ make_vector(param, Param, static)
 //<case statement>
 
 struct test {
-	expr *cond; //heap, null for the default case
-	stmt *pass; //heap, tag == block_stmt
+	expr *cond; //null for the default case
+	stmt *pass; //tag == block_stmt
 };
 
 make_vector(test, Test, static)
@@ -111,21 +105,21 @@ struct type {
 	typetag tag;
 	union {
 		struct {
-			cstring *name; //heap, non-null
+			cstring *name; 
 			symbol *entry; //null
 		} base;
 	
 		struct {
-			cstring *name; //heap, non-null
-			type *reference; //null
+			cstring *name; 
+			type *reference;
 		} named;
 	
 		struct {
-			type *reference; //non-null
+			type *reference;
 		} pointer;
 
 		struct {
-			type *element; //non-null
+			type *element; 
 			intmax_t len; //may be zero
 		} array;
 	};
@@ -147,38 +141,36 @@ struct decl {
 	decltag tag;
 	union {
 		struct {
-			cstring *name; //heap, non-null
+			cstring *name;
 			symbol *entry; //null
 			vector(Member) members; //never empty
 			bool public;
 		} udt;
 
 		struct {
-			cstring *name; //heap, non-null
+			cstring *name; 
 			symbol *entry; //null
-			type *ret; //heap, list head, null if func returns void
-			stmt *block; //heap, non-null 
+			type *ret; //list head, null if func returns void
+			stmt *block; 
 			vector(Param) params; //may be empty
 			bool public;
 		} function;
 
-		//@entry: NULL
-		//@ret: NULL if method returns void
 		struct {
-			cstring *name; //heap, non-null
+			cstring *name;
 			symbol *entry; //null
-			type *ret; //heap, list-head, null if it returns void
-			type *recv;  //non-null
-			stmt *block; //heap, non-null
+			type *ret; //list-head, null if it returns void
+			type *recv;  
+			stmt *block;
 			vector(Param) params; //may be empty
 			bool public;
 		} method;
 
 		struct {
-			cstring *name; //heap, non-null
+			cstring *name; 
 			symbol *entry; //null
-			type *vartype; //heap, list-head, non-null
-			expr *value; //heap, null if no initialisation
+			type *vartype; //list-head 
+			expr *value; //null if no initialisation
 			bool mutable;
 			bool public; //meaningless if decl is not file scoped
 		} variable;
@@ -220,7 +212,7 @@ struct stmt {
 		expr *returnstmt; //NULL if function returns void
 
 		struct {
-			cstring *name; //heap, non-null
+			cstring *name; 
 			symbol *entry;
 		} goto;
 
@@ -235,12 +227,12 @@ struct stmt {
 				FOR_INIT,
 			} tag;
 			union {
-				decl *shortvar; //non-null if FOR_DECL
-				expr *init; //non-null if FOR_INIT
+				decl *shortvar; //valid when FOR_DECL
+				expr *init; //valid when FOR_INIT
 			};
 			expr *cond;
 			expr *post;
-			stmt *block; //non-null
+			stmt *block; 
 		} forloop;
 
 		struct {
@@ -261,9 +253,9 @@ struct stmt {
 		} switchstmt;
 
 		struct {
-			cstring *name; //heap, non-null
+			cstring *name; 
 			symbol *entry; //null
-			stmt *target; //non-null
+			stmt *target; 
 		} label;
 	};
 
@@ -339,17 +331,17 @@ struct expr {
 		} arraylit;
 
 		struct {
-			cstring *dist; //non-null
+			cstring *dist;
 			vector(Expr) args;
 		} rvarlit;
 
 		struct {
-			cstring *rep; //non-null
+			cstring *rep; 
 			token_type littype;
 		} lit;
 
 		struct {
-			cstring *name; //non-null
+			cstring *name;
 		} ident;
 	};
 
@@ -395,7 +387,7 @@ struct module {
 	vector(Import) imports;
 	vector(Decl) declarations;
 	const cstring *alias;
-	struct module *next; //null (resolver.c)
-	symtable *table; /null
+	struct module *next; //null (requires resolver) 
+	symtable *table; //null
 	bool flag; //free to use
 };

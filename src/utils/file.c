@@ -5,11 +5,12 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "arena.h"
 #include "file.h"
 #include "defs.h"
 #include "xerror.h"
 
-static void FileCleanup(FILE **);
+static void FileClose(FILE **);
 static cstring *cStringFromFile(FILE *);
 static size_t GetFileSize(FILE *);
 static cstring *GetFileName(const cstring *);
@@ -22,9 +23,9 @@ cstring *FileLoad(const cstring *name)
 {
 	assert(name);
 
-	RAII(cStringFree) cstring *filename = FileGetDiskName(name);
+	cstring *filename = FileGetDiskName(name);
 
-	RAII(FileCleanup) FILE *fp = fopen(filename, "r");
+	__attribute__((cleanup__(FileClose))) FILE *fp = fopen(filename, "r");
 
 	if (!fp) {
 		xerror_issue("%s: %s", filename, strerror(errno));
@@ -89,7 +90,7 @@ static bool Match(const cstring *a, const cstring *b)
 }
 
 //for use with gcc cleanup
-static void FileCleanup(FILE **handle)
+static void FileClose(FILE **handle)
 {
 	if (*handle) {
 		fclose(*handle);
@@ -109,7 +110,7 @@ static cstring *cStringFromFile(FILE *openfile)
 	}
 
 	const size_t buflen = sizeof(char) * filesize + 1;
-	cstring *buffer = AbortMalloc(buflen);
+	cstring *buffer = ArenaAllocate(buflen);
 
 	size_t total_read = fread(buffer, sizeof(char), filesize, openfile);
 

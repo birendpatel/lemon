@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <stdint.h>
 
+#include "arena.h"
 #include "defs.h"
 #include "str.h"
 #include "symtable.h"
@@ -83,19 +84,11 @@ symtable *SymTableInit(void)
 #undef NATIVE_TYPE
 #undef NATIVE_FUNC
 
-void SymTableFree(symtable *global)
-{
-	assert(global);
-	assert(global->tag == TABLE_GLOBAL);
-
-	//TODO
-}
-
 symtable *SymTableSpawn(symtable *parent, const tabletag tag, const size_t cap)
 {
 	assert((parent != NULL) ^ (tag == TABLE_GLOBAL)); //logical xor
 
-	symtable *child = AbortMalloc(sizeof(symtable));
+	symtable *child = ArenaAllocate(sizeof(symtable));
 
 	*child = (symtable) {
 		.tag = tag,

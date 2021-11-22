@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "arena.h"
 #include "scanner.h"
 #include "defs.h"
 #include "options.h"
@@ -62,7 +63,7 @@ xerror ScannerInit(const cstring *src, Token_channel *chan)
 	assert(src);
 	assert(chan);
 
-	scanner *scn = AbortMalloc(sizeof(scanner));
+	scanner *scn = ArenaAllocate(sizeof(scanner));
 
 	*scn = (scanner) {
 		.chan = chan,
@@ -117,8 +118,6 @@ static void *StartRoutine(void *pthread_payload)
 		xerror_trace("scanner shutting down");
 		XerrorFlush();
 	}
-
-	free(self);
 
 	pthread_exit(NULL);
 
@@ -241,7 +240,7 @@ _Pragma("GCC diagnostic ignored \"-Wpedantic\"")
 			goto exit;
 
 		case '\t' ... '\r':
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case ' ':
 			ConsumeSpace(self);
@@ -366,10 +365,10 @@ _Pragma("GCC diagnostic ignored \"-Wpedantic\"")
 			break;
 
 		case 'A' ... 'Z':
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case 'a' ... 'z':
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case '_':
 			ConsumeIdentOrKeyword(self);

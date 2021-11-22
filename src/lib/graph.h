@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "arena.h"
 #include "map.h"
 #include "xerror.h"
 
@@ -25,7 +26,6 @@ typedef map(pfix) pfix##_graph;
 
 #define api_graph(T, pfix, cls)						       \
 cls pfix##_graph pfix##GraphInit(void);					       \
-cls void pfix##GraphFree(pfix##_graph *, void (*)(T));		               \
 cls bool pfix##GraphInsert(pfix##_graph *, const cstring *, T);                \
 cls bool pfix##GraphSearch(pfix##_graph *, const cstring *, T *);              \
 cls bool pfix##GraphModify(pfix##_graph *, const cstring *, T );	       \
@@ -34,14 +34,6 @@ cls bool pfix##GraphModify(pfix##_graph *, const cstring *, T );	       \
 cls pfix##_graph pfix##GraphInit(void)                                         \
 {									       \
 	return pfix##MapInit(MAP_DEFAULT_CAPACITY);			       \
-}
-
-//if gfree is non-null then it is called on every vertex
-#define impl_graph_free(T, pfix, cls)					       \
-cls void pfix##GraphFree(pfix##_graph *self, void (*gfree)(T))	               \
-{									       \
-	assert(self);							       \
-	pfix##MapFree(self, gfree);					       \
 }
 
 //return false if the vertex already exists
@@ -86,7 +78,6 @@ cls bool pfix##GraphModify(pfix##_graph *self, const cstring *key, T vertex)   \
 	alias_graph(pfix)					               \
 	api_graph(T, pfix, cls)					               \
 	impl_graph_init(T, pfix, cls)					       \
-	impl_graph_free(T, pfix, cls)					       \
 	impl_graph_insert(T, pfix, cls)				               \
 	impl_graph_search(T, pfix, cls)	 			               \
 	impl_graph_modify(T, pfix, cls)

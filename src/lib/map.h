@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "arena.h"
 #include "str.h"
 #include "xerror.h"
 
@@ -27,18 +28,6 @@
 #endif
 
 //-----------------------------------------------------------------------------
-
-__attribute__((malloc)) static void *MapCalloc(const size_t bytes)
-{
-	void *region = calloc(bytes, sizeof(char));
-
-	if (!region) {
-		MapTrace("calloc failed; aborting program");
-		abort();
-	}
-
-	return region;
-}
 
 static uint64_t MapGrow(uint64_t curr_capacity)
 {
@@ -134,11 +123,10 @@ struct pfix##_map {						               \
 
 #define api_map(T, pfix, cls)					               \
 cls pfix##_map pfix##MapInit(const uint64_t);				       \
-cls void pfix##MapFree(pfix##_map *, void (*)(T));		               \
 cls T * pfix##MapInsert(pfix##_map *, const cstring *, T);		       \
 cls void pfix##MapResize_private(pfix##_map *);			               \
 cls T * pfix##MapProbe_private(pfix##_map *, const cstring *, T);	       \
-cls bool pfix##MapRemove(pfix##_map *, const cstring *, void (*)(T));          \
+cls bool pfix##MapRemove(pfix##_map *, const cstring *);                       \
 cls bool pfix##MapGet(pfix##_map *, const cstring *, T *);		       \
 cls bool pfix##MapGetRef(pfix##_map *self, const cstring *key, T **value);     \
 cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value);
@@ -161,7 +149,7 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 	struct pfix##_map new = {					       \
 		.len = 0,						       \
 		.cap = capacity,					       \
-		.buffer = MapCalloc(bufsize)     			       \
+		.buffer = ArenaAllocate(bufsize)                               \
 	};								       \
 								               \
 	for (uint64_t i = 0; i < capacity; i++) {			       \
@@ -171,44 +159,6 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 	MapTrace("new map initialized with %" PRIu64 " slots", capacity);      \
 									       \
 	return new;							       \
-}
-
-//if vfree is non-null, it is invoked on every closed or removed element.
-#define impl_map_free(T, pfix, cls)					       \
-cls void pfix##MapFree(pfix##_map *self, void (*vfree)(T))	               \
-{									       \
-	if (!self) {							       \
-		MapTrace("null input; no-op");				       \
-		return;							       \
-	}								       \
-									       \
-	if (!self->buffer) {						       \
-		MapTrace("null buffer; no-op");		         	       \
-		return;							       \
-	}								       \
-								               \
-	MapTrace("freeing map elements");				       \
-									       \
-	for (uint64_t i = 0; i < self->cap; i++) {			       \
-		pfix##_slot slot = self->buffer[i];			       \
-								               \
-		if (slot.status == SLOT_CLOSED) {			       \
-_Pragma("GCC diagnostic push")		       				       \
-_Pragma("GCC diagnostic ignored \"-Wcast-qual\"")			       \
-			free((void *) slot.key);			       \
-_Pragma("GCC diagnostic pop")					               \
-									       \
-			if (vfree) {					       \
-				vfree(slot.value);			       \
-			}						       \
-		}							       \
-	}								       \
-									       \
-	MapTrace("freed map elements");					       \
-									       \
-	free(self->buffer);						       \
-									       \
-	MapTrace("freed map buffer");					       \
 }
 
 //abort if map.len == UINT64_MAX
@@ -283,10 +233,6 @@ cls void pfix##MapResize_private(pfix##_map *self)			       \
 								               \
 	MapTrace("old map; all closed slots copied");			       \
 									       \
-	free(self->buffer);						       \
-									       \
-	MapTrace("old map; released internal buffer");	          	       \
-									       \
 	*self = (pfix##_map) {						       \
 		.len = new_map.len,					       \
 		.cap = new_map.cap,					       \
@@ -333,18 +279,10 @@ cls T * pfix##MapProbe_private(pfix##_map *self, const cstring *key, T value)  \
 	return &slot->value;						       \
 }
 
-//if vfree is not null, it is called on the value associated with the key before
-//the pair is removed from the buffer.
-//
 //internal note; removed slots count towards the load factor, so they do not
 //decrease map.len.
 #define impl_map_remove(T, pfix, cls)					       \
-cls bool pfix##MapRemove						       \
-(									       \
-	pfix##_map *self,						       \
-	const cstring *key,						       \
-	void (*vfree)(T)						       \
-)							                       \
+cls bool pfix##MapRemove(pfix##_map *self, const cstring *key)		       \
 {								               \
 	assert(self);							       \
 	assert(self->buffer);						       \
@@ -364,19 +302,8 @@ cls bool pfix##MapRemove						       \
 									       \
 		case SLOT_CLOSED:					       \
 			if (MapMatch(slot->key, key)) {			       \
-_Pragma("GCC diagnostic push")		       				       \
-_Pragma("GCC diagnostic ignored \"-Wcast-qual\"")			       \
-				free((void *) slot->key);		       \
-_Pragma("GCC diagnostic pop")	               				       \
-								               \
-				if (vfree) {				       \
-					vfree(slot->value);		       \
-				}					       \
-								               \
 				slot->status = SLOT_REMOVED;		       \
-									       \
 				MapTrace("'%s' removed", key);   	       \
-									       \
 				return true;				       \
 			}						       \
 									       \
@@ -559,7 +486,6 @@ cls bool pfix##MapSet(pfix##_map *self, const cstring *key, T value)	       \
 	declare_map(T, pfix)						       \
 	api_map(T, pfix, cls)					               \
 	impl_map_init(T, pfix, cls)				               \
-	impl_map_free(T, pfix, cls)					       \
 	impl_map_insert(T, pfix, cls)					       \
 	impl_map_resize_private(T, pfix, cls)				       \
 	impl_map_linear_probe_private(T, pfix, cls)			       \

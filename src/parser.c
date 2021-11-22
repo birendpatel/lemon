@@ -150,7 +150,7 @@ module *SyntaxTreeInit(const cstring *filename)
 {
 	assert(filename);
 
-	RAII(cStringFree) cstring *src = FileLoad(filename);
+	cstring *src = FileLoad(filename);
 
 	if (!src) {
 		return NULL;
@@ -362,7 +362,7 @@ static void ReportInvalidToken(parser *self)
 	assert(self);
 	assert(self->tok.type == _INVALID);
 
-	RAII(cStringFree) cstring *name = cStringFromLexeme(self);
+	cstring *name = cStringFromLexeme(self);
 
 	if (self->tok.flags.bad_string == 1) {
 		usererror("unterminated string literal");
@@ -387,14 +387,14 @@ _Pragma("GCC diagnostic ignored \"-Wpedantic\"")
 
 		switch(self->tok.type) {
 		case _EOF:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _STRUCT ... _LET:
 			goto found_sequence_point;
 
 		//'{' is for all intents and purposes the blockstmt keyword
 		case _LEFTBRACE:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _RETURN ... _SWITCH:
 			if (module_level) {
@@ -886,17 +886,17 @@ static stmt RecStmt(parser *self)
 		break;
 
 	case _RETURN:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _GOTO:
 		node = RecNamedTarget(self);
 		break;
 
 	case _BREAK:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _CONTINUE:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _FALLTHROUGH:
 		node = RecAnonymousTarget(self);
@@ -979,13 +979,13 @@ static fiat RecFiat(parser *self)
 
 	switch (self->tok.type) {
 	case _STRUCT:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _FUNC:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _METHOD:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _LET:
 		return (fiat) {
@@ -1380,19 +1380,19 @@ static expr *RecEquality(parser *self)
 	while (true) {
 		switch (self->tok.type) {
 		case _GREATER:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _LESS:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _GEQ:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _LEQ:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _EQUALEQUAL:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _NOTEQUAL:
 			tmp = node;
@@ -1425,13 +1425,13 @@ static expr *RecTerm(parser *self)
 	while (true) {
 		switch (self->tok.type) {
 		case _ADD:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _MINUS:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _BITOR:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _BITXOR:
 			tmp = node;
@@ -1464,19 +1464,19 @@ static expr *RecFactor(parser *self)
 	while (true) {
 		switch (self->tok.type) {
 		case _STAR:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _DIV:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _MOD:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _LSHIFT:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _RSHIFT:
-			fallthrough;
+			__attribute__((fallthrough));
 
 		case _AMPERSAND:
 			tmp = node;
@@ -1507,19 +1507,19 @@ static expr *RecUnary(parser *self)
 
 	switch (self->tok.type) {
 	case _MINUS:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _ADD:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _BITNOT:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _NOT:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _STAR:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _AMPERSAND:
 		node = ExprInit(self, NODE_UNARY);
@@ -1569,22 +1569,22 @@ static expr *RecPrimary(parser *self)
 		break;
 
 	case _LITERALINT:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _LITERALFLOAT:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _LITERALSTR:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _NULL:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _SELF:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _TRUE:
-		fallthrough;
+		__attribute__((fallthrough));
 
 	case _FALSE:
 		node = ExprInit(self, NODE_LIT);
