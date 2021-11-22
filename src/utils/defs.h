@@ -2,11 +2,6 @@
 
 #pragma once
 
-#include <stdlib.h>
-
-//------------------------------------------------------------------------------
-// versioning
-
 #define LEMON_VERSION "Alpha"
 
 //5 digit version code; e.g., 100908 is version 10.9.8 (maj.min.patch)
@@ -19,33 +14,6 @@
 	#define GCC_VERSION 0
 #endif
 
-//------------------------------------------------------------------------------
-//language extensions
-
 #define fallthrough __attribute__((fallthrough))
 
 #define RAII(free) __attribute__((__cleanup__(free)))
-
-//------------------------------------------------------------------------------
-//allocation utils
-
-static size_t KiB(const double kilobytes)
-{
-	return (size_t) (1024 * kilobytes);
-}
-
-static size_t MiB(const double megabytes)
-{
-	return (size_t) (1048576 * megabytes);
-}
-
-__attribute__((malloc)) static void *AbortMalloc(const size_t bytes)
-{
-	void *region = malloc(bytes);
-
-	if (!region) {
-		abort();
-	}
-
-	return region;
-}

@@ -4,6 +4,9 @@
 
 #include <stddef.h>
 
+#define KiB(kibibytes) ((size_t) (1024 * kibibytes))
+#define MiB(mebibytes) ((size_t) (1048576 * mebibytes))
+
 //initialize a thread-safe memory pool with maximum input capacity
 void ArenaInit(size_t bytes);
 
