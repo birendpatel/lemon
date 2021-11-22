@@ -55,13 +55,14 @@ struct scanner {
 	token tok;
 };
 
+//dynamically allocates a scanner; the new detached thread is responsible for
+//this resource
 xerror ScannerInit(const cstring *src, Token_channel *chan)
 {
 	assert(src);
 	assert(chan);
 
-	scanner *scn = NULL;
-	kmalloc(scn, sizeof(scanner));
+	scanner *scn = AbortMalloc(sizeof(scanner));
 
 	*scn = (scanner) {
 		.chan = chan,
@@ -70,7 +71,10 @@ xerror ScannerInit(const cstring *src, Token_channel *chan)
 		.src = src,
 		.line = 1,
 		.tok = {
-			.lexeme = NULL,
+			.lexeme = {
+				.view = NULL,
+				.len = 0
+			},
 			.type = _INVALID,
 			.line = 0,
 			.flags = {
@@ -95,6 +99,7 @@ xerror ScannerInit(const cstring *src, Token_channel *chan)
 	return XESUCCESS;
 }
 
+//pthread_init argument; releases the scanner resource on shutdown 
 static void *StartRoutine(void *pthread_payload)
 {
 	scanner *self = (scanner *) pthread_payload;
@@ -197,17 +202,18 @@ static const cstring *GetTokenName(token_type type)
 
 static void TokenPrint(scanner *self)
 {
-	const cstring *lexfmt = "TOKEN { line %-10zu: %-20s: %s: %d %d }\n";
+	const cstring *lexfmt = "TOKEN { line %-10zu: %-20s: %.*s: %d %d }\n";
 	const cstring *nolexfmt = "TOKEN { line %-10zu: %-20s: %d %d }\n";
 
 	const size_t line = self->tok.line;
 	const cstring *name = GetTokenName(self->tok.type);
-	const cstring *lexeme  = self->tok.lexeme;
+	const cstring *view = self->tok.lexeme.view;
+	const size_t len = self->tok.lexeme.len;
 	const int valid = self->tok.flags.valid;
 	const int badstr = self->tok.flags.bad_string;
 
-	if (lexeme) {
-		fprintf(stderr, lexfmt, line, name, lexeme, valid, badstr);
+	if (view) {
+		fprintf(stderr, lexfmt, line, name, view, len, valid, badstr);
 	} else {
 		fprintf(stderr, nolexfmt, line, name, valid, badstr);
 	}
@@ -415,7 +421,10 @@ static void SendEOF(scanner *self)
 	assert(self);
 
 	self->tok = (token) {
-		.lexeme = NULL,
+		.lexeme = {
+			.view = NULL,
+			.len = 0
+		},
 		.type = _EOF,
 		.line = self->line,
 		.flags = {
@@ -436,7 +445,10 @@ static void ConsumeIdentOrKeyword(scanner *self)
 	const kv_pair *kv = kmap_lookup(self->pos, word_length);
 
 	self->tok = (token) {
-		.lexeme = cStringFromView(self->pos, word_length),
+		.lexeme = {
+			.view = self->pos,
+			.len = word_length
+		},
 		.type = kv ? kv->typ : _IDENTIFIER,
 		.line = self->line,
 		.flags = {
@@ -493,7 +505,10 @@ static void Consume(scanner *self, token_type type, size_t n)
 	assert(type < _TOKEN_TYPE_COUNT);
 
 	self->tok = (token) {
-		.lexeme = cStringFromView(self->pos, n),
+		.lexeme = {
+			.view = self->pos,
+			.len = n
+		},
 		.type = type,
 		.line = self->line,
 		.flags = {
@@ -518,7 +533,10 @@ static void ConsumeInvalid(scanner *self, token_flags flags)
 	size_t total_invalid_chars = Synchronize(self);
 
 	self->tok = (token) {
-		.lexeme = cStringFromView(start, total_invalid_chars),
+		.lexeme = {
+			.view = start,
+			.len = total_invalid_chars
+		},
 		.type = _INVALID,
 		.line = self->line,
 		.flags = flags
@@ -599,7 +617,10 @@ static void ConsumeNumber(scanner *self)
 	delta = self->curr - self->pos;
 
 	self->tok = (token) {
-		.lexeme = cStringFromView(self->pos, (size_t) delta),
+		.lexeme = {
+			.view = self->pos,
+			.len = (size_t) delta
+		},
 		.type = guess,
 		.line = self->line,
 		.flags = {
@@ -629,7 +650,7 @@ static size_t Synchronize(scanner *self)
 
 //if the string is ill-formed an invalid token with the bad_string flag is sent.
 //otherwise, a _LITERALSTR token is sent, but if the string is an empty string
-//then the token lexeme will be set to NULL.
+//then the token lexeme view will be set to NULL.
 static void ConsumeString(scanner *self)
 {
 	assert(self);
@@ -656,7 +677,10 @@ static void ConsumeString(scanner *self)
 	size_t delta = (size_t) ((self->curr - self->pos) - 1);
 
 	self->tok = (token) {
-		.lexeme = delta ? cStringFromView(self->pos + 1, delta) : NULL,
+		.lexeme = {
+			.view = delta ? self->pos + 1 : NULL,
+			.len = delta
+		}
 		.type = _LITERALSTR,
 		.line = self->line,
 		.flags = {

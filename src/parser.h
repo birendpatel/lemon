@@ -1,10 +1,18 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// This file defines the abstract syntax tree nodes. The documentation in this
-// header makes referneces to the Lemon language specification and the EBNF
-// grammar located at ../langspec.txt. The grammar metasyntax operations '+' and
-// '*' are implemented via vectors. The '|' operator is implemented via tagged
-// anonymous unions.
+// This file defines the abstract syntax tree nodes and provides functionality
+// for creating, manipulating, and deleting (sub)trees. Lexical analysis is
+// subsumed within the parser.
+//
+// The documentation in this header makes referneces to the Lemon language 
+// specification and the EBNF grammar located at ../langspec.txt. The grammar 
+// metasyntax operations '+' and '*' are implemented via vectors. The '|' 
+// operator is implemented via tagged anonymous unions.
+//
+// Unless otherwise specified via a comment, all pointers within the nodes
+// must be dynamically allocated and non-NULL. The SyntaxTreeInit function
+// guarantees this requirement. But, any application code which modifies and 
+// deletes subtrees must follow this rule otherwise SyntaxTreeFree will crash.
 
 #pragma once
 
@@ -27,7 +35,8 @@ typedef struct member member;
 typedef struct param param;
 typedef struct test test;
 
-//returns NULL if tree is ill-formed
+//returns NULL if tree is ill-formed. On success all of the symbol and symtable
+//pointers in the returned tree are set to NULL.
 module *SyntaxTreeInit(const cstring *filename);
 
 //the input AST must not be null. Release all dynamic allocations made during
@@ -38,9 +47,9 @@ void SyntaxTreeFree(module *ast);
 //<member list>
 
 struct member {
-	cstring *name;  //heap, non-null
-	type *typ; //heap, non-null
-	symbol *entry; //null
+	cstring *name;
+	type *typ; 
+	symbol *entry;
 	bool public;
 };
 
@@ -50,9 +59,9 @@ make_vector(member, Member, static)
 //<parameter list>
 
 struct param {
-	cstring *name; //heap, non-null
-	type *typ; //heap, non-null
-	symbol *entry; //null
+	cstring *name; 
+	type *typ;
+	symbol *entry;
 	bool mutable;
 };
 
@@ -371,28 +380,22 @@ impl_vector_set(fiat, Fiat, static)
 impl_vector_reset(fiat, Fiat, static)
 
 //------------------------------------------------------------------------------
-// @alias: NULL if import path is the empty string
-// @entry: NULL
 
 struct import {
-	cstring *alias;
-	symbol *entry;
+	cstring *alias; //null if import path is the empty string
+	symbol *entry; //null
 	size_t line;
 };
 
 make_vector(import, Import, static)
 
 //------------------------------------------------------------------------------
-// @alias: non-null
-// @next: intrusive linked list; not populated by parser (NULL)
-// @table: NULL
-// @flag: unused; free to read or write for any purpose
 
 struct module {
 	vector(Import) imports;
 	vector(Decl) declarations;
 	const cstring *alias;
-	struct module *next;
-	symtable *table;
-	bool flag;
+	struct module *next; //null (resolver.c)
+	symtable *table; /null
+	bool flag; //free to use
 };

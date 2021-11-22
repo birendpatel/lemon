@@ -397,16 +397,16 @@ static void CheckToken
 	}
 }
 
-#define check(self, type, msg) \
+#define check(type, msg) \
 	CheckToken(self, type, msg, false, false)
 
-#define move_check(self, type, msg) \
+#define move_check(type, msg) \
 	CheckToken(self, type, msg, true, false)
 
-#define check_move(self, type, msg) \
+#define check_move(type, msg) \
 	CheckToken(self, type, msg, false, true)
 
-#define move_check_move(self, type, msg) \
+#define move_check_move(type, msg) \
 	CheckToken(self, type, msg,  true, true)
 
 //------------------------------------------------------------------------------
@@ -420,8 +420,8 @@ static void GetNextToken(parser *self)
 	xerror err = TokenChannelRecv(self->chan, &self->tok);
 
 	if (err) {
+		assert(0 != 0 && "attempted to read past EOF");
 		xerror_fatal("attempted to read past EOF");
-		xerror_fatal("cannot recover parser; aborting program");
 		abort();
 	}
 
@@ -547,7 +547,7 @@ static import RecImport(parser *self)
 	assert(self);
 	assert(self->tok.type == _IMPORT);
 
-	move_check(self, _LITERALSTR, "missing import path string");
+	move_check(_LITERALSTR, "missing import path string");
 
 	import node = {
 		.alias = self->tok.lexeme,
@@ -610,17 +610,17 @@ static decl RecStruct(parser *self)
 		GetNextValidToken(self);
 	}
 
-	check(self, _IDENTIFIER, "missing struct name after 'struct' keyword");
+	check(_IDENTIFIER, "missing struct name after 'struct' keyword");
 
 	node.udt.name = self->tok.lexeme;
 
-	move_check_move(self, _LEFTBRACE, "missing '{' after struct name");
+	move_check_move(_LEFTBRACE, "missing '{' after struct name");
 
 	node.udt.members = RecParseMembers(self);
 
-	check_move(self, _RIGHTBRACE, "missing '}' after struct members");
+	check_move(_RIGHTBRACE, "missing '}' after struct members");
 
-	check_move(self, _SEMICOLON, "missing ';' after struct declaration");
+	check_move(_SEMICOLON, "missing ';' after struct declaration");
 
 	return node;
 }
@@ -647,15 +647,15 @@ static vector(Member) RecParseMembers(parser *self)
 			GetNextValidToken(self);
 		}
 
-		check(self, _IDENTIFIER, "missing struct member name");
+		check(_IDENTIFIER, "missing struct member name");
 
 		attr.name = self->tok.lexeme;
 
-		move_check_move(self, _COLON, "missing ':' after name");
+		move_check_move(_COLON, "missing ':' after name");
 
 		attr.typ = RecType(self);
 
-		check_move(self, _SEMICOLON, "missing ';' after type");
+		check_move(_SEMICOLON, "missing ';' after type");
 
 		MemberVectorPush(&vec, attr);
 
@@ -694,12 +694,12 @@ static decl RecFunction(parser *self)
 		GetNextValidToken(self);
 	}
 
-	check(self, _IDENTIFIER, "missing function name in declaration");
+	check(_IDENTIFIER, "missing function name in declaration");
 
 	node.function.name = self->tok.lexeme;
 
 	//parameter list
-	move_check_move(self, _LEFTPAREN, "missing '(' after function name");
+	move_check_move(_LEFTPAREN, "missing '(' after function name");
 
 	if (self->tok.type == _VOID) {
 		GetNextValidToken(self);
@@ -707,11 +707,11 @@ static decl RecFunction(parser *self)
 		node.function.params = RecParseParameters(self);
 	}
 
-	check_move(self, _RIGHTPAREN, "missing ')' after parameters");
+	check_move(_RIGHTPAREN, "missing ')' after parameters");
 
 	//return
-	check_move(self, _MINUS, "missing '->' after parameter list");
-	check_move(self, _GREATER, "missing ->' after parameter list");
+	check_move(_MINUS, "missing '->' after parameter list");
+	check_move(_GREATER, "missing ->' after parameter list");
 
 	if (self->tok.type == _VOID) {
 		GetNextValidToken(self);
@@ -720,7 +720,7 @@ static decl RecFunction(parser *self)
 	}
 
 	//body
-	check(self, _LEFTBRACE, "cannot declare function without a body");
+	check(_LEFTBRACE, "cannot declare function without a body");
 	node.function.block = CopyStmtToHeap(self, RecBlock(self));
 
 	return node;
@@ -752,18 +752,18 @@ static decl RecMethod(parser *self)
 	}
 
 	//receiver-name pair
-	check_move(self, _LEFTPAREN, "missing '(' before receiver");
+	check_move(_LEFTPAREN, "missing '(' before receiver");
 
 	node.method.recv = RecType(self);
 
-	check_move(self, _RIGHTPAREN, "missing closing ')' after receiver");
+	check_move(_RIGHTPAREN, "missing closing ')' after receiver");
 
-	check(self, _IDENTIFIER, "missing method name in declaration");
+	check(_IDENTIFIER, "missing method name in declaration");
 
 	node.method.name = self->tok.lexeme;
 
 	//parameter list
-	move_check_move(self, _LEFTPAREN, "missing '(' after method name");
+	move_check_move(_LEFTPAREN, "missing '(' after method name");
 
 	if (self->tok.type == _VOID) {
 		GetNextValidToken(self);
@@ -771,11 +771,11 @@ static decl RecMethod(parser *self)
 		node.method.params = RecParseParameters(self);
 	}
 
-	check_move(self, _RIGHTPAREN, "missing ')' after parameters");
+	check_move(_RIGHTPAREN, "missing ')' after parameters");
 
 	//return
-	check_move(self, _MINUS, "missing '->' after parameter list");
-	check_move(self, _GREATER, "missing ->' after parameter list");
+	check_move(_MINUS, "missing '->' after parameter list");
+	check_move(_GREATER, "missing ->' after parameter list");
 
 	if (self->tok.type == _VOID) {
 		GetNextValidToken(self);
@@ -784,7 +784,7 @@ static decl RecMethod(parser *self)
 	}
 
 	//body
-	check(self, _LEFTBRACE, "cannot declare method without a body");
+	check(_LEFTBRACE, "cannot declare method without a body");
 	node.method.block = CopyStmtToHeap(self, RecBlock(self));
 
 	return node;
@@ -808,7 +808,7 @@ static vector(Param) RecParseParameters(parser *self)
 
 	while (self->tok.type != _RIGHTPAREN) {
 		if (vec.len > 0) {
-			check_move(self, _COMMA, "missing ',' after parameter");
+			check_move(_COMMA, "missing ',' after parameter");
 		}
 
 		if (self->tok.type == _MUT) {
@@ -816,11 +816,11 @@ static vector(Param) RecParseParameters(parser *self)
 			GetNextValidToken(self);
 		}
 
-		check(self, _IDENTIFIER, "missing function parameter name");
+		check(_IDENTIFIER, "missing function parameter name");
 
 		attr.name = self->tok.lexeme;
 
-		move_check_move(self, _COLON, "missing ':' after name");
+		move_check_move(_COLON, "missing ':' after name");
 
 		attr.typ = RecType(self);
 
@@ -866,19 +866,19 @@ static decl RecVariable(parser *self)
 		GetNextValidToken(self);
 	}
 
-	check(self, _IDENTIFIER, "missing variable name in declaration");
+	check(_IDENTIFIER, "missing variable name in declaration");
 
 	node.variable.name = self->tok.lexeme;
 
-	move_check_move(self, _COLON, "missing ':' before type");
+	move_check_move(_COLON, "missing ':' before type");
 
 	node.variable.vartype = RecType(self);
 
-	check_move(self, _EQUAL, "declared variables must be initialized");
+	check_move(_EQUAL, "declared variables must be initialized");
 
 	node.variable.value = RecAssignment(self);
 
-	check_move(self, _SEMICOLON, "missing ';' after declaration");
+	check_move(_SEMICOLON, "missing ';' after declaration");
 
 	return node;
 }
@@ -906,7 +906,7 @@ static type *RecType(parser *self)
 		node->tag = NODE_NAMED;
 		node->named.name = prev.lexeme;
 
-		move_check(self, _IDENTIFIER, "missing type after '.'");
+		move_check(_IDENTIFIER, "missing type after '.'");
 		node->named.reference = RecType(self);
 
 		if (node->named.reference->tag != NODE_BASE) {
@@ -923,9 +923,9 @@ static type *RecType(parser *self)
 		break;
 
 	case _LEFTBRACKET:
-		move_check(self, _LITERALINT, "missing array size");
+		move_check(_LITERALINT, "missing array size");
 		node->array.len = ExtractArrayIndex(self);
-		move_check_move(self, _RIGHTBRACKET, "missing ']'");
+		move_check_move(_RIGHTBRACKET, "missing ']'");
 		node->array.element = RecType(self);
 		break;
 
@@ -1094,7 +1094,7 @@ static stmt RecForLoop(parser *self)
 		.line = self->tok.line
 	};
 
-	move_check_move(self, _LEFTPAREN, "missing '(' after 'for' keyword");
+	move_check_move(_LEFTPAREN, "missing '(' after 'for' keyword");
 
 	//initial condition
 	if (self->tok.type == _LET) {
@@ -1104,14 +1104,14 @@ static stmt RecForLoop(parser *self)
 	} else {
 		node.forloop.tag = FOR_INIT;
 		node.forloop.init = RecAssignment(self);
-		check_move(self, _SEMICOLON, "missing ';' after init");
+		check_move(_SEMICOLON, "missing ';' after init");
 	}
 
 	node.forloop.cond = RecAssignment(self);
-	check_move(self, _SEMICOLON, "missing ';' after condition");
+	check_move(_SEMICOLON, "missing ';' after condition");
 
 	node.forloop.post = RecAssignment(self);
-	check_move(self, _RIGHTPAREN, "missing ')' after post expression");
+	check_move(_RIGHTPAREN, "missing ')' after post expression");
 
 	node.forloop.block = CopyStmtToHeap(self, RecBlock(self));
 
@@ -1128,11 +1128,11 @@ static stmt RecWhileLoop(parser *self)
 		.line = self->tok.line
 	};
 
-	move_check_move(self, _LEFTPAREN, "missing'(' after 'while'");
+	move_check_move(_LEFTPAREN, "missing'(' after 'while'");
 
 	node.whileloop.cond = RecAssignment(self);
 
-	check_move(self, _RIGHTPAREN, "missing ')' after while condition");
+	check_move(_RIGHTPAREN, "missing ')' after while condition");
 
 	if (self->tok.type == _LEFTBRACE) {
 		node.whileloop.block = CopyStmtToHeap(self, RecBlock(self));
@@ -1154,17 +1154,17 @@ static stmt RecSwitch(parser *self)
 		.line = self->tok.line
 	};
 
-	move_check_move(self, _LEFTPAREN, "missing '(' after 'switch'");
+	move_check_move(_LEFTPAREN, "missing '(' after 'switch'");
 
 	node.switchstmt.controller = RecAssignment(self);
 
-	check_move(self, _RIGHTPAREN, "missing ')' after switch condition");
+	check_move(_RIGHTPAREN, "missing ')' after switch condition");
 
-	check_move(self, _LEFTBRACE, "missing '{' to open switch body");
+	check_move(_LEFTBRACE, "missing '{' to open switch body");
 
 	node.switchstmt.tests = RecTests(self);
 
-	check_move(self, _RIGHTBRACE, "missing '}' to close switch body");
+	check_move(_RIGHTBRACE, "missing '}' to close switch body");
 
 	return node;
 }
@@ -1228,7 +1228,7 @@ static stmt RecBranch(parser *self)
 	};
 
 	//condition
-	move_check_move(self, _LEFTPAREN, "missing '(' after 'if'");
+	move_check_move(_LEFTPAREN, "missing '(' after 'if'");
 
 	if (self->tok.type == _LET) {
 		node.branch.shortvar = CopyDeclToHeap(self, RecVariable(self));
@@ -1239,7 +1239,7 @@ static stmt RecBranch(parser *self)
 
 	node.branch.cond = RecAssignment(self);
 
-	check_move(self, _RIGHTPAREN, "missing ')' after if condition");
+	check_move(_RIGHTPAREN, "missing ')' after if condition");
 
 	//if branch
 	if (self->tok.type == _LEFTBRACE) {
@@ -1287,9 +1287,9 @@ static stmt RecNamedTarget(parser *self)
 	switch (self->tok.type) {
 	case _GOTO:
 		node.tag = NODE_GOTOLABEL;
-		move_check(self, _IDENTIFIER, "missing goto target");
+		move_check(_IDENTIFIER, "missing goto target");
 		node.goto.name = self->tok.lexeme;
-		move_check_move(self, _SEMICOLON, "missing ';' after goto");
+		move_check_move(_SEMICOLON, "missing ';' after goto");
 		break;
 
 	case _RETURN:
@@ -1303,7 +1303,7 @@ static stmt RecNamedTarget(parser *self)
 		}
 
 		node.returnstmt = RecAssignment(self);
-		check_move(self, _SEMICOLON, "missing ';' after return");
+		check_move(_SEMICOLON, "missing ';' after return");
 		break;
 
 	default:
@@ -1327,17 +1327,17 @@ static stmt RecAnonymousTarget(parser *self)
 	switch (self->tok.type) {
 	case _BREAK:
 		node.tag = NODE_BREAKSTMT;
-		move_check_move(self, _SEMICOLON, "missing ';' after break");
+		move_check_move(_SEMICOLON, "missing ';' after break");
 		break;
 
 	case _CONTINUE:
 		node.tag = NODE_CONTINUESTMT;
-		move_check_move(self, _SEMICOLON, "missing ';' after continue");
+		move_check_move(_SEMICOLON, "missing ';' after continue");
 		break;
 
 	case _FALLTHROUGH:
 		node.tag = NODE_FALLTHROUGHSTMT;
-		move_check_move(self, _SEMICOLON, "missing ';' after fall");
+		move_check_move(_SEMICOLON, "missing ';' after fall");
 		break;
 
 	default:
@@ -1361,11 +1361,11 @@ static stmt RecLabel(parser *self)
 		.line = self->tok.line
 	};
 
-	move_check(self, _IDENTIFIER, "label name must be an identifier");
+	move_check(_IDENTIFIER, "label name must be an identifier");
 
 	node.label.name = self->tok.lexeme;
 
-	move_check_move(self, _COLON, "missing ':' after label name");
+	move_check_move(_COLON, "missing ':' after label name");
 
 	node.label.target = CopyStmtToHeap(self, RecStmt(self));
 
@@ -1384,7 +1384,7 @@ static stmt RecExprStmt(parser *self)
 
 	node.exprstmt = RecAssignment(self);
 
-	check_move(self, _SEMICOLON, "missing ';' after expression");
+	check_move(_SEMICOLON, "missing ';' after expression");
 
 	return node;
 }
@@ -1618,7 +1618,7 @@ static expr *RecUnary(parser *self)
 		node->line = self->tok.line;
 		GetNextValidToken(self);
 		node->cast.casttype = RecType(self);
-		check_move(self, _COLON, "missing ':' after type cast");
+		check_move(_COLON, "missing ':' after type cast");
 		node->cast.operand = RecUnary(self);
 		break;
 
@@ -1678,7 +1678,7 @@ static expr *RecPrimary(parser *self)
 	case _LEFTPAREN:
 		GetNextValidToken(self);
 		node = RecAssignment(self);
-		check_move(self, _RIGHTPAREN, "missing ')' after grouping");
+		check_move(_RIGHTPAREN, "missing ')' after grouping");
 		break;
 
 	//imports cannot exist other than at the start of a module. The default
@@ -1719,7 +1719,7 @@ static expr *RecAccess(parser *self, expr *prev)
 		node = ExprInit(self, NODE_SELECTOR);
 		node->line = self->tok.line;
 
-		move_check(self, _IDENTIFIER, "missing attribute after '.'");
+		move_check(_IDENTIFIER, "missing attribute after '.'");
 
 		node->selector.name = prev;
 		node->selector.attr = RecIdentifier(self);
@@ -1745,7 +1745,7 @@ static expr *RecAccess(parser *self, expr *prev)
 		node->index.name = prev;
 		node->index.key = RecAssignment(self);
 
-		check_move(self, _RIGHTBRACKET, "missing ']' after index");
+		check_move(_RIGHTBRACKET, "missing ']' after index");
 
 		break;
 
@@ -1804,7 +1804,7 @@ static expr *RecRvar(parser *self, bool seen_tilde)
 	node->rvarlit.dist = self->tok.lexeme;
 
 	if (!seen_tilde) {
-		move_check(self, _TILDE, "missing '~' after distribution");
+		move_check(_TILDE, "missing '~' after distribution");
 	}
 
 	GetNextValidToken(self);
@@ -1827,7 +1827,7 @@ static vector(Expr) RecArguments(parser *self)
 
 	while (self->tok.type != _RIGHTPAREN) {
 		if (vec.len > 0) {
-			check_move(self, _COMMA, "missing ',' after arg");
+			check_move(_COMMA, "missing ',' after arg");
 		}
 
 		ExprVectorPush(&vec, RecAssignment(self));
@@ -1865,17 +1865,17 @@ static expr *RecArrayLiteral(parser *self)
 
 	while (self->tok.type != _RIGHTBRACKET) {
 		if (node->arraylit.values.len > 0) {
-			check_move(self, _COMMA, "missing ',' after value");
+			check_move(_COMMA, "missing ',' after value");
 		}
 
 		if (self->tok.type == _LEFTBRACKET) {
-			move_check(self, _LITERALINT, tagerr);
+			move_check(_LITERALINT, tagerr);
 
 			intmax_t idx = ExtractArrayIndex(self);
 			IndexVectorPush(&node->arraylit.indicies, idx);
 
-			move_check_move(self, _RIGHTBRACKET, closeerr);
-			check_move(self, _EQUAL, eqerr);
+			move_check_move(_RIGHTBRACKET, closeerr);
+			check_move(_EQUAL, eqerr);
 		} else {
 			IndexVectorPush(&node->arraylit.indicies, -1);
 		}

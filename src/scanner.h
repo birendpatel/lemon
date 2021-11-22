@@ -96,13 +96,16 @@ typedef struct token_flags {
 } token_flags;
 
 typedef struct token {
-	cstring *lexeme; //either dynamically allocated or NULL
+	struct {
+		char *view; //pointer into in-memory source code, or null
+		size_t len; //may be zero
+	} lexeme;
 	token_type type;
 	size_t line; //starts at 1
 	token_flags flags;
 } token;
 
-#define INVALID_TOKEN (token) {NULL, _INVALID, 0, {0, 0}}
+#define INVALID_TOKEN (token) {{NULL, 0}, _INVALID, 0, {0, 0}}
 
 //------------------------------------------------------------------------------
 //Tokens are sent on the channel in the order that they are found. On completion
