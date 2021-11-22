@@ -40,6 +40,3 @@ typedef struct network {
 
 //returns NULL on failure
 network *ResolverInit(const cstring *filename);
-
-//input network must not be NULL; always returns NULL
-void *ResolverFree(network *net);

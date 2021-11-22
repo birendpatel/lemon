@@ -24,7 +24,6 @@ typedef struct parser parser;
 
 //parser management
 static parser *ParserInit(const cstring *);
-static void ParserFree(parser *);
 static module *RecursiveDescent(parser *, const cstring *);
 
 //node management
@@ -168,7 +167,6 @@ module *SyntaxTreeInit(const cstring *filename)
 
 	if (prs->errors) {
 		xerror_fatal("tree is ill-formed");
-		SyntaxTreeFree(root);
 		return NULL;
 	}
 

@@ -164,10 +164,7 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 //abort if map.len == UINT64_MAX
 //
 //returns NULL if key already exists; it must be removed before a new insertion.
-//
-//key is duplicated onto heap when stored in the hash table; the map will clean
-//up this memory during dynamic resize or MapFree but the user is responsible
-//for managing the memory for the input key argument on return.
+//key is duplicated onto heap when stored in the hash table.
 //
 //the value is copied into the hash table and on success a pointer to the copy
 //is returned. Due to dynamic resizing, this pointer is only valid until the

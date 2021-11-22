@@ -4,7 +4,6 @@
 #include <stdint.h>
 
 #include "arena.h"
-#include "str.h"
 #include "symtable.h"
 
 //------------------------------------------------------------------------------

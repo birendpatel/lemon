@@ -120,8 +120,8 @@ symtable *SymTableInit(void);
 symtable *SymTableSpawn(symtable *parent, const tabletag tag, const size_t cap);
 
 //returns NULL if the symbol already exists. On success the returned pointer
-//will remain valid until SymTableFree provided that the capacity contract on
-//SymTableSpawn is upheld.
+//will remain valid for the compiler lifetime provided that the capacity 
+//contract on SymTableSpawn is upheld.
 symbol *SymTableInsert(symtable *table, const cstring *key, symbol value);
 
 //returns NULL if the key does not exist in the input table or its ancestors; 
