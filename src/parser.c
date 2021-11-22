@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "arena.h"
 #include "file.h"
 #include "parser.h"
 #include "scanner.h"
@@ -25,9 +26,6 @@ typedef struct parser parser;
 //parser management
 static parser *ParserInit(const cstring *);
 static void ParserFree(parser *);
-static parser *ParserContainerOf(module *);
-static void ParserMark(parser *, void *);
-static void *ParserMalloc(parser *, const size_t);
 static module *RecursiveDescent(parser *, const cstring *);
 
 //node management
@@ -91,33 +89,6 @@ static expr *RecArrayLiteral(parser *);
 static expr *RecIdentifier(parser *);
 static expr *RecAccess(parser *, expr *);
 
-//cleanup
-static void FreeImport(import);
-static void FreeDeclarationRef(decl *);
-static void FreeDeclaration(decl);
-static void FreeType(type *);
-static void FreeUDT(decl);
-static void FreeMember(member);
-static void FreeFunction(decl);
-static void FreeParam(param);
-static void FreeMethod(decl);
-static void FreeVariable(decl);
-static void FreeStatement(stmt);
-static void FreeStatementRef(stmt *);
-static void FreeStmtDummy(__attribute__((unused)) stmt);
-static void FreeExprStmt(stmt);
-static void FreeBlock(stmt);
-static void FiatFree(fiat);
-static void FreeFor(stmt);
-static void FreeWhile(stmt);
-static void FreeExpressionRef(expr *);
-static void FreeBranch(stmt);
-static void FreeReturn(stmt);
-static void FreeGoto(stmt);
-static void FreeSwitch(stmt);
-static void FreeTest(test);
-static void Freelabel(stmt);
-
 //-----------------------------------------------------------------------------
 // parser management
 //
@@ -139,10 +110,7 @@ static void Freelabel(stmt);
 // As a secondary benefit, vector buffers are cache-friendly and as a result
 // the AST destruction process is much faster than a manual tree traversal.
 
-make_vector(void *, Memory, static)
-
 struct parser {
-	vector(Memory) garbage;
 	channel(Token) *chan;
 	token tok;
 	module root;
@@ -154,12 +122,10 @@ static parser *ParserInit(const cstring *src)
 {
 	assert(src);
 
-	parser *prs = AbortMalloc(sizeof(parser));
+	parser *prs = ArenaAllocate(sizeof(parser));
 
-	prs->chan = AbortMalloc(sizeof(channel(Token)));
+	prs->chan = ArenaAllocate(sizeof(channel(Token)));
 	TokenChannelInit(prs->chan, KiB(1));
-
-	prs->garbage = MemoryVectorInit(0, KiB(1));
 
 	prs->tok = INVALID_TOKEN;
 
@@ -170,63 +136,12 @@ static parser *ParserInit(const cstring *src)
 	if (err) {
 		const cstring *msg = XerrorDescription(err);
 		xerror_issue("cannot init scanner: %s", msg);
-		ParserFree(prs);
+		(void) TokenChannelFree(self->chan, NULL);
 		return NULL;
 	}
 
 	return prs;
 }
-
-static void ParserFree(parser *self)
-{
-	assert(self);
-
-	//RecursiveDescent() contract guarantees EOF is consumed
-	(void) TokenChannelFree(self->chan, NULL);
-
-	free(self->chan);
-
-	//allocations need to be released in reverse-order which mimics a
-	//post-order traversal. Otherwise parent nodes may be released before
-	//their children.
-	MemoryVectorFreeReverse(&self->garbage, free);
-
-	free(self);
-}
-
-//help; see linux kernel containerof macro
-static parser *ParserContainerOf(module *root)
-{
-	assert(root);
-
-	const size_t offset = offsetof(parser, root);
-
-	return (parser *) ((char *) root - offset);
-}
-
-static void ParserMark(parser *self, void *memory)
-{
-	assert(self);
-
-	MemoryVectorPush(&self->garbage, memory);
-}
-
-static void *ParserMalloc(parser *self, const size_t bytes)
-{
-	assert(self);
-
-	void *memory = AbortMalloc(bytes);
-
-	ParserMark(self, memory);
-
-	return memory;
-}
-
-#define alloc_mark_vector(VecInit, recv, len, cap)                             \
-do {								               \
-	recv = VecInit(len, cap);				       	       \
-	ParserMark(self, recv.buffer);				               \
-} while(0)
 
 //-----------------------------------------------------------------------------
 // API implementation
@@ -250,6 +165,8 @@ module *SyntaxTreeInit(const cstring *filename)
 
 	module *root = RecursiveDescent(prs, filename);
 
+	(void) TokenChannelFree(self->chan, NULL);
+
 	if (prs->errors) {
 		xerror_fatal("tree is ill-formed");
 		SyntaxTreeFree(root);
@@ -257,15 +174,6 @@ module *SyntaxTreeInit(const cstring *filename)
 	}
 
 	return root;
-}
-
-void SyntaxTreeFree(module *root)
-{
-	assert(root);
-
-	parser *prs = ParserContainerOf(root);
-
-	ParserFree(prs);
 }
 
 //------------------------------------------------------------------------------
@@ -277,22 +185,21 @@ static module ModuleInit(parser *self, const cstring *alias)
 	assert(alias);
 
 	cstring *copy = cStringDuplicate(alias);
-	ParserMark(self, copy);
 
 	module node =  {
 		.imports = {0},
 		.declarations = {0},
 		.alias = copy,
-		.next = NULL, /* requires semantic analysis */
-		.table = NULL, /* required semantic analysis */
-		.flag = false /* unused by parser.c */
+		.next = NULL,
+		.table = NULL,
+		.flag = false 
 	};
 
 	const size_t import_capacity = 8;
-	alloc_mark_vector(ImportVectorInit, node.imports, 0, import_capacity);
+	node.imports = ImportVectorInit(0, import_capacity);
 
 	const size_t decl_capacity = 16;
-	alloc_mark_vector(DeclVectorInit, node.declarations, 0, decl_capacity);
+	node.declarations = DeclVectorInit(0, decl_capacity);
 
 	return node;
 }
@@ -302,7 +209,7 @@ static expr *ExprInit(parser *self, const exprtag tag)
 	assert(self);
 	assert(tag >= NODE_ASSIGNMENT && tag <= NODE_IDENT);
 
-	expr *new = ParserMalloc(self, sizeof(expr));
+	expr *new = ArenaAllocate(sizeof(expr));
 
 	new->tag = tag;
 
@@ -315,7 +222,7 @@ static decl *CopyDeclToHeap(parser *self, const decl src)
 
 	const size_t bytes = sizeof(decl);
 
-	decl *new = ParserMalloc(self, bytes);
+	decl *new = ArenaAllocate(bytes);
 
 	memcpy(new, &src, bytes);
 
@@ -328,7 +235,7 @@ static stmt *CopyStmtToHeap(parser *self, const stmt src)
 
 	const size_t bytes = sizeof(stmt);
 
-	stmt *new = ParserMalloc(self, bytes);
+	stmt *new = ArenaAllocate(bytes);
 
 	memcpy(new, &src, bytes);
 
@@ -367,7 +274,6 @@ static intmax_t ExtractArrayIndex(parser *self)
 
 	const cstring *digits = cStringFromLexeme(self);
 	candidate = strtoll(digits, &end, 10);
-	free(digits);
 
 	if (candidate == LONG_MAX) {
 		usererror("array index is too large");
@@ -644,9 +550,8 @@ static vector(Member) RecParseMembers(parser *self)
 {
 	assert(self);
 
-	vector(Member) vec = {0};
 	const size_t vec_capacity = 4;
-	alloc_mark_vector(MemberVectorInit, vec, 0, vec_capacity);
+	vector(Member) vec = MemberVectorInit(0, vec_capacity);
 
 	member attr = {
 		.name = NULL,
@@ -809,9 +714,8 @@ static vector(Param) RecParseParameters(parser *self)
 {
 	assert(self);
 
-	vector(Param) vec = {0};
 	const size_t vec_capacity = 4;
-	alloc_mark_vector(ParamVectorInit, vec, 0, vec_capacity);
+	vector(Param) vec = ParamVectorInit(0, vec_capacity);
 
 	param attr  = {
 		.name = NULL,
@@ -901,7 +805,7 @@ static type *RecType(parser *self)
 {
 	assert(self);
 
-	type *node = ParserMalloc(self, sizeof(type));
+	type *node = ArenaAllocate(sizeof(type));
 	token prev = INVALID_TOKEN; 
 
 	switch (self->tok.type) {
@@ -1037,7 +941,7 @@ static stmt RecBlock(parser *self)
 	};
 
 	const size_t vec_capacity = 4;
-	alloc_mark_vector(FiatVectorInit, node.block.fiats, 0, vec_capacity);
+	node.block.fiats = FiatVectorInit(0, vec_capacity);
 
 	GetNextValidToken(self);
 
@@ -1187,9 +1091,8 @@ static vector(Test) RecTests(parser *self)
 {
 	assert(self);
 
-	vector(Test) vec = {0};
 	const size_t vec_capacity = 4;
-	alloc_mark_vector(TestVectorInit, vec, 0, vec_capacity);
+	vector(Test) vec = TestVectorInit(0, vec_capacity);
 
 	test t = {
 		.cond = NULL,
@@ -1835,9 +1738,8 @@ static vector(Expr) RecArguments(parser *self)
 	assert(self);
 	assert(self->tok.type == _LEFTPAREN);
 
-	vector(Expr) vec = {0};
 	const size_t vec_capacity = 4;
-	alloc_mark_vector(ExprVectorInit, vec, 0, vec_capacity);
+	vector(Expr) vec = ExprVectorInit(0, vec_capacity);
 
 	GetNextValidToken(self);
 
@@ -1872,10 +1774,10 @@ static expr *RecArrayLiteral(parser *self)
 	node->line = self->tok.line;
 
 	const size_t idx_cap = 4;
-	alloc_mark_vector(IndexVectorInit, node->arraylit.indicies, 0,idx_cap);
+	node->arraylit.indicies = IndexVectorInit(0, idx_cap);
 
 	const size_t expr_cap = 4;
-	alloc_mark_vector(ExprVectorInit, node->arraylit.values, 0, expr_cap);
+	node->arraylit.values = ExprVectorInit(0, expr_cap);
 
 	GetNextValidToken(self);
 
@@ -1904,345 +1806,4 @@ static expr *RecArrayLiteral(parser *self)
 	assert(node->arraylit.indicies.len == node->arraylit.values.len);
 
 	return node;
-}
-
-//------------------------------------------------------------------------------
-//node memory management; simple and relatively straightforward DFS postorder
-//traversal; note that the module node does not have to be the entry point - any
-//subtree can be completely freed via its associated free function.
-
-void SyntaxTreeFree(module *ast)
-{
-	assert(ast);
-
-	ImportVectorFree(&ast->imports, FreeImport);
-
-	DeclVectorFree(&ast->declarations, FreeDeclaration);
-
-	FreeDecls(&ast->declarations);
-
-	free(alias);
-}
-
-static void FreeImport(import node)
-{
-	free(node.alias);
-}
-
-static void FreeDeclarationRef(decl *node)
-{
-	if (!node) {
-		return;
-	}
-
-	FreeDeclaration(*node);
-
-	free(node);
-}
-
-static void FreeDeclaration(decl node)
-{
-	static void (*const jump[])(decl) = {
-		[NODE_UDT] = FreeUDT,
-		[NODE_FUNCTION] = FreeFunction,
-		[NODE_METHOD] = FreeMethod,
-		[NODE_VARIABLE] = FreeVariable
-	};
-
-	jump[node->tag](node);
-}
-
-//okay if input is null; frees input node on return
-static void FreeType(type *node)
-{
-	if (!node) {
-		return;
-	}
-
-	switch (node->tag) {
-	case NODE_BASE:
-		free(node->base.name);
-		break;
-
-	case NODE_NAMED:
-		free(node->named.name);
-		FreeType(node->named.reference);
-		break;
-
-	case NODE_POINTER:
-		FreeType(node->pointer.reference);
-		break;
-
-	case NODE_ARRAY:
-		FreeType(node->array.element);
-		break;
-
-	default:
-		assert(0 != 0 && "invalid type tag");
-		__builtin_unreachable();
-	}
-
-	free(node);
-}
-
-static void FreeUDT(decl node)
-{
-	assert(node.tag = NODE_UDT);
-
-	free(node.udt.name);
-	MemberVectorFree(&node->udt.members, FreeMember);
-}
-
-static void FreeMember(member node)
-{
-	free(node.name);
-	FreeType(node.typ);
-}
-
-static void FreeFunction(decl node)
-{
-	assert(node.tag == NODE_FUNCTION);
-
-	free(node.function.name);
-
-	FreeType(node.function.free);
-
-	FreeStatementRef(node.function.block);
-
-	ParamVectorFree(&node.function.params, FreeParam);
-}
-
-static void FreeParam(param node)
-{
-	free(node.name);
-	FreeType(node.typ);
-}
-
-static void FreeMethod(decl node)
-{
-	assert(node.tag == NODE_METHOD);
-
-	free(node.method.name);
-
-	FreeType(node.method.ret);
-
-	FreeType(node.method.recv);
-
-	FreeStatementRef(node.method.block);
-
-	ParamVectorFree(&node.function.params, FreeParam);
-}
-
-static void FreeVariable(decl node)
-{
-	assert(node.tag == NODE_VARIABLE);
-
-	free(node.variable.name);
-
-	FreeType(node.variable.vartype);
-
-	FreeExpressionRef(node.variable.value);
-}
-
-static void FreeStatement(stmt node)
-{
-	static void (*const jump[])(stmt) = {
-		[NODE_EXPRSTMT] = FreeExprStmt,
-		[NODE_BLOCK] = FreeBlock,
-		[NODE_FORLOOP] = FreeFor,
-		[NODE_WHILELOOP] = FreeWhile,
-		[NODE_SWITCHSTMT] = FreeSwitch,
-		[NODE_BRANCH] = FreeBranch,
-		[NODE_RETURNSTMT] = FreeReturn,
-		[NODE_BREAKSTMT] = FreeStmtDummy,
-		[NODE_CONTINUESTMT] = FreeStmtDummy,
-		[NODE_GOTOLABEL] = FreeGoto,
-		[NODE_LABEL] = FreeLabel,
-		[NODE_FALLTHROUGHSTMT] = FreeStmtDummy
-	};
-
-	jump[node.tag](node);
-}
-
-static void FreeStmtDummy(__attribute__((unused)) stmt node)
-{
-	return;
-}
-
-static void FreeStatementRef(stmt *node)
-{
-	assert(node);
-
-	FreeStatement(*node);
-
-	free(node);
-}
-
-static void FreeExprStmt(stmt node)
-{
-	FreeExpressionRef(node.exprstmt);
-}
-
-static void FreeBlock(stmt node)
-{
-	assert(node->tag == NODE_BLOCK);
-
-	FiatVectorFree(&node->fiats, FiatFree);
-}
-
-static void FiatFree(fiat node)
-{
-	switch (node.tag) {
-	case NODE_DECL:
-		FreeDeclaration(node.declaration);
-
-	case NODE_STMT:
-		FreeStatement(node.statement);
-		break;
-
-	default:
-		assert(0 != 0 && "invalid fiat tag");
-		__builtin_unreachable();
-	}
-}
-
-static void FreeFor(stmt node)
-{
-	assert(node.tag == NODE_FORLOOP);
-
-	if (node.forloop.tag == FOR_DECL) {
-		FreeDeclarationRef(node.forloop.shortvar);
-	} else {
-		assert(node.forloop.tag = FOR_INIT);
-		FreeExpressionRef(node.forloop.init);
-	}
-
-	FreeExpressionRef(node.forloop.cond);
-	FreeExpressionRef(node.forloop.post);
-
-	FreeStatementRef(node.forloop.block);
-}
-
-static void FreeWhile(stmt node)
-{
-	assert(node.tag == NODE_WHILELOOP);
-
-	FreeExpressionRef(node.whileloop.cond);
-
-	FreeStatementRef(node.whileloop.block);
-}
-
-static void FreeBranch(stmt node)
-{
-	assert(node.tag == NODE_BRANCH);
-
-	FreeDeclarationRef(node.branch.shortvar);
-	FreeExpressionRef(node.branch.cond);
-	FreeStatementRef(node.branch.pass);
-	FreeStatementRef(node.branch.fail);
-}
-
-static void FreeReturn(stmt node)
-{
-	assert(node.tag == NODE_RETURNSTMT);
-
-	FreeExpressionRef(node.returnstmt);
-}
-
-static void FreeGoto(stmt node)
-{
-	assert(node.tag == NODE_GOTOLABEL);
-
-	free(node.goto.name);
-}
-
-static void FreeSwitch(stmt node)
-{
-	assert(node.tag = NODE_SWITCHSTMT);
-
-	FreeExpressionRef(node.switchstmt.controller);
-
-	TestVectorFree(&node.switchstmt.tests, FreeTest);
-}
-
-static void FreeTest(test node)
-{
-	FreeExpressionRef(node.cond);
-	FreeStatementRef(node.pass);
-}
-
-static void Freelabel(stmt node)
-{
-	assert(node.tag == NODE_LABEL);
-
-	free(node.label.name);
-	FreeStatementRef(node.label.target);
-}
-
-//okay if input is null; frees input pointer
-static void FreeExpressionRef(expr *node)
-{
-	if (!node) {
-		return;
-	}
-
-	switch (node->tag) {
-	case NODE_ASSIGNMENT:
-		FreeExpressionRef(node->assignment.lvalue);
-		FreeExpressionRef(node->assignment.rvalue);
-		break;
-
-	case NODE_BINARY:
-		FreeExpressionRef(node->binary.left);
-		FreeExpressionRef(node->binary.right);
-		break;
-
-	case NODE_UNARY:
-		FreeExpressionRef(node->unary.operand);
-		break;
-
-	case NODE_CAST:
-		FreeExpressionRef(node->cast.operand);
-		FreeType(node->cast.casttype);
-		break;
-
-	case NODE_CALL:
-		FreeExpressionRef(node->call.name);
-		ExprVectorFree(&node->call.args, FreeExpressionRef);
-		break;
-
-	case NODE_SELECTOR:
-		FreeExpressionRef(node->selector.name);
-		FreeExpressionRef(node->selector.attr);
-		break;
-
-	case NODE_INDEX:
-		FreeExpressionRef(node->index.name);
-		FreeExpressionRef(node->index.key);
-		break;
-
-	case NODE_ARRAYLIT:
-		ExprVectorFree(&node->arraylit.indicies, NULL);
-		ExprVectorFree(&node->arraylit.values, FreeExpressionRef);
-		break;
-
-	case NODE_RVARLIT:
-		free(node->rvarlit.dist);
-		ExprVectorFree(&node->rvarlit.args, FreeExpressionRef);
-		break;
-
-	case NODE_LIT:
-		free(node->lit.rep);
-		break;
-
-	case NODE_IDENT:
-		free(node->ident.name);
-		break;
-
-	default:
-		assert(0 != 0 && "invalid node tag");
-		__builtin_unreachable();
-	}
-
-	free(node);
 }
