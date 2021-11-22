@@ -44,6 +44,7 @@ static size_t Synchronize(parser *, bool);
 static void CheckToken
 (parser *, const token_type, const cstring *, const bool, const bool);
 static intmax_t ExtractArrayIndex(parser *);
+static cstring *cStringFromLexeme(parser *);
 
 //directives
 static import RecImport(parser *);
@@ -334,6 +335,15 @@ static stmt *CopyStmtToHeap(parser *self, const stmt src)
 	return new;
 }
 
+//returns a dynamically allocated cstring copy of the token lexeme
+static cstring *cStringFromLexeme(parser *self)
+{
+	assert(self);
+	assert(self->tok.lexeme.view != NULL);
+
+	return cStringFromView(self->tok.lexeme.view, self->tok.lexeme.len);
+}
+
 //------------------------------------------------------------------------------
 //helper functions
 
@@ -411,14 +421,6 @@ static void CheckToken
 #define move_check_move(type, msg) \
 	CheckToken(self, type, msg,  true, true)
 
-//returns a dynamically allocated cstring copy of the token lexeme
-static cstring *cStringFromLexeme(parser *self)
-{
-	assert(self);
-	assert(self->tok.lexeme.view != NULL);
-
-	return cStringFromView(self->tok.lexeme.view, self->tok.lexeme.len);
-}
 
 //------------------------------------------------------------------------------
 //channel operations
@@ -547,6 +549,9 @@ static module *RecursiveDescent(parser *self, const cstring *alias)
 
 	return &self->root;
 }
+
+//-----------------------------------------------------------------------------
+//directives
 
 static import RecImport(parser *self)
 {
