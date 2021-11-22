@@ -5,7 +5,6 @@
 
 #include "defs.h"
 #include "file.h"
-#include "parser.h"
 #include "resolver.h"
 #include "vector.h"
 #include "xerror.h"

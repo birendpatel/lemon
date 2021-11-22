@@ -8,9 +8,9 @@
 
 #pragma once
 
-#include "ast.h"
 #include "symtable.h"
 #include "graph.h"
+#include "parser.h"
 #include "str.h"
 
 make_graph(module *, Module, static)
