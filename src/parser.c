@@ -355,7 +355,9 @@ static intmax_t ExtractArrayIndex(parser *self)
 	long long int candidate = 0;
 	char *end = NULL;
 
-	candidate = strtoll(self->tok.lexeme, &end, 10);
+	const cstring *digits = cStringFromLexeme(self);
+	candidate = strtoll(digits, &end, 10);
+	free(digits);
 
 	if (candidate == LONG_MAX) {
 		usererror("array index is too large");
@@ -409,6 +411,15 @@ static void CheckToken
 #define move_check_move(type, msg) \
 	CheckToken(self, type, msg,  true, true)
 
+//returns a dynamically allocated cstring copy of the token lexeme
+static cstring *cStringFromLexeme(parser *self)
+{
+	assert(self);
+	assert(self->tok.lexeme.view != NULL);
+
+	return cStringFromView(self->tok.lexeme.view, self->tok.lexeme.len);
+}
+
 //------------------------------------------------------------------------------
 //channel operations
 
@@ -424,11 +435,6 @@ static void GetNextToken(parser *self)
 		xerror_fatal("attempted to read past EOF");
 		abort();
 	}
-
-	if (self->tok.lexeme) {
-		MemoryVectorPush(&self->garbage, self->tok.lexeme);
-	}
-
 }
 
 //synchronize at the block level if the immediate next token is invalid
@@ -448,14 +454,14 @@ static void ReportInvalidToken(parser *self)
 	assert(self);
 	assert(self->tok.type == _INVALID);
 
-	const cstring *lexeme = self->tok.lexeme;
+	RAII(cStringFree) cstring *name = cStringFromLexeme(self);
 
 	if (self->tok.flags.bad_string == 1) {
 		usererror("unterminated string literal");
 	} else if (self->tok.flags.valid == 0) {
-		usererror("invalid syntax: %s", lexeme);
+		usererror("invalid syntax: %s", name);
 	} else {
-		usererror("unspecified syntax error: %s", lexeme);
+		usererror("unspecified syntax error: %s", name);
 		xerror_issue("invalid token is missing flags");
 	}
 }
@@ -550,7 +556,7 @@ static import RecImport(parser *self)
 	move_check(_LITERALSTR, "missing import path string");
 
 	import node = {
-		.alias = self->tok.lexeme,
+		.alias = cStringFromLexeme(self),
 		.line = self->tok.line
 	};
 
@@ -566,7 +572,9 @@ static decl RecDecl(parser *self)
 {
 	assert(self);
 
-	const cstring *msg = "'%s' is not the start of a valid declaration";
+	const cstring *msg = "'%.*s' is not the start of a valid declaration";
+	const char *view = self->tok.lexeme.view;
+	const size_t len = self->tok.lexeme.len;
 
 	switch (self->tok.type) {
 	case _STRUCT:
@@ -582,7 +590,7 @@ static decl RecDecl(parser *self)
 		return RecVariable(self);
 
 	default:
-		usererror(msg, self->tok.lexeme);
+		usererror(msg, view, len);
 		Throw(XXPARSE);
 		__builtin_unreachable();
 	}
@@ -612,7 +620,7 @@ static decl RecStruct(parser *self)
 
 	check(_IDENTIFIER, "missing struct name after 'struct' keyword");
 
-	node.udt.name = self->tok.lexeme;
+	node.udt.name = cStringFromLexeme(self);
 
 	move_check_move(_LEFTBRACE, "missing '{' after struct name");
 
@@ -649,7 +657,7 @@ static vector(Member) RecParseMembers(parser *self)
 
 		check(_IDENTIFIER, "missing struct member name");
 
-		attr.name = self->tok.lexeme;
+		attr.name = cStringFromLexeme(self);
 
 		move_check_move(_COLON, "missing ':' after name");
 
@@ -696,7 +704,7 @@ static decl RecFunction(parser *self)
 
 	check(_IDENTIFIER, "missing function name in declaration");
 
-	node.function.name = self->tok.lexeme;
+	node.function.name = cStringFromLexeme(self);
 
 	//parameter list
 	move_check_move(_LEFTPAREN, "missing '(' after function name");
@@ -760,7 +768,7 @@ static decl RecMethod(parser *self)
 
 	check(_IDENTIFIER, "missing method name in declaration");
 
-	node.method.name = self->tok.lexeme;
+	node.method.name = cStringFromLexeme(self);
 
 	//parameter list
 	move_check_move(_LEFTPAREN, "missing '(' after method name");
@@ -818,7 +826,7 @@ static vector(Param) RecParseParameters(parser *self)
 
 		check(_IDENTIFIER, "missing function parameter name");
 
-		attr.name = self->tok.lexeme;
+		attr.name = cStringFromLexeme(self);
 
 		move_check_move(_COLON, "missing ':' after name");
 
@@ -868,7 +876,7 @@ static decl RecVariable(parser *self)
 
 	check(_IDENTIFIER, "missing variable name in declaration");
 
-	node.variable.name = self->tok.lexeme;
+	node.variable.name = cStringFromLexeme(self);
 
 	move_check_move(_COLON, "missing ':' before type");
 
@@ -893,18 +901,18 @@ static type *RecType(parser *self)
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
-		prev = self->tok;
+		cstring *prev_name = cStringFromLexeme(self);
 
 		GetNextValidToken(self);
 
 		if (self->tok.type != _DOT) {
 			node->tag = NODE_BASE;
-			node->base.name = prev.lexeme;
+			node->base.name = prev_name;
 			break;
 		}
 
 		node->tag = NODE_NAMED;
-		node->named.name = prev.lexeme;
+		node->named.name = prev_name;
 
 		move_check(_IDENTIFIER, "missing type after '.'");
 		node->named.reference = RecType(self);
@@ -1288,7 +1296,7 @@ static stmt RecNamedTarget(parser *self)
 	case _GOTO:
 		node.tag = NODE_GOTOLABEL;
 		move_check(_IDENTIFIER, "missing goto target");
-		node.goto.name = self->tok.lexeme;
+		node.goto.name = cStringFromLexeme(self);
 		move_check_move(_SEMICOLON, "missing ';' after goto");
 		break;
 
@@ -1363,7 +1371,7 @@ static stmt RecLabel(parser *self)
 
 	move_check(_IDENTIFIER, "label name must be an identifier");
 
-	node.label.name = self->tok.lexeme;
+	node.label.name = cStringFromLexeme(self);
 
 	move_check_move(_COLON, "missing ':' after label name");
 
@@ -1636,7 +1644,10 @@ static expr *RecPrimary(parser *self)
 	assert(self);
 
 	static const cstring *fmt = "expression is ill-formed at '%s'";
-	const cstring *msg = self->tok.lexeme;
+	const char *view = self->tok.lexeme.view;
+	const size_t len = self->tok.lexeme.len;
+
+	assert(view);
 
 	expr *node = NULL;
 
@@ -1670,7 +1681,7 @@ static expr *RecPrimary(parser *self)
 	case _FALSE:
 		node = ExprInit(self, NODE_LIT);
 		node->line = self->tok.line;
-		node->lit.rep = self->tok.lexeme;
+		node->lit.rep = cStringFromLexeme(self);
 		node->lit.littype = self->tok.type;
 		GetNextValidToken(self);
 		break;
@@ -1691,7 +1702,7 @@ static expr *RecPrimary(parser *self)
 		break;
 
 	default:
-		usererror(fmt, msg);
+		usererror(fmt, len, view);
 		Throw(XXPARSE);
 	}
 
@@ -1787,7 +1798,7 @@ static expr *RecIdentifier(parser *self)
 
 	expr *node = ExprInit(self, NODE_IDENT);
 	node->line = self->tok.line;
-	node->ident.name = self->tok.lexeme;
+	node->ident.name = cStringFromLexeme(self);
 
 	return node;
 }
@@ -1801,7 +1812,7 @@ static expr *RecRvar(parser *self, bool seen_tilde)
 	expr *node = ExprInit(self, NODE_RVARLIT);
 
 	node->line = self->tok.line;
-	node->rvarlit.dist = self->tok.lexeme;
+	node->rvarlit.dist = cStringFromLexeme(self);
 
 	if (!seen_tilde) {
 		move_check(_TILDE, "missing '~' after distribution");
