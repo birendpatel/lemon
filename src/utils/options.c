@@ -7,7 +7,6 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "defs.h"
 #include "options.h"
 #include "xerror.h"
 

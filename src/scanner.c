@@ -12,7 +12,6 @@
 
 #include "arena.h"
 #include "scanner.h"
-#include "defs.h"
 #include "options.h"
 #include "assets/kmap.h"
 #include "lib/channel.h"

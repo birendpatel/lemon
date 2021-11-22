@@ -7,7 +7,6 @@
 
 #include "arena.h"
 #include "file.h"
-#include "defs.h"
 #include "xerror.h"
 
 static void FileClose(FILE **);

@@ -16,7 +16,6 @@
 #include "parser.h"
 #include "scanner.h"
 #include "options.h"
-#include "defs.h"
 #include "xerror.h"
 #include "channel.h"
 #include "vector.h"

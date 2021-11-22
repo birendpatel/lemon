@@ -4,7 +4,6 @@
 #include <stddef.h>
 
 #include "arena.h"
-#include "defs.h"
 #include "file.h"
 #include "resolver.h"
 #include "vector.h"
