@@ -6,6 +6,7 @@
 #include <stddef.h>
 
 #include "map.h"
+#include "str.h"
 
 typedef struct symbol symbol;
 typedef struct symtable symtable;
@@ -15,11 +16,15 @@ typedef struct symtable symtable;
 
 typedef enum symboltag {
 	SYMBOL_NATIVE,
-	SYMBOL_FILE,
+	SYMBOL_MODULE,
+	SYMBOL_IMPORT,
 	SYMBOL_FUNCTION,
 	SYMBOL_METHOD,
 	SYMBOL_UDT,
 	SYMBOL_VARIABLE,
+	SYMBOL_FIELD,
+	SYMBOL_PARAMETER,
+	SYMBOL_LABEL,
 } symboltag;
 
 struct symbol {
@@ -31,29 +36,78 @@ struct symbol {
 
 		struct {
 			symtable *table;
-			bool referenced;
-		} file;
+			struct {
+				unsigned int referenced: 1;
+			};
+		} module;
+
+		struct {
+			size_t line;
+			struct {
+				unsigned int referenced: 1;
+			};
+		} import;
 
 		struct {
 			symtable *table;
-			bool referenced;
+			cstring *signature;
+			size_t line;
+			struct {
+				unsigned int referenced: 1;
+			};
 		} function;
 
 		struct {
 			symtable *table;
-			bool referenced;
+			cstring *signature;
+			size_t line;
+			struct {
+				unsigned int referenced: 1;
+			};
 		} method;
 
 		struct {
 			symtable *table;
 			size_t bytes;
-			bool referenced;
+			size_t line;
+			struct {
+				unsigned int referenced: 1;
+				unsigned int public: 1;
+			};
 		} udt;
 
 		struct {
-			bool referenced;
-			bool parameter;
+			cstring *type;
+			size_t line;
+			struct {
+				unsigned int referenced: 1;
+				unsigned int public: 1;
+			};
 		} variable;
+
+		struct {
+			cstring *type;
+			size_t line;
+			struct {
+				unsigned int referenced: 1;
+				unsigned int public: 1;
+			};
+		} field;
+		
+		struct {
+			cstring *type;
+			size_t line;
+			struct {
+				unsigned int referenced: 1;
+			};
+		} parameter;
+
+		struct {
+			size_t line;
+			struct {
+				unsigned int referenced: 1;
+			};
+		} label;
 	};
 };
 
@@ -67,7 +121,7 @@ make_map(symbol, Symbol, static)
 
 typedef enum tabletag {
 	TABLE_GLOBAL,
-	TABLE_FILE,
+	TABLE_MODULE,
 	TABLE_FUNCTION,
 	TABLE_METHOD,
 	TABLE_UDT,
@@ -83,11 +137,8 @@ struct symtable {
 //API
 
 //create the global symbol table and populate it with the predeclared native
-//types and functions; returns NULL on failure
+//types and functions; returned pointer is non-NULL
 symtable *SymTableInit(void);
-
-//recursively release all symbol tables in memory; input must not be NULL
-void SymTableFree(symtable *global);
 
 //always returns a valid child symbol table; input capacity guarantees that the
 //underlying hash table buffer will not issue a dynamic resize when the total
@@ -95,8 +146,8 @@ void SymTableFree(symtable *global);
 symtable *SymTableSpawn(symtable *parent, const tabletag tag, const size_t cap);
 
 //returns NULL if the symbol already exists. On success the returned pointer
-//will remain valid until SymTableFree provided that the capacity contract on
-//SymTableSpawn is upheld.
+//will remain valid for the compiler lifetime provided that the capacity 
+//contract on SymTableSpawn is upheld.
 symbol *SymTableInsert(symtable *table, const cstring *key, symbol value);
 
 //returns NULL if the key does not exist in the input table or its ancestors; 

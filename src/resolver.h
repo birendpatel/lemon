@@ -8,10 +8,10 @@
 
 #pragma once
 
-#include "ast.h"
-#include "symtable.h"
 #include "graph.h"
+#include "parser.h"
 #include "str.h"
+#include "symtable.h"
 
 make_graph(module *, Module, static)
 
@@ -35,11 +35,5 @@ typedef struct network {
 	symtable *global;
 } network;
 
-//------------------------------------------------------------------------------
-// API
-
 //returns NULL on failure
 network *ResolverInit(const cstring *filename);
-
-//input network must not be NULL; always returns NULL
-void *ResolverFree(network *net);

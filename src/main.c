@@ -7,23 +7,26 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#include "defs.h"
+#include "arena.h"
 #include "options.h"
 #include "resolver.h"
 #include "str.h"
+#include "version.h"
 #include "xerror.h"
 
 #if GCC_VERSION < 80300
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
+void Initialize(int *, char ***);
+_Noreturn void Terminate(int);
 const cstring *GetRootFileName(char **);
 
 //------------------------------------------------------------------------------
 
 int main(int argc, char **argv)
 {
-	OptionsParse(&argc, &argv);
+	Initialize(&argc, &argv);
 
 	const cstring *filename = GetRootFileName(argv);
 
@@ -31,15 +34,34 @@ int main(int argc, char **argv)
 
 	if (!net) {
 		xerror_fatal("cannot resolve %s", filename);
-		return EXIT_FAILURE;
+		Terminate(EXIT_FAILURE);
 	}
 
 	for (module *curr = net->head; curr != NULL; curr = curr->next) {
 		puts(curr->alias);
 	}
 
+	Terminate(EXIT_SUCCESS);
+}
+
+void Initialize(int *argc, char ***argv)
+{
+	assert(argc);
+	assert(argv);
+
+	const size_t default_arena_size = MiB(100);
+
+	OptionsParse(argc, argv);
+	ArenaInit(default_arena_size);
+}
+
+_Noreturn void Terminate(int status)
+{
+	assert(status == EXIT_SUCCESS || status == EXIT_FAILURE);
+
+	ArenaFree();
 	XerrorFlush();
-	return EXIT_SUCCESS;
+	exit(status);
 }
 
 //returns "main" if argv is empty

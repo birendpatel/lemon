@@ -3,8 +3,7 @@
 #include <assert.h>
 #include <stdint.h>
 
-#include "defs.h"
-#include "str.h"
+#include "arena.h"
 #include "symtable.h"
 
 //------------------------------------------------------------------------------
@@ -14,7 +13,7 @@
 	.key = keyname,							       \
 	.value = {							       \
 		.tag = SYMBOL_NATIVE,					       \
-		.native = {						       \
+		.native = {					               \
 			.bytes = size					       \
 		}							       \
 	}								       \
@@ -25,7 +24,7 @@
 	.key = keyname,							       \
 	.value = {							       \
 		.tag = SYMBOL_FUNCTION,					       \
-		.function = {						       \
+		.function = {					               \
 			.table = NULL,					       \
 			.referenced = false				       \
 		}							       \
@@ -69,6 +68,7 @@ symtable *SymTableInit(void)
 	const size_t total_entries = sizeof(table) / sizeof(table[0]);
 
 	symtable *global = SymTableSpawn(NULL, TABLE_GLOBAL, total_entries);
+	assert(global);
 
 	for (size_t i = 0; i < total_entries; i++) {
 		const pair *p = table + i;
@@ -82,19 +82,11 @@ symtable *SymTableInit(void)
 #undef NATIVE_TYPE
 #undef NATIVE_FUNC
 
-void SymTableFree(symtable *global)
-{
-	assert(global);
-	assert(global->tag == TABLE_GLOBAL);
-
-	//TODO
-}
-
 symtable *SymTableSpawn(symtable *parent, const tabletag tag, const size_t cap)
 {
 	assert((parent != NULL) ^ (tag == TABLE_GLOBAL)); //logical xor
 
-	symtable *child = AbortMalloc(sizeof(symtable));
+	symtable *child = ArenaAllocate(sizeof(symtable));
 
 	*child = (symtable) {
 		.tag = tag,

@@ -12,6 +12,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "arena.h"
 #include "xerror.h"
 
 #ifdef CHANNEL_TRACE
@@ -34,15 +35,6 @@
 #ifndef CHANNEL_ECLOSED
 	#error "channel.h requires user to implement CHANNEL_ECLOSED int code"
 #endif
-
-#define kmalloc(target, bytes)                                                 \
-        do {                                                                   \
-                target = malloc(bytes);                                        \
-                                                                               \
-                if (!target) {                                                 \
-                        abort();                                               \
-                }                                                              \
-	} while (0)
 
 #define alias_channel(pfix)						       \
 typedef struct pfix##_channel pfix##_channel;
@@ -77,7 +69,7 @@ struct pfix##_channel {							       \
 //cls is the storage class and an optional inline directive
 #define api_channel(T, pfix, cls)					       \
 cls void pfix##ChannelInit(pfix##_channel *self, const size_t n);	       \
-cls int pfix##ChannelFree(pfix##_channel *self, void (*cfree) (T));	       \
+cls int pfix##ChannelShutdown(pfix##_channel *self);	                       \
 cls void pfix##ChannelClose(pfix##_channel *self);			       \
 cls int pfix##ChannelSend(pfix##_channel *self, const T datum);	               \
 cls int pfix##ChannelRecv(pfix##_channel *self, T *datum);
@@ -89,8 +81,7 @@ cls void pfix##ChannelInit(pfix##_channel *self, const size_t n)	       \
 	assert(self);							       \
 	assert(n);							       \
 									       \
-	size_t bytes = sizeof(T) * n;					       \
-	kmalloc(self->data, bytes);					       \
+	self->data = ArenaAllocate(sizeof(T) * n);			       \
 									       \
 	self->cap = n;							       \
 	self->len = 0;							       \
@@ -112,8 +103,8 @@ cls void pfix##ChannelInit(pfix##_channel *self, const size_t n)	       \
 //If any thread are waiting for a signal, then CHANNEL_EBUSY is returned and
 //the channel is not destroyed. Otherwise, CHANNEL_ESUCCESS is returned and the
 //CHANNEL_CLOSED flag is set.
-#define impl_channel_free(T, pfix, cls)					       \
-cls int pfix##ChannelFree(pfix##_channel *self, void (*cfree) (T))	       \
+#define impl_channel_shutdown(T, pfix, cls)				       \
+cls int pfix##ChannelShutdown(pfix##_channel *self)                    	       \
 {									       \
 	assert(self);							       \
 									       \
@@ -135,21 +126,9 @@ cls int pfix##ChannelFree(pfix##_channel *self, void (*cfree) (T))	       \
 		goto unlock;						       \
 	}								       \
 									       \
-	ChannelTrace("cond variables removed");		                       \
-									       \
-	if (cfree) {							       \
-		ChannelTrace("purging queue");             		       \
-									       \
-		for (size_t i = self->head; i < self->len; i++) {	       \
-			cfree(self->data[i]);				       \
-		}							       \
-	}								       \
-									       \
-	free(self->data);						       \
-	memset(self, 0, sizeof(struct pfix##_channel));			       \
 	self->flags = CHANNEL_CLOSED;					       \
-									       \
-	ChannelTrace("destroyed and closed");		                       \
+							                       \
+	ChannelTrace("cond variables removed");		                       \
 									       \
 unlock:									       \
 	pthread_mutex_unlock(&self->mutex);				       \
@@ -252,7 +231,7 @@ unlock:									       \
 	declare_channel(T, pfix)					       \
 	api_channel(T, pfix, cls)					       \
 	impl_channel_init(T, pfix, cls)					       \
-	impl_channel_free(T, pfix, cls)					       \
+	impl_channel_shutdown(T, pfix, cls)				       \
 	impl_channel_close(T, pfix, cls)				       \
 	impl_channel_send(T, pfix, cls)					       \
 	impl_channel_recv(T, pfix, cls)

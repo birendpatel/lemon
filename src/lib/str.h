@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "arena.h"
 #include "vector.h"
 
 make_vector(char, Char, static)
@@ -30,23 +31,17 @@ static cstring *cStringDuplicate(const cstring *cstr)
 	return new;
 }
 
-static cstring *cStringFromView(const char *data, size_t len)
+static cstring *cStringFromView(const char *data, const size_t len)
 {
 	const size_t bytes = sizeof(char) * len;
 
-	char *new = VectorCalloc(bytes + 1);
+	char *new = ArenaAllocate(bytes + 1);
 
 	memcpy(new, data, bytes);
 
 	new[len] = '\0';
 
 	return new;
-}
-
-//for use with gcc cleanup, okay if *cstr is null
-static void cStringFree(cstring **cstr)
-{
-	free(*cstr);
 }
 
 //-----------------------------------------------------------------------------
@@ -56,7 +51,6 @@ typedef Char_vector vstring;
 
 static vstring vStringInit(const size_t);
 static void vStringTerminate__internal(vstring *);
-static void vStringFree(vstring *);
 static size_t vStringLength(vstring *);
 static void vStringAppend(vstring *, const char);
 static char vStringGet(const vstring *, size_t);
@@ -83,14 +77,6 @@ static void vStringTerminate__internal(vstring *vstr)
 
 	CharVectorPush(vstr, null_terminator);
 
-}
-
-static void vStringFree(vstring *vstr)
-{
-	assert(vstr);
-	assert(vstr->len != 0);
-
-	CharVectorFree(vstr, NULL);
 }
 
 static size_t vStringLength(vstring *vstr)
@@ -153,7 +139,7 @@ static void vStringReset(vstring *vstr)
 	assert(vstr);
 	assert(vstr->len != 0);
 	
-	CharVectorReset(vstr, NULL);
+	CharVectorReset(vstr);
 
 	vStringTerminate__internal(vstr);
 }

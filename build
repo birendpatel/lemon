@@ -45,6 +45,7 @@ files = [
     "./src/utils/xerror.c",
     "./src/utils/options.c",
     "./src/utils/file.c",
+    "./src/utils/arena.c",
     "./src/assets/kmap.c",
     "./extern/cexception/CException.c"
 ]
@@ -79,12 +80,12 @@ common_flags = [
 debug_flags = [
     "-ggdb",
     "-O0",
-    "-DDEBUG"
 ]
 
 trace_flags = [
     *debug_flags,
     "-DXERROR_DEBUG",
+    "-DARENA_TRACE",
     "-DMAP_TRACE",
     "-DVECTOR_TRACE",
     "-DCHANNEL_TRACE"

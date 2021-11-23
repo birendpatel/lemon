@@ -6,8 +6,8 @@
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 
-#include "defs.h"
 #include "options.h"
 #include "xerror.h"
 
@@ -71,6 +71,7 @@ enum argp_keys {
 	user_interactive_key = 'i',
 };
 
+#define LEMON_VERSION "Alpha"
 const cstring *argp_program_version = LEMON_VERSION;
 const cstring *argp_program_bug_address = "github.com/birendpatel/lemon/issues";
 static char args_doc[] = "<file 1> ... <file n>";

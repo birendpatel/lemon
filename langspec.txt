@@ -106,7 +106,8 @@ STRING_LITERAL ::= "\"" [^"]* "\""
 #-------------------------------------------------------------------------------
 # A struct declaration introduces a scoped user defined type. Together with its
 # method set, a struct enables object orientation via composition. Members are
-# defaulted to immutable attributes.
+# defaulted to private attributes, meaning they can only be accessed from other
+# methods belonging to the same method set.
 #-------------------------------------------------------------------------------
 
 <struct declaration> ::= "struct" "pub"? IDENTIFIER "{" <member list> "}" ";"
@@ -150,16 +151,19 @@ STRING_LITERAL ::= "\"" [^"]* "\""
 
 #-------------------------------------------------------------------------------
 # types are identifiers perhaps prefixed with leading symbols which construct
-# a series of arrays and pointers, or perhaps a combination of the two.
+# a series of arrays and pointers, or perhaps a combination of the two. Named
+# types allow one module to use UDTs declared in another module.
 #-------------------------------------------------------------------------------
 
 <type> ::= IDENTIFIER | <composite type>
 
-<composite type> ::= <pointer type> | <array type>
+<composite type> ::= <pointer type> | <array type> | <named type>
 
 <pointer type> ::= "*" <type>
 
 <array type> ::= "[" INT_LITERAL "]" <type>
+
+<named type> ::= IDENTIFIER "." IDENTIFIER
 
 #-------------------------------------------------------------------------------
 # Statements can be direct children of file nodes. Lemon acts like a dynamic

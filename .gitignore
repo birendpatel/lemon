@@ -1,7 +1,8 @@
 # Lemon docs and executables
 lemon
-html/
-latex/
+debug/
+trace/
+release/
 
 # Prerequisites
 *.d
