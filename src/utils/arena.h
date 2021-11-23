@@ -6,6 +6,7 @@
 
 #define KiB(kibibytes) ((size_t) (1024 * kibibytes))
 #define MiB(mebibytes) ((size_t) (1048576 * mebibytes))
+#define GiB(gibibytes) ((size_t) (1073741824 * gibibytes))
 
 //initialize a thread-safe memory pool with maximum input capacity
 void ArenaInit(size_t bytes);

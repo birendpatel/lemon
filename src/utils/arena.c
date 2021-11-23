@@ -14,14 +14,21 @@
 	#define ArenaTrace(msg, ...)
 #endif
 
+typedef struct arena arena;
+typedef struct header header;
+
+static header *GetHeader(void *);
+static size_t Align(const size_t);
+
 //------------------------------------------------------------------------------
 
-typedef struct arena {
+struct arena {
+	void *start;
 	void *top;
 	size_t capacity;
 	size_t remaining;
 	pthread_mutex_t mutex;
-} arena;
+};
 
 static arena mempool =  {
 	.start = NULL,
@@ -33,11 +40,11 @@ static arena mempool =  {
 
 //------------------------------------------------------------------------------
 
-typedef struct header {
+struct header {
 	size_t bytes;
-} header;
+};
 
-static inline header *GetHeader(void *ptr)
+static header *GetHeader(void *ptr)
 {
 	assert(ptr);
 
@@ -61,7 +68,7 @@ void ArenaInit(size_t bytes)
 		abort();
 	}
 
-	mempool.top = start;
+	mempool.top = mempool.start;
 	mempool.capacity = bytes;
 	mempool.remaining = bytes;
 
@@ -82,7 +89,7 @@ void ArenaFree(void)
 }
 
 //returns input rounded up to nearest multiple of 16
-size_t Align(const size_t bytes)
+static size_t Align(const size_t bytes)
 {
 	const size_t alignment = 0x10;
 	const size_t lo_mask = alignment - 1;
@@ -128,7 +135,7 @@ void *ArenaReallocate(void *ptr, size_t bytes)
 	assert(bytes);
 
 	void *new = NULL;
-	header *metadata = Getheader(ptr);
+	header *metadata = GetHeader(ptr);
 
 	ArenaTrace("reallocation of %zu bytes requested", bytes);
 
@@ -141,7 +148,7 @@ void *ArenaReallocate(void *ptr, size_t bytes)
 
 	new = ArenaAllocate(bytes);
 
-	memcpy(region, ptr, metadata->bytes);
+	memcpy(new, ptr, metadata->bytes);
 
 	pthread_mutex_unlock(&mempool.mutex);
 

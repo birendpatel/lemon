@@ -85,6 +85,7 @@ debug_flags = [
 trace_flags = [
     *debug_flags,
     "-DXERROR_DEBUG",
+    "-DARENA_TRACE",
     "-DMAP_TRACE",
     "-DVECTOR_TRACE",
     "-DCHANNEL_TRACE"

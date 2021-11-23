@@ -24,7 +24,7 @@ cstring *FileLoad(const cstring *name)
 
 	cstring *filename = FileGetDiskName(name);
 
-	__attribute__((cleanup__(FileClose))) FILE *fp = fopen(filename, "r");
+	__attribute__((cleanup(FileClose))) FILE *fp = fopen(filename, "r");
 
 	if (!fp) {
 		xerror_issue("%s: %s", filename, strerror(errno));
