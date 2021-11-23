@@ -31,7 +31,7 @@ static cstring *cStringDuplicate(const cstring *cstr)
 	return new;
 }
 
-static cstring *cStringFromView(const char *data, size_t len)
+static cstring *cStringFromView(const char *data, const size_t len)
 {
 	const size_t bytes = sizeof(char) * len;
 
@@ -139,7 +139,7 @@ static void vStringReset(vstring *vstr)
 	assert(vstr);
 	assert(vstr->len != 0);
 	
-	CharVectorReset(vstr, NULL);
+	CharVectorReset(vstr);
 
 	vStringTerminate__internal(vstr);
 }

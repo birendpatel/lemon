@@ -42,6 +42,7 @@ struct symbol {
 		} module;
 
 		struct {
+			size_t line;
 			struct {
 				unsigned int referenced: 1;
 			};
@@ -50,6 +51,7 @@ struct symbol {
 		struct {
 			symtable *table;
 			cstring *signature;
+			size_t line;
 			struct {
 				unsigned int referenced: 1;
 			};
@@ -58,6 +60,7 @@ struct symbol {
 		struct {
 			symtable *table;
 			cstring *signature;
+			size_t line;
 			struct {
 				unsigned int referenced: 1;
 			};
@@ -66,6 +69,7 @@ struct symbol {
 		struct {
 			symtable *table;
 			size_t bytes;
+			size_t line;
 			struct {
 				unsigned int referenced: 1;
 				unsigned int public: 1;
@@ -74,6 +78,7 @@ struct symbol {
 
 		struct {
 			cstring *type;
+			size_t line;
 			struct {
 				unsigned int referenced: 1;
 				unsigned int public: 1;
@@ -82,6 +87,7 @@ struct symbol {
 
 		struct {
 			cstring *type;
+			size_t line;
 			struct {
 				unsigned int referenced: 1;
 				unsigned int public: 1;
@@ -90,12 +96,14 @@ struct symbol {
 		
 		struct {
 			cstring *type;
+			size_t line;
 			struct {
 				unsigned int referenced: 1;
 			};
 		} parameter;
 
 		struct {
+			size_t line;
 			struct {
 				unsigned int referenced: 1;
 			};

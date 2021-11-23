@@ -181,7 +181,6 @@ struct decl {
 
 api_vector(decl, Decl, static)
 impl_vector_init(decl, Decl, static)
-impl_vector_free(decl, Decl, static)
 impl_vector_push(decl, Decl, static)
 impl_vector_get(decl, Decl, static)
 impl_vector_set(decl, Decl, static)
@@ -214,7 +213,7 @@ struct stmt {
 		struct {
 			cstring *name; 
 			symbol *entry;
-		} goto;
+		} gotostmt;
 
 		struct {
 			symtable *table; //null
@@ -264,7 +263,6 @@ struct stmt {
 
 api_vector(stmt, Stmt, static)
 impl_vector_init(stmt, Stmt, static)
-impl_vector_free(stmt, Stmt, static)
 impl_vector_push(stmt, Stmt, static)
 impl_vector_get(stmt, Stmt, static)
 impl_vector_set(stmt, Stmt, static)
@@ -365,7 +363,6 @@ struct fiat {
 
 api_vector(fiat, Fiat, static)
 impl_vector_init(fiat, Fiat, static)
-impl_vector_free(fiat, Fiat, static)
 impl_vector_push(fiat, Fiat, static)
 impl_vector_get(fiat, Fiat, static)
 impl_vector_set(fiat, Fiat, static)

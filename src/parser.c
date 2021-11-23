@@ -23,7 +23,7 @@
 typedef struct parser parser;
 
 //parser management
-static parser *ParserInit(const cstring *);
+static parser *ParserInit(cstring *);
 static module *RecursiveDescent(parser *, const cstring *);
 
 //node management
@@ -116,7 +116,7 @@ struct parser {
 };
 
 //returns NULL on failure; does not initialize the root member
-static parser *ParserInit(const cstring *src)
+static parser *ParserInit(cstring *src)
 {
 	assert(src);
 
@@ -134,7 +134,7 @@ static parser *ParserInit(const cstring *src)
 	if (err) {
 		const cstring *msg = XerrorDescription(err);
 		xerror_issue("cannot init scanner: %s", msg);
-		(void) TokenChannelFree(self->chan, NULL);
+		(void) TokenChannelShutdown(prs->chan);
 		return NULL;
 	}
 
@@ -163,7 +163,7 @@ module *SyntaxTreeInit(const cstring *filename)
 
 	module *root = RecursiveDescent(prs, filename);
 
-	(void) TokenChannelFree(self->chan, NULL);
+	(void) TokenChannelShutdown(prs->chan);
 
 	if (prs->errors) {
 		xerror_fatal("tree is ill-formed");
@@ -803,11 +803,11 @@ static type *RecType(parser *self)
 	assert(self);
 
 	type *node = ArenaAllocate(sizeof(type));
-	token prev = INVALID_TOKEN; 
+	cstring *prev_name = NULL;
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
-		cstring *prev_name = cStringFromLexeme(self);
+		prev_name = cStringFromLexeme(self);
 
 		GetNextValidToken(self);
 
@@ -1201,7 +1201,7 @@ static stmt RecNamedTarget(parser *self)
 	case _GOTO:
 		node.tag = NODE_GOTOLABEL;
 		move_check(_IDENTIFIER, "missing goto target");
-		node.goto.name = cStringFromLexeme(self);
+		node.gotostmt.name = cStringFromLexeme(self);
 		move_check_move(_SEMICOLON, "missing ';' after goto");
 		break;
 

@@ -48,16 +48,16 @@ static _Noreturn void Hang(void);
 
 struct scanner {
 	Token_channel *chan;
-	const char *pos;
-	const char *curr;
-	const cstring *src;
+	char *pos;
+	char *curr;
+	cstring *src;
 	size_t line;
 	token tok;
 };
 
 //dynamically allocates a scanner; the new detached thread is responsible for
 //this resource
-xerror ScannerInit(const cstring *src, Token_channel *chan)
+xerror ScannerInit(cstring *src, Token_channel *chan)
 {
 	assert(src);
 	assert(chan);
@@ -522,7 +522,7 @@ static void ConsumeInvalid(scanner *self, token_flags flags)
 {
 	assert(self);
 
-	const char *start = self->pos;
+	char *start = self->pos;
 
 	//synchronization implies that valid chars will be lost if they are
 	//next to the invalid char without intermediate whitespace. Any grammar
@@ -678,7 +678,7 @@ static void ConsumeString(scanner *self)
 		.lexeme = {
 			.view = delta ? self->pos + 1 : NULL,
 			.len = delta
-		}
+		},
 		.type = _LITERALSTR,
 		.line = self->line,
 		.flags = {

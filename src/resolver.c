@@ -272,23 +272,23 @@ static void ReportRedeclaration(frame *self, const cstring *key)
 
 	switch (current->tag) {
 	case SYMBOL_IMPORT:
-		prev_line = current->import.node->line;
+		prev_line = current->import.line;
 		break;
 
 	case SYMBOL_FUNCTION:
-		prev_line = current->function.node->line;
+		prev_line = current->function.line;
 		break;
 
 	case SYMBOL_METHOD:
-		prev_line = current->method.node->line;
+		prev_line = current->method.line;
 		break;
 
 	case SYMBOL_UDT:
-		prev_line = current->udt.node->line;
+		prev_line = current->udt.line;
 		break;
 
 	case SYMBOL_VARIABLE:
-		prev_line = current->variable.node->line;
+		prev_line = current->variable.line;
 		break;
 
 	default:
@@ -379,6 +379,7 @@ static void ResolveImports(frame *self)
 	symbol entry = {
 		.tag = SYMBOL_IMPORT,
 		.import = {
+			.line = 0,
 			.referenced = false
 		}
 	};
@@ -390,6 +391,7 @@ static void ResolveImports(frame *self)
 
 		const cstring *name = node->alias;
 		self->line = node->line;
+		entry.import.line = node->line;
 
 		symbol *ref = InsertSymbol(self, name, entry);
 		node->entry = ref;
@@ -428,7 +430,8 @@ static void ResolveUDT(frame *self, decl *node)
 		.tag = SYMBOL_UDT,
 		.udt = {
 			.table = NULL,
-			.bytes = 0, 
+			.bytes = 0,
+			.line = node->line,
 			.referenced = false,
 			.public = false
 		}
@@ -463,7 +466,7 @@ static void ResolveMembers(frame *self, vector(Member) members)
 	symbol sym = {
 		.tag = SYMBOL_FIELD,
 		.field = {
-			.type = NULL
+			.type = NULL,
 			.referenced = false,
 			.public = false
 		}
@@ -547,7 +550,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 
 		assert(ref->tag == SYMBOL_UDT);
 
-		if (!ref->udt.node.public) {
+		if (!ref->udt.public) {
 			const cstring *msg = "reference to private type";
 			XerrorUser(fname, 0, msg);
 			return NULL;
