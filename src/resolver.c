@@ -272,23 +272,23 @@ static void ReportRedeclaration(frame *self, const cstring *key)
 
 	switch (current->tag) {
 	case SYMBOL_IMPORT:
-		prev_line = current->import_data.node->line;
+		prev_line = current->import.node->line;
 		break;
 
 	case SYMBOL_FUNCTION:
-		prev_line = current->function_data.node->line;
+		prev_line = current->function.node->line;
 		break;
 
 	case SYMBOL_METHOD:
-		prev_line = current->function_data.node->line;
+		prev_line = current->method.node->line;
 		break;
 
 	case SYMBOL_UDT:
-		prev_line = current->function_data.node->line;
+		prev_line = current->udt.node->line;
 		break;
 
 	case SYMBOL_VARIABLE:
-		prev_line = current->function_data.node->line;
+		prev_line = current->variable.node->line;
 		break;
 
 	default:
@@ -378,7 +378,7 @@ static void ResolveImports(frame *self)
 
 	symbol entry = {
 		.tag = SYMBOL_IMPORT,
-		.import_data = {
+		.import = {
 			.referenced = false
 		}
 	};
@@ -426,11 +426,11 @@ static void ResolveUDT(frame *self, decl *node)
 
 	symbol sym = {
 		.tag = SYMBOL_UDT,
-		.udt_data = {
+		.udt = {
 			.table = NULL,
-			.node = node,
-			.bytes = 0, // not calculated by resolver
-			.referenced = false
+			.bytes = 0, 
+			.referenced = false,
+			.public = false
 		}
 	};
 
@@ -440,7 +440,7 @@ static void ResolveUDT(frame *self, decl *node)
 	//THEN load the udt table itself; returned pointer from PushSymTable
 	//lets us backfill the child pointer in order to doubly link the tables
 	const size_t capacity = node->udt.members.len;
-	symref->udt_data.table = PushSymTable(self, TABLE_UDT, capacity);
+	symref->udt.table = PushSymTable(self, TABLE_UDT, capacity);
 
 	ResolveMembers(self, node->udt.members);
 
@@ -462,16 +462,16 @@ static void ResolveMembers(frame *self, vector(Member) members)
 
 	symbol sym = {
 		.tag = SYMBOL_FIELD,
-		.field_data = {
-			.node = NULL,
-			.referenced = false
+		.field = {
+			.type = NULL
+			.referenced = false,
+			.public = false
 		}
 	};
 
 	while (i < members.len) {
 		member *node = &members.buffer[i];
 
-		sym.field_data.node = node;
 		node->entry = InsertSymbol(self, node->name, sym);
 
 		if (!LookupMemberType(self, node->typ)) {
@@ -507,7 +507,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 
 		switch (ref->tag) {
 		case SYMBOL_UDT:
-			ref->udt_data.referenced = true;
+			ref->udt.referenced = true;
 			__attribute__((fallthrough));
 
 		case SYMBOL_NATIVE:
@@ -529,7 +529,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 			return NULL;
 		}
 
-		ref->import_data.referenced = true;
+		ref->import.referenced = true;
 
 		//TODO have to actually load the other module's symbol table..
 		//this is still searching in the local spaghetti stack
@@ -547,7 +547,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 
 		assert(ref->tag == SYMBOL_UDT);
 
-		if (!ref->udt_data.node->udt.public) {
+		if (!ref->udt.node.public) {
 			const cstring *msg = "reference to private type";
 			XerrorUser(fname, 0, msg);
 			return NULL;

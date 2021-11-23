@@ -35,8 +35,5 @@ typedef struct network {
 	symtable *global;
 } network;
 
-//------------------------------------------------------------------------------
-// API
-
 //returns NULL on failure
 network *ResolverInit(const cstring *filename);

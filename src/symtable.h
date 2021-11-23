@@ -32,56 +32,74 @@ struct symbol {
 	union {
 		struct {
 			size_t bytes;
-		} native_data;
+		} native;
 
 		struct {
 			symtable *table;
-			bool referenced;
-		} module_data;
+			struct {
+				unsigned int referenced: 1;
+			};
+		} module;
 
 		struct {
-			bool referenced;
-		} import_data;
-
-		struct {
-			symtable *table;
-			cstring *signature;
-			bool referenced;
-		} function_data;
+			struct {
+				unsigned int referenced: 1;
+			};
+		} import;
 
 		struct {
 			symtable *table;
 			cstring *signature;
-			bool referenced;
-		} method_data;
+			struct {
+				unsigned int referenced: 1;
+			};
+		} function;
 
 		struct {
 			symtable *table;
-			size_t bytes; //not calculated by front-end
-			bool referenced;
-			bool public;
-		} udt_data;
+			cstring *signature;
+			struct {
+				unsigned int referenced: 1;
+			};
+		} method;
+
+		struct {
+			symtable *table;
+			size_t bytes;
+			struct {
+				unsigned int referenced: 1;
+				unsigned int public: 1;
+			};
+		} udt;
 
 		struct {
 			cstring *type;
-			bool referenced;
-			bool public;
-		} variable_data;
+			struct {
+				unsigned int referenced: 1;
+				unsigned int public: 1;
+			};
+		} variable;
 
 		struct {
 			cstring *type;
-			bool referenced;
-			bool public;
-		} field_data;
+			struct {
+				unsigned int referenced: 1;
+				unsigned int public: 1;
+			};
+		} field;
 		
 		struct {
 			cstring *type;
-			bool referenced;
-		} parameter_data;
+			struct {
+				unsigned int referenced: 1;
+			};
+		} parameter;
 
 		struct {
-			bool referenced;
-		} label_data;
+			struct {
+				unsigned int referenced: 1;
+			};
+		} label;
 	};
 };
 
