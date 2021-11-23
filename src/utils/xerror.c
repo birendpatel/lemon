@@ -92,19 +92,9 @@ void XerrorFlush(void)
 //snprint and vsnprintf may fail in this function, but ignoring the errors
 //simplifies the API. Since the logger isn't a core compiler requirement, the
 //source code might still execute perfectly even if the logger breaks.
-void XerrorLog 
-(
-	const cstring *file,
-	const cstring *func,
-	const int line,
-	const int level,
-	const cstring *msg,
-	...
-)
+void XerrorLog(const cstring *func, const int level, const cstring *msg, ...)
 {
-	assert(file);
 	assert(func);
-	assert(line >= 0);
 	assert(level >= XFATAL && level <= XTRACE);
 	assert(msg);
 
@@ -120,12 +110,10 @@ void XerrorLog
 	int total_printed = snprintf(
 		xq.buf[xq.len],
 		message_max_length,
-		"(%p) %s %s:%s:%d ",
+		"(%p) %s (%s) ",
 		(void *) pthread_self(),
 		GetLevelName(level),
-		file,
-		func,
-		line
+		func
 	);
 
 	if (total_printed < 0) {

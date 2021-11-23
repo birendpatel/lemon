@@ -112,14 +112,11 @@ cls void pfix##VectorPush(pfix##_vector *self, T datum)                        \
 									       \
 	if (self->len == self->cap) {					       \
 		VectorTrace("maximum capacity %zu reached", self->cap);	       \
-		VectorTrace("(%zu bytes)", self->cap * sizeof(T));             \
 									       \
 		self->cap = VectorGrow(self->cap);                             \
 									       \
-		VectorTrace("realloc buffer to %zu elements", self->cap);      \
-		VectorTrace("(%zu bytes)", self->cap * sizeof(T));             \
-								               \
 		const size_t bytes = self->cap * sizeof(T);		       \
+		VectorTrace("realloc to %zu (%zu bytes)", self->cap, bytes);   \
 		self->buffer = ArenaReallocate(self->buffer, bytes);           \
 									       \
 		VectorTrace("reallocated");                                    \
