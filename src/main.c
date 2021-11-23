@@ -18,7 +18,7 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-void Initialize(int, char **);
+void Initialize(int *, char ***);
 _Noreturn void Terminate(int);
 const cstring *GetRootFileName(char **);
 
@@ -26,7 +26,7 @@ const cstring *GetRootFileName(char **);
 
 int main(int argc, char **argv)
 {
-	Initialize(argc, argv);
+	Initialize(&argc, &argv);
 
 	const cstring *filename = GetRootFileName(argv);
 
@@ -44,14 +44,14 @@ int main(int argc, char **argv)
 	Terminate(EXIT_SUCCESS);
 }
 
-void Initialize(int argc, char **argv)
+void Initialize(int *argc, char ***argv)
 {
 	assert(argc);
 	assert(argv);
 
 	const size_t default_arena_size = MiB(100);
 
-	OptionsParse(&argc, &argv);
+	OptionsParse(argc, argv);
 	ArenaInit(default_arena_size);
 }
 

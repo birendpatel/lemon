@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -17,6 +18,7 @@
 typedef struct arena arena;
 typedef struct header header;
 
+static void *ArenaAllocate__private(const size_t, const bool);
 static header *GetHeader(void *);
 static size_t Align(const size_t);
 
@@ -88,19 +90,27 @@ void ArenaFree(void)
 	ArenaTrace("allocation at %p released", (void *) mempool.start);
 }
 
+//------------------------------------------------------------------------------
+
 //returns input rounded up to nearest multiple of 16
 static size_t Align(const size_t bytes)
 {
 	const size_t alignment = 0x10;
-	const size_t lo_mask = alignment - 1;
-	const size_t hi_mask = ~lo_mask;
+	const size_t mask = alignment - 1;
 
-	return (bytes + lo_mask) & ~hi_mask;
+	return bytes + ((alignment - (bytes & mask)) & mask);
 }
 
 void *ArenaAllocate(size_t bytes)
 {
+	return ArenaAllocate__private(bytes, true);
+}
+
+static void *ArenaAllocate__private(const size_t bytes, const bool need_mutex)
+{
 	assert(bytes);
+
+	ArenaTrace("user request for %zu bytes", bytes);
 
 	const size_t user_bytes = Align(bytes);
 	const size_t total_bytes = sizeof(header) + user_bytes;
@@ -108,7 +118,11 @@ void *ArenaAllocate(size_t bytes)
 
 	ArenaTrace("allocating %zu bytes (total %zu)", user_bytes, total_bytes);
 
-	pthread_mutex_lock(&mempool.mutex);
+	if (need_mutex) {
+		pthread_mutex_lock(&mempool.mutex);
+	}
+
+	assert(mempool.start && "mempool not initialised (or deinitialised)");
 
 	if (total_bytes > mempool.remaining) {
 		xerror_fatal("exhausted memory in global arena");
@@ -122,9 +136,11 @@ void *ArenaAllocate(size_t bytes)
 	mempool.top = (void *) ((char *) mempool.top + total_bytes);
 	mempool.remaining -= total_bytes;
 
-	ArenaTrace("%done; %zu bytes remain", mempool.remaining);
+	ArenaTrace("done; %zu bytes remain", mempool.remaining);
 
-	pthread_mutex_unlock(&mempool.mutex);
+	if (need_mutex) {
+		pthread_mutex_unlock(&mempool.mutex);
+	}
 
 	return user_region;
 }
@@ -141,18 +157,22 @@ void *ArenaReallocate(void *ptr, size_t bytes)
 
 	pthread_mutex_lock(&mempool.mutex);
 
+	assert(mempool.start && "mempool not initialised (or deinitialised)");
+
 	if (metadata->bytes >= bytes) {
 		ArenaTrace("no realloc; block has %zu bytes", metadata->bytes);
-		return ptr;
+		new = ptr;
+		goto unlock;
 	}
 
-	new = ArenaAllocate(bytes);
+	new = ArenaAllocate__private(bytes, false);
 
 	memcpy(new, ptr, metadata->bytes);
 
-	pthread_mutex_unlock(&mempool.mutex);
-
 	ArenaTrace("reallocated from %p to %p", ptr, new);
+
+unlock:
+	pthread_mutex_unlock(&mempool.mutex);
 
 	return new;
 }
