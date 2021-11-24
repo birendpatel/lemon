@@ -25,7 +25,7 @@ static size_t Align(const size_t);
 //style increment that progressively bumps the top pointer. Once the top pointer
 //is at (char*) arena.top + capacity, the arena is out of memory. An arena is 
 //created for each thread in its TLS; this mitigates thread contention that 
-//would occur if we instead implemented a single shared arena with mutex locks.
+//would occur if we instead used a single shared arena with mutex locks.
 
 struct arena {
 	void *top;
@@ -49,7 +49,7 @@ struct header {
 
 static header *GetHeader(void *user_region)
 {
-	assert(user_regiion);
+	assert(user_region);
 
 	const size_t offset = sizeof(header);
 	return (header *) ((char *) user_region - offset);
@@ -76,7 +76,9 @@ void ArenaInit(size_t bytes)
 	arena_tls.capacity = bytes;
 	arena_tls.remaining = bytes;
 
+	__attribute__((unused))
 	const cstring *msg = "initialised arena at %p with %zu bytes";
+
 	ArenaTrace(msg, arena_tls.top, bytes);
 }
 
@@ -90,8 +92,11 @@ void ArenaFree(void)
 	assert(start);
 	free(start);
 
-	const double used = arena_tls.remaining / (double) arena_tls.capacity;
-	ArenaTrace("allocation at %p released (%g%)", start, used);
+	__attribute__((unused))
+	const double used = 
+		(double) arena_tls.remaining / (double) arena_tls.capacity;
+	
+	ArenaTrace("allocation at %p released (%g%%)", start, used);
 }
 
 //------------------------------------------------------------------------------
