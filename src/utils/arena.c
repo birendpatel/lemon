@@ -124,7 +124,7 @@ void *ArenaAllocate(size_t bytes)
 	const size_t total_bytes = sizeof(header) + user_bytes;
 	assert(total_bytes > user_bytes && "region + header causes overflow");
 
-	ArenaTrace("allocating %zu bytes (total %zu)", user_bytes, total_bytes);
+	ArenaTrace("changed to %zu bytes (total %zu)", user_bytes, total_bytes);
 
 	if (total_bytes > arena_tls.remaining) {
 		xerror_fatal("arena is out of memory");

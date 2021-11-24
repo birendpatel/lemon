@@ -55,13 +55,16 @@ struct scanner {
 	token tok;
 };
 
-//dynamically allocates a scanner; the new detached thread is responsible for
-//this resource
-xerror ScannerInit(cstring *src, Token_channel *chan)
+xerror ScannerInit(cstring *src, channel(Token) *chan)
 {
 	assert(src);
 	assert(chan);
 
+	//allocated in the parent arena. this avoids sending the src and chan
+	//as a payload into the new thread, which means having to block the
+	//parent thread until the data is copied. The scanner makes no other
+	//dynamic allocations so this also mitigates the overhead of creating
+	//a new arena.
 	scanner *scn = ArenaAllocate(sizeof(scanner));
 
 	*scn = (scanner) {
@@ -99,7 +102,7 @@ xerror ScannerInit(cstring *src, Token_channel *chan)
 	return XESUCCESS;
 }
 
-//pthread_init argument; releases the scanner resource on shutdown 
+//pthread_init argument 
 static void *StartRoutine(void *pthread_payload)
 {
 	scanner *self = (scanner *) pthread_payload;
