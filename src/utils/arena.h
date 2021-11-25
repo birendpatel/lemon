@@ -27,8 +27,8 @@ void *ArenaAllocate(size_t bytes);
 //NULL on failure
 void *ArenaReallocate(void *ptr, size_t bytes);
 
-//releases system resources acquired by ArenaInit; returns false if arena was
-//not initialised prior to this call
+//releases system resources acquired by ArenaInit; okay if the arena was not
+//initialised prior to this call
 void ArenaFree(void);
 
 __attribute__((always_inline))

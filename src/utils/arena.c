@@ -98,7 +98,6 @@ bool ArenaInit(size_t bytes)
 void ArenaFree(void)
 {
 	if (!arena_tls.top) {
-		xerror_issue("thread local arena not initialised");
 		return;
 	}
 

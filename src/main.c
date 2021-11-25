@@ -4,6 +4,7 @@
 // phase.
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -18,7 +19,7 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-void Initialize(int *, char ***);
+void Initialise(int *, char ***);
 _Noreturn void Terminate(int);
 const cstring *GetRootFileName(char **);
 
@@ -26,7 +27,7 @@ const cstring *GetRootFileName(char **);
 
 int main(int argc, char **argv)
 {
-	Initialize(&argc, &argv);
+	Initialise(&argc, &argv);
 
 	const cstring *filename = GetRootFileName(argv);
 
@@ -37,22 +38,12 @@ int main(int argc, char **argv)
 		Terminate(EXIT_FAILURE);
 	}
 
+	//TODO temp
 	for (module *curr = net->head; curr != NULL; curr = curr->next) {
 		puts(curr->alias);
 	}
 
 	Terminate(EXIT_SUCCESS);
-}
-
-void Initialize(int *argc, char ***argv)
-{
-	assert(argc);
-	assert(argv);
-
-	const size_t default_arena_size = MiB(100);
-
-	OptionsParse(argc, argv);
-	ArenaInit(default_arena_size);
 }
 
 _Noreturn void Terminate(int status)
@@ -62,6 +53,21 @@ _Noreturn void Terminate(int status)
 	ArenaFree();
 	XerrorFlush();
 	exit(status);
+}
+
+void Initialise(int *argc, char ***argv)
+{
+	assert(argc);
+	assert(argv);
+
+	const size_t default_arena_size = MiB(100);
+
+	OptionsParse(argc, argv);
+
+	if (!ArenaInit(default_arena_size)) {
+		xerror_fatal("cannot initialise new arena");
+		Terminate(EXIT_FAILURE);
+	}
 }
 
 //returns "main" if argv is empty
