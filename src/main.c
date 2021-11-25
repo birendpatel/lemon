@@ -60,7 +60,7 @@ void Initialise(int *argc, char ***argv)
 	assert(argc);
 	assert(argv);
 
-	const size_t default_arena_size = MiB(100);
+	const size_t default_arena_size = MiB(1);
 
 	OptionsParse(argc, argv);
 

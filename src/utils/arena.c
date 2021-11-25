@@ -19,11 +19,27 @@ typedef struct header header;
 //configurable to any power of two
 #define ALIGNMENT ((size_t) 0x10)
 
+//rounds the input UP to the nearest multiple of the arena alignment. If the
+//rounded input would overflow, then rounds the input DOWN to the nearest
+//multiple.
 static size_t Align(const size_t bytes)
 {
 	assert(ALIGNMENT != 0 && "degenerate alignment");
-	assert(SIZE_MAX % ALIGNMENT == 0 && "potential overflow");
 	assert(!(ALIGNMENT & (ALIGNMENT - 1)) && "not a power of 2");
+
+	//in the supremely unlikely but paranoid case where size_max isn't a
+	//power of two, the same check needs to be performed on the halved
+	//value since size_max + 1 == 0. If the halved value is a power of two
+	//then obviously so is its double.
+	assert(!((SIZE_MAX/2 + 1) & (SIZE_MAX/2)) && "not a power of 2");
+
+	const size_t max_multiple = SIZE_MAX - ALIGNMENT + 1;
+	assert(max_multiple % ALIGNMENT == 0 && "incorrect overflow defense");
+
+	if (bytes > max_multiple) {
+		ArenaTrace("request trimmed to prevent overflow");
+		return max_multiple;
+	}
 
 	const size_t mask = ALIGNMENT - 1;
 	const size_t offset = (ALIGNMENT- (bytes & mask)) & mask;
