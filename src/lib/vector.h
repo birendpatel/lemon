@@ -1,9 +1,6 @@
-// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.  //
-// A simple dynamic array data structure implemented via C-style templating.  // Some operations performed on vectors may cause the application program to
-// abort. Enable vector tracing to locate the root cause.
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// If application code covertly modifies vector struct members it is highly
-// recommended to first compile the code with stdlib assertions enabled. 
+// Dynamic array data structure.
 
 #pragma once
 
@@ -41,13 +38,13 @@ static size_t VectorGrow(size_t curr_capacity)
 //------------------------------------------------------------------------------
 
 //application code may directly modify vector members. After any modification
-//the vector must be equal to the default vector {0, 0, NULL} or the following 
+//the vector must be equal to the default vector {0, 0, NULL} or the following
 //restrictions must be met:
 //
 //1. buffer != NULL
 //2. maximum elements in buffer == cap
 //3. len <= cap
-//4. buffer is compatible with the utils arena allocator 
+//4. buffer is compatible with the utils arena allocator
 //
 //Provided these restrictions are met, any convert modification or reassignment
 //will not hinder subsequent vector operations. If the vector is the default
@@ -85,7 +82,7 @@ cls pfix##_vector pfix##VectorInit(const size_t len, const size_t cap)         \
 	};								       \
 									       \
 	const size_t bytes = cap * sizeof(T);				       \
-	v.buffer = ArenaAllocate(bytes);				       \
+	v.buffer = allocate(bytes);				               \
 									       \
 	VectorTrace("initialized");				               \
 								               \
@@ -117,7 +114,7 @@ cls void pfix##VectorPush(pfix##_vector *self, T datum)                        \
 									       \
 		const size_t bytes = self->cap * sizeof(T);		       \
 		VectorTrace("realloc to %zu (%zu bytes)", self->cap, bytes);   \
-		self->buffer = ArenaReallocate(self->buffer, bytes);           \
+		self->buffer = reallocate(self->buffer, bytes);                \
 									       \
 		VectorTrace("reallocated");                                    \
 	}								       \

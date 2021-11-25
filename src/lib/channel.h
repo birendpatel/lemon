@@ -1,7 +1,7 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
 // Multi-producer multi-consumer thread-safe FIFO blocking queue with a fixed
-// buffer length. 
+// buffer length.
 
 #pragma once
 
@@ -42,7 +42,7 @@ typedef struct pfix##_channel pfix##_channel;
 //the producer or consumer wishing to perform an action on the channel must
 //first acquire the top-level mutex.
 //
-//senders wait on cond_full if the queue.len == queue.cap and consumer wait on 
+//senders wait on cond_full if the queue.len == queue.cap and consumer wait on
 //cond_empty if queue.len == 0.
 //
 //data is the internal buffer with maximum capacity queue.cap and current size
@@ -81,7 +81,7 @@ cls void pfix##ChannelInit(pfix##_channel *self, const size_t n)	       \
 	assert(self);							       \
 	assert(n);							       \
 									       \
-	self->data = ArenaAllocate(sizeof(T) * n);			       \
+	self->data = allocate(sizeof(T) * n);			               \
 									       \
 	self->cap = n;							       \
 	self->len = 0;							       \

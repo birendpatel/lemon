@@ -65,7 +65,7 @@ xerror ScannerInit(cstring *src, channel(Token) *chan)
 	//parent thread until the data is copied. The scanner makes no other
 	//dynamic allocations so this also mitigates the overhead of creating
 	//a new arena.
-	scanner *scn = ArenaAllocate(sizeof(scanner));
+	scanner *scn = allocate(sizeof(scanner));
 
 	*scn = (scanner) {
 		.chan = chan,

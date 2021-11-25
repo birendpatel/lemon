@@ -37,7 +37,7 @@ network *ResolverInit(const cstring *filename)
 {
 	assert(filename);
 
-	network *net = ArenaAllocate(sizeof(network));
+	network *net = allocate(sizeof(network));
 
 	net->dependencies = ModuleGraphInit();
 	net->head = NULL;

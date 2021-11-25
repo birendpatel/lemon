@@ -35,7 +35,7 @@ static cstring *cStringFromView(const char *data, const size_t len)
 {
 	const size_t bytes = sizeof(char) * len;
 
-	char *new = ArenaAllocate(bytes + 1);
+	char *new = allocate(bytes + 1);
 
 	memcpy(new, data, bytes);
 

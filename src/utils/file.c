@@ -109,7 +109,7 @@ static cstring *cStringFromFile(FILE *openfile)
 	}
 
 	const size_t buflen = sizeof(char) * filesize + 1;
-	cstring *buffer = ArenaAllocate(buflen);
+	cstring *buffer = allocate(buflen);
 
 	size_t total_read = fread(buffer, sizeof(char), filesize, openfile);
 

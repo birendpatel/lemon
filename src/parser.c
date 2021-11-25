@@ -120,9 +120,9 @@ static parser *ParserInit(cstring *src)
 {
 	assert(src);
 
-	parser *prs = ArenaAllocate(sizeof(parser));
+	parser *prs = allocate(sizeof(parser));
 
-	prs->chan = ArenaAllocate(sizeof(channel(Token)));
+	prs->chan = allocate(sizeof(channel(Token)));
 	TokenChannelInit(prs->chan, KiB(1));
 
 	prs->tok = INVALID_TOKEN;
@@ -206,7 +206,7 @@ static expr *ExprInit(parser *self, const exprtag tag)
 	assert(self);
 	assert(tag >= NODE_ASSIGNMENT && tag <= NODE_IDENT);
 
-	expr *new = ArenaAllocate(sizeof(expr));
+	expr *new = allocate(sizeof(expr));
 
 	new->tag = tag;
 
@@ -219,7 +219,7 @@ static decl *CopyDeclToHeap(parser *self, const decl src)
 
 	const size_t bytes = sizeof(decl);
 
-	decl *new = ArenaAllocate(bytes);
+	decl *new = allocate(bytes);
 
 	memcpy(new, &src, bytes);
 
@@ -232,7 +232,7 @@ static stmt *CopyStmtToHeap(parser *self, const stmt src)
 
 	const size_t bytes = sizeof(stmt);
 
-	stmt *new = ArenaAllocate(bytes);
+	stmt *new = allocate(bytes);
 
 	memcpy(new, &src, bytes);
 
@@ -802,7 +802,7 @@ static type *RecType(parser *self)
 {
 	assert(self);
 
-	type *node = ArenaAllocate(sizeof(type));
+	type *node = allocate(sizeof(type));
 	cstring *prev_name = NULL;
 
 	switch (self->tok.type) {
