@@ -11,7 +11,6 @@
 #include "CException.h"
 
 typedef char cstring;
-typedef int xerror;
 
 //------------------------------------------------------------------------------
 //XerrorLog enqueues a new error message to an internal thread-safe buffer. The
@@ -39,15 +38,10 @@ void XerrorFlush(void);
 
 //------------------------------------------------------------------------------
 //exceptions
+
 #define XXPARSE  ((CEXCEPTION_T) 1) // raised when grammar is ill-formed
 #define XXGRAPH  ((CEXCEPTION_T) 2) // raised when generic graphing issue found
 #define XXSYMBOL ((CEXCEPTION_T) 3) // raised when symbol resolution fails
-
-#define ThrowFatal(exception, msg, ...) 				       \
-do {								               \
-	xerror_fatal(msg, ##__VA_ARGS__);				       \
-	Throw(exception);					               \
-} while (0)
 
 //------------------------------------------------------------------------------
 //source code error messages

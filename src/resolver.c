@@ -108,7 +108,8 @@ static bool InsertModule(network *net, const cstring *filename)
 	vertex = SyntaxTreeInit(filename);
 
 	if (!vertex) {
-		ThrowFatal(XXGRAPH, "cannot create AST; %s", filename);
+		xerror_fatal("cannot create AST; %s", filename);
+		Throw(XXGRAPH);
 	}
 
 	(void) ModuleGraphInsert(&net->dependencies, filename, vertex);
