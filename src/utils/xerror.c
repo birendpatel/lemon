@@ -17,6 +17,50 @@ static const cstring *GetLevelName(const int);
 static void XerrorFlush__unsafe(void);
 static const cstring *RemoveFilePath(const cstring *);
 
+//colours provided by @gon1332 at stackoverflow.com/questions/2616906/
+#ifdef COLOURS
+	#define COLOUR_RESET	"\x1B[0m"
+	#define ANSI_RED  	"\x1B[31m"
+	#define ANSI_GREEN  	"\x1B[32m"
+	#define ANSI_YELLOW 	"\x1B[33m"
+	#define ANSI_BLUE  	"\x1B[34m"
+	#define ANSI_MAGENTA	"\x1B[35m"
+	#define ANSI_CYAN  	"\x1B[36m"
+	#define ANSI_WHITE      "\x1B[37m"
+
+	#define RED(str)	(ANSI_RED str COLOUR_RESET)
+	#define GREEN(str)	(ANSI_GREEN str COLOUR_RESET)
+	#define YELLOW(str)	(ANSI_YELLOW str COLOUR_RESET)
+	#define BLUE(str)	(ANSI_BLUE str COLOUR_RESET)
+	#define MAGENTA(str)	(ANSI_MAGENTA str COLOUR_RESET)
+	#define CYAN(str)	(ANSI_CYAN str COLOUR_RESET)
+	#define WHITE(str)	(ANSI_WHITE str COLOUR_RESET)
+
+	#define BOLD(str) 	"\x1B[1m" str COLOUR_RESET
+	#define UNDERLINE(str) 	"\x1B[4m" str COLOUR_RESET
+#else
+	#define COLOUR_RESET
+	#define ANSI_RED
+	#define ANSI_GREEN
+	#define ANSI_YELLOW
+	#define ANSI_BLUE
+	#define ANSI_MAGENTA
+	#define ANSI_CYAN
+	#define ANSI_WHITE
+
+	#define RED(str) str
+	#define GREEN(str) str
+	#define YELLOW(str) str
+	#define BLUE(str) str
+	#define MAGENTA(str) str
+	#define CYAN(str) str
+	#define WHITE(str) str
+
+	#define BOLD(str) str
+	#define UNDERLINE(str) str
+
+#endif
+
 //------------------------------------------------------------------------------
 //A single queue is shared between all threads, rather than one queue per thread
 //local storage. Although there may be some mutex contention, a single queue 
@@ -74,12 +118,13 @@ static void XerrorFlush__unsafe(void)
 
 static const cstring *GetLevelName(const int level)
 {
-	assert(level >= XFATAL && level <= XTRACE);
+	assert(level >= XTRACE && level <= XFATAL);
 
 	static const cstring *lookup[] = {
-		[XFATAL] = "FATAL",
+		[XTRACE] = "TRACE",
 		[XERROR] = "ERROR",
-		[XTRACE] = "TRACE"
+		[XFATAL] = "FATAL"
+		
 	};
 
 	return lookup[level];
@@ -111,7 +156,7 @@ void XerrorLog
 {
 	assert(file);
 	assert(func);
-	assert(level >= XFATAL && level <= XTRACE);
+	assert(level >= XTRACE && level <= XFATAL);
 	assert(txt);
 
 	va_list args;
@@ -144,6 +189,7 @@ void XerrorLog
 #else
 	const int threshold = XFATAL;
 #endif
+	assert(XFATAL > XTRACE);
 	
 	if (level >= threshold) {
 		XerrorFlush__unsafe();
@@ -154,79 +200,44 @@ void XerrorLog
 	va_end(args);
 }
 
-void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
+//------------------------------------------------------------------------------
+
+void XerrorUser
+(
+	const cstring *fname,
+	const size_t line,
+	const int level,
+	const cstring *msg,
+	...
+)
 {
+	assert(level <= XUSERHELP && level >= XUSERERROR);
 	assert(msg);
+
+	static const cstring *lookup[] = {
+		[XUSERERROR] = ANSI_RED "ERROR: ",
+		[XUSERWARN] = ANSI_YELLOW "WARN: ",
+		[XUSERHELP] = ANSI_GREEN "ADVICE: "
+	};
 
 	va_list args;
 	va_start(args, msg);
 
-	//Note, the ANSI_RED macro does not reset the colour after it is
- 	//applied. This allows the inputs to also be coloured red. RED()
- 	//cannot be applied directly to the inputs because the ANSI_RED macro
-	//relies on string concatenation.
-	fprintf(stderr, ANSI_RED "ERROR: ");
+	//table lookup triggers all subsequent output to be coloured
+	fprintf(stderr, "%s", lookup[level]);
 
 	if (fname) {
 		fprintf(stderr, "%s: ", fname);
 	}
 
-	if (ln) {
-                fprintf(stderr, "%zu: ", ln);
+	if (line) {
+                fprintf(stderr, "%zu: ", line);
         } 
 
         vfprintf(stderr, msg, args);
 
-        //this final RED() causes the colours to reset after the statement
-        fprintf(stderr, RED("\n"));
+	//default gets restored by piggybacking on the invisible newline
+        fprintf(stderr, "\n" COLOUR_RESET);
 
-        va_end(args);
-}
-
-void XwarnUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
-{
-	assert(msg);
-
-	va_list args;
-	va_start(args, msg);
-
-	fprintf(stderr, ANSI_YELLOW "WARNING: ");
-
-	if (fname) {
-		fprintf(stderr, "%s: ", fname);
-	}
-
-	if (ln) {
-                fprintf(stderr, "%zu: ", ln);
-        } 
-
-        vfprintf(stderr, msg, args);
-
-        fprintf(stderr, YELLOW("\n"));
-
-        va_end(args);
-}
-
-void XhelpUser(const cstring *fname, const size_t ln, const cstring *msg, ...)
-{
-	assert(msg);
-
-	va_list args;
-	va_start(args, msg);
-
-	fprintf(stderr, ANSI_GREEN "ADVICE: ");
-
-	if (fname) {
-		fprintf(stderr, "%s: ", fname);
-	}
-
-	if (ln) {
-                fprintf(stderr, "%zu: ", ln);
-        } 
-
-        vfprintf(stderr, msg, args);
-
-        fprintf(stderr, GREEN("\n"));
-
-        va_end(args);
+	va_end(args);
 }

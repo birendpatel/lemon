@@ -170,7 +170,7 @@ static void ReportCycle(const cstring *parent, const cstring *child)
 	cstring *fparent = FileGetDiskName(parent);
 	cstring *fchild = FileGetDiskName(child);
 
-	XerrorUser(NULL, 0, msg, fparent, fchild);
+	xuser_error(NULL, 0, msg, fparent, fchild);
 }
 
 //------------------------------------------------------------------------------
@@ -226,7 +226,7 @@ static symbol *LookupSymbol(frame *self, const cstring *key, symtable **target)
 	//TODO need line numbers on type nodes and more verbose description
 	if (!ref) {
 		const cstring *fname = self->ast->alias;
-		XerrorUser(fname, 0, msg, key);
+		xuser_error(fname, 0, msg, key);
 		Throw(XXSYMBOL);
 	}
 
@@ -298,9 +298,9 @@ static void ReportRedeclaration(frame *self, const cstring *key)
 	}
 
 	if (prev_line) {
-		XerrorUser(fname, line, longmsg, key, prev_line);
+		xuser_error(fname, line, longmsg, key, prev_line);
 	} else {
-		XerrorUser(fname, line, shortmsg, key);
+		xuser_error(fname, line, shortmsg, key);
 	}
 }
 
@@ -519,7 +519,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 
 		default:
 			//TODO line info
-			XerrorUser(fname, 0, "'%s' not a declared type", key);
+			xuser_error(fname, 0, "'%s' not a declared type", key);
 		}
 
 		return NULL;
@@ -529,7 +529,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 		ref = LookupSymbol(self, key, NULL);
 
 		if (ref->tag != SYMBOL_IMPORT) {
-			XerrorUser(fname, 0 , "'%s' is not an import", key);
+			xuser_error(fname, 0 , "'%s' is not an import", key);
 			return NULL;
 		}
 
@@ -545,7 +545,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 
 		if (ref->tag == SYMBOL_NATIVE) {
 			const cstring *msg = "named global type is redundant";
-			XerrorUser(fname, 0, msg);
+			xuser_error(fname, 0, msg);
 			return NULL;
 		}
 
@@ -553,7 +553,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 
 		if (!ref->udt.public) {
 			const cstring *msg = "reference to private type";
-			XerrorUser(fname, 0, msg);
+			xuser_error(fname, 0, msg);
 			return NULL;
 		}
 

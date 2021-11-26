@@ -85,7 +85,7 @@ const cstring *GetRootFileName(char **argv)
 
 	if (sentinel != NULL) {
 		const cstring *msg = "all input files except %s were ignored";
-		XwarnUser(NULL, 0, msg, fname);
+		xuser_warn(NULL, 0, msg, fname);
 	}
 
 	return fname;

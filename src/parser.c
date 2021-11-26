@@ -255,7 +255,7 @@ static cstring *cStringFromLexeme(parser *self)
 //line number.
 #define usererror(msg, ...) 					               \
 do {								               \
-	XerrorUser(self->root.alias, self->tok.line, msg, ##__VA_ARGS__);      \
+	xuser_error(self->root.alias, self->tok.line, msg, ##__VA_ARGS__);     \
 	self->errors++;					               \
 } while (0)
 
