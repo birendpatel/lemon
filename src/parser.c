@@ -132,8 +132,7 @@ static parser *ParserInit(cstring *src)
 	bool ok = ScannerInit(src, prs->chan);
 
 	if (!ok) {
-		const cstring *msg = XerrorDescription(err);
-		xerror_issue("cannot init scanner: %s", msg);
+		xerror_issue("cannot init scanner");
 		(void) TokenChannelShutdown(prs->chan);
 		return NULL;
 	}
@@ -333,7 +332,7 @@ static void GetNextToken(parser *self)
 {
 	assert(self);
 
-	xerror err = TokenChannelRecv(self->chan, &self->tok);
+	int err = TokenChannelRecv(self->chan, &self->tok);
 
 	if (err) {
 		assert(0 != 0 && "attempted to read past EOF");

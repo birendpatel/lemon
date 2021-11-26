@@ -55,7 +55,7 @@ struct scanner {
 	token tok;
 };
 
-xerror ScannerInit(cstring *src, channel(Token) *chan)
+bool ScannerInit(cstring *src, channel(Token) *chan)
 {
 	assert(src);
 	assert(chan);
@@ -407,12 +407,10 @@ static void SendToken(scanner *self)
 		TokenPrint(self);
 	}
 
-	xerror err = TokenChannelSend(self->chan, self->tok);
+	int err = TokenChannelSend(self->chan, self->tok);
 
 	if (err) {
-		xerror_fatal("cannot send token: %s", XerrorDescription(err));
-		xerror_fatal("cannot fulfill EOF contract on token channel");
-		xerror_fatal("hanging");
+		xerror_fatal("cannot send token; cannot send EOF; hanging");
 		Hang();
 	}
 }

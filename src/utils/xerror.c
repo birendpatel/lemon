@@ -43,34 +43,10 @@ static const cstring *GetLevelName(const int level)
 	return "N/A";
 }
 
-const char *XerrorDescription(const xerror err)
-{
-	static const cstring *lookup[] = {
-		[XESUCCESS] = "function terminated successfully",
-		[XENOMEM] = "dynamic allocation failed",
-		[XEOPTION] = "options parsing failed",
-		[XEFULL] = "data structure reached capacity",
-		[XEFILE] = "IO failure",
-		[XEBUSY] = "thread is waiting on a condition",
-		[XECLOSED] = "communication channel is closed",
-		[XETHREAD] = "multithreading failure",
-		[XESHELL] = "shell failure",
-		[XEUSER] = "issues detected in user source code",
-		[XEUNDEFINED] = "unspecified error"
-	};
-
-	if (err >= XESUCCESS && err <= XEUNDEFINED) {
-		return lookup[err];
-	}
-
-	return "no error description available";	
-}
-
 static void FlushBuffer(bool need_mutex)
 {
 	if (need_mutex) {
-		//the mutex is a fast variant; return code is not useful
-		(void) pthread_mutex_lock(&xq.mutex);
+		pthread_mutex_lock(&xq.mutex);
 	}
 
 	for (uint8_t i = 0; i < xq.len; i++) {
@@ -80,7 +56,7 @@ static void FlushBuffer(bool need_mutex)
 	xq.len = 0;
 
 	if (need_mutex) {
-		(void) pthread_mutex_unlock(&xq.mutex);
+		pthread_mutex_unlock(&xq.mutex);
 	}
 }
 

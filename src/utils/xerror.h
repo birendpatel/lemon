@@ -38,29 +38,6 @@ XerrorLog(__func__, XTRACE, msg, ##__VA_ARGS__)
 void XerrorFlush(void);
 
 //------------------------------------------------------------------------------
-//error codes
-
-#define XESUCCESS     0 //function returned successfully
-#define XENOMEM	      1 //dynamic allocation failed
-#define XEOPTION      2 //options parsing failed
-#define XEFULL        3 //data structure is at capacity
-#define XEFILE        4 //IO failure
-#define XEBUSY        5 //thread is waiting on a condition
-#define XECLOSED      6 //communication channel is closed
-#define XETHREAD      7 //multithreading issue has occured
-#define XESHELL	      8 //shell error
-#define XEPARSE	      9 //parsing to AST failed
-#define XEUSER	     10 //user source code is not correct
-#define XEUNDEFINED  11 //unspecified error
-
-//code map for lib/channel.h
-#define CHANNEL_ESUCCESS XESUCCESS
-#define CHANNEL_EBUSY	 XEBUSY
-#define CHANNEL_ECLOSED  XECLOSED
-
-const cstring *XerrorDescription(const xerror err);
-
-//------------------------------------------------------------------------------
 //exceptions
 #define XXPARSE  ((CEXCEPTION_T) 1) // raised when grammar is ill-formed
 #define XXGRAPH  ((CEXCEPTION_T) 2) // raised when generic graphing issue found

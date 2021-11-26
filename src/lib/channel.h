@@ -21,20 +21,14 @@
 	#define ChannelTrace(msg, ...)
 #endif
 
-//channel functions may return any integer error code s.t. INT_MIN < x < INT_MAX
-#ifndef CHANNEL_ESUCCESS
-	#error "channel.h requires user to implement CHANNEL_ESUCCESS int code"
-#endif
+//channel functions return integer error codes
+#define CHANNEL_ESUCCESS 0
 
 //one or more threads are waiting
-#ifndef CHANNEL_EBUSY
-	#error "channel.h requires user to implement CHANNEL_EBUSY int code"
-#endif
+#define CHANNEL_EBUSY 1
 
 //attempted to send on a closed channel or recv on a closed empty channel
-#ifndef CHANNEL_ECLOSED
-	#error "channel.h requires user to implement CHANNEL_ECLOSED int code"
-#endif
+#define CHANNEL_ECLOSED 2
 
 #define alias_channel(pfix)						       \
 typedef struct pfix##_channel pfix##_channel;
