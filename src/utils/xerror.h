@@ -1,8 +1,15 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v.3.0.
+// 
+// Xerror is a suite of error handling tools. For internal compiler errors, it
+// provides a logging mechanism, the Unity exception library, and exception
+// codes. For user errors, it provides formatted stderr messages.
 //
-// Xerror is a suite of tools. For compiler errors, xerror provide a logging
-// mechanism, error codes, and exceptions. For user errors, xerror provides
-// formatting capabilities for error messages.
+// Once upon a time, xerror defined a small collection of standard error codes
+// which were used extensively throughout the compiler. Over time, these codes
+// became useless and were removed. A combination of XerrorLog and traditional
+// int/bool error codes was more powerful, more expressive, and more ergonomic.
+// Some odd naming conventions (like the very name 'xerror') still exist in the
+// API as artifacts of this legacy.
 
 #pragma once
 
@@ -17,24 +24,30 @@ typedef char cstring;
 //buffer will automatically flush to stderr when full, when the level is XFATAL,
 //or if XERROR_DEBUG is defined. All messages are newline terminated.
 
-__attribute__((__format__(__printf__, 3, 4)))
-void XerrorLog(const cstring *func, const int level, const cstring *msg, ...);
+__attribute__((__format__(__printf__, 4, 5)))
+void XerrorLog
+(
+ 	const cstring *file,
+	const cstring *func,
+	const int level,
+	const cstring *txt,
+	...
+);
+
+void XerrorFlush(void);
 
 #define XFATAL 0
 #define XERROR 1
 #define XTRACE 2
 
 #define xerror_fatal(msg, ...) \
-XerrorLog(__func__, XFATAL, msg, ##__VA_ARGS__)
+XerrorLog(__FILE__, __func__, XFATAL, msg, ##__VA_ARGS__)
 
 #define xerror_issue(msg, ...) \
-XerrorLog(__func__, XERROR, msg, ##__VA_ARGS__)
+XerrorLog(__FILE__, __func__, XERROR, msg, ##__VA_ARGS__)
 
 #define xerror_trace(msg, ...) \
-XerrorLog(__func__, XTRACE, msg, ##__VA_ARGS__)
-
-//manual stderr flush
-void XerrorFlush(void);
+XerrorLog(__FILE__, __func__, XTRACE, msg, ##__VA_ARGS__)
 
 //------------------------------------------------------------------------------
 //exceptions

@@ -6,114 +6,150 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+
+#include <unistd.h>
+#include <sys/syscall.h>
 
 #include "xerror.h"
 
 static const cstring *GetLevelName(const int);
-static void FlushBuffer(bool);
+static void XerrorFlush__unsafe(void);
+static const cstring *RemoveFilePath(const cstring *);
 
-enum xqueue_properties {
-	buffer_capacity = (uint8_t) 64,
-	message_max_length = (uint8_t) 128
-};
+//------------------------------------------------------------------------------
+//A single queue is shared between all threads, rather than one queue per thread
+//local storage. Although there may be some mutex contention, a single queue 
+//means we can deliver the messages to stderr in psuedo-chronological order.
 
-struct xqueue {
+#define HEADER_LIMIT	64
+#define BODY_LIMIT      128
+#define BUFFER_CAPACITY 64
+
+typedef struct message {
+	char header[HEADER_LIMIT];
+	char body[BODY_LIMIT];
+} message;
+
+typedef struct xerror_queue {
 	pthread_mutex_t mutex;
-	char buf[buffer_capacity][message_max_length];
-	uint8_t len;
+	size_t len;
+	message buffer[BUFFER_CAPACITY];
+} xerror_queue;
+
+static xerror_queue xqueue = {
+	.mutex = PTHREAD_MUTEX_INITIALIZER,
+	.len = 0,
+	.buffer = {{{0}, {0}}}
 };
 
-static struct xqueue xq = {
-	.mutex = PTHREAD_MUTEX_INITIALIZER,
-	.len = 0
-};
+//------------------------------------------------------------------------------
+//note; mutex is not recursive. Naked calls to __unsafe functions may deadlock
+
+void XerrorFlush(void)
+{
+	pthread_mutex_lock(&xqueue.mutex);
+
+	XerrorFlush__unsafe();
+
+	pthread_mutex_unlock(&xqueue.mutex);
+}
+
+static void XerrorFlush__unsafe(void)
+{
+	size_t i = 0;
+
+	while (i < xqueue.len) {
+		message msg = xqueue.buffer[i];
+
+		(void) fprintf(stderr, "%s " , msg.header);
+
+		(void) fprintf(stderr, CYAN("\n\t-> %s\n"), msg.body);
+
+		i++;
+	}
+
+	xqueue.len = 0;
+}
 
 static const cstring *GetLevelName(const int level)
 {
+	assert(level >= XFATAL && level <= XTRACE);
+
 	static const cstring *lookup[] = {
 		[XFATAL] = "FATAL",
 		[XERROR] = "ERROR",
 		[XTRACE] = "TRACE"
 	};
 
-	if (level >= XFATAL && level <= XTRACE) {
-		return lookup[level];
-	}
-
-	return "N/A";
+	return lookup[level];
 }
 
-static void FlushBuffer(bool need_mutex)
+//a file path from the root project directory provide almost zero value so this
+//function strips it out and return a pointer to the first char of the filename
+static const cstring *RemoveFilePath(const cstring *path)
 {
-	if (need_mutex) {
-		pthread_mutex_lock(&xq.mutex);
+	assert(path);
+
+	char *last_slash = strrchr(path, '/');
+
+	if (last_slash) {
+		return last_slash + 1;
 	}
 
-	for (uint8_t i = 0; i < xq.len; i++) {
-		(void) fprintf(stderr, "%s\n", xq.buf[i]);
-	}
-
-	xq.len = 0;
-
-	if (need_mutex) {
-		pthread_mutex_unlock(&xq.mutex);
-	}
+	return path;
 }
 
-void XerrorFlush(void)
+void XerrorLog
+(
+	const cstring *file,
+	const cstring *func,
+	const int level,
+	const cstring *txt,
+	...
+)
 {
-	FlushBuffer(true);
-}
-
-//snprint and vsnprintf may fail in this function, but ignoring the errors
-//simplifies the API. Since the logger isn't a core compiler requirement, the
-//source code might still execute perfectly even if the logger breaks.
-void XerrorLog(const cstring *func, const int level, const cstring *msg, ...)
-{
+	assert(file);
 	assert(func);
 	assert(level >= XFATAL && level <= XTRACE);
-	assert(msg);
+	assert(txt);
 
 	va_list args;
-	va_start(args, msg);
+	va_start(args, txt);
 
-	pthread_mutex_lock(&xq.mutex);
+	pthread_mutex_lock(&xqueue.mutex);
 
-	if (xq.len == buffer_capacity) {
-		FlushBuffer(false);
+	if (xqueue.len == BUFFER_CAPACITY) {
+		XerrorFlush__unsafe();
 	}
 
-	int total_printed = snprintf(
-		xq.buf[xq.len],
-		message_max_length,
-		"(%p) %s (%s) ",
-		(void *) pthread_self(),
-		GetLevelName(level),
-		func
-	);
+	message *msg = &xqueue.buffer[xqueue.len];
+	assert(msg->header[HEADER_LIMIT - 1] == '\0' && "check xqueue init");
+	assert(msg->body[BODY_LIMIT - 1] == '\0' && "check xqueue init");
 
-	if (total_printed < 0) {
-		total_printed = 0;
-	}
+	const cstring *fmt = "%p %s %s %s";
+	char *header = msg->header;
+	char *body = msg->body;
+	const cstring *fname = RemoveFilePath(file);
+	void *tid = (void *) syscall(SYS_gettid);
+	const cstring *lname = GetLevelName(level);
 
-	int remaining_chars = (int) message_max_length - total_printed;
-	assert(remaining_chars >= 0);
+	(void) snprintf(header, HEADER_LIMIT, fmt, tid, lname, fname, func);
+	(void) vsnprintf(body, BODY_LIMIT, txt, args);
 
-	char *msg_offset = xq.buf[xq.len] + total_printed;
-
-	(void) vsnprintf(msg_offset, (size_t) remaining_chars, msg, args);
-
-	xq.len++;
+	xqueue.len++;
 
 #ifdef XERROR_DEBUG
-	FlushBuffer(false);
+	const int threshold = XTRACE;
 #else
-	if (level == XFATAL) {
-		FlushBuffer(false);
-	}
+	const int threshold = XFATAL;
 #endif
+	
+	if (level >= threshold) {
+		XerrorFlush__unsafe();
+	}
 
-	pthread_mutex_unlock(&xq.mutex);
+	pthread_mutex_unlock(&xqueue.mutex);
 
 	va_end(args);
 }

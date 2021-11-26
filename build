@@ -9,8 +9,9 @@
 # (0) debug     : Build with assertions, debug info, and no optimisations. This
 #                 is the default if no script arguments are passed.
 #
-# (1) trace     : Build in debug mode and enable all possible stderr output. The
-#                 output is extremely detailed; keep grep and awk handy.
+# (1) trace     : Build in debug mode and enable all possible stderr output. Use
+#                 "./trace/lemon 2> >(grep -P -A 1 <pattern>)" on bash to find
+#                 the relevant output.
 #
 # (2) release   : Build with optimisations; no trace, no debug, no assertions.
 #                 Only use for development to check optimisation bugs such as
