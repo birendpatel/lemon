@@ -1,16 +1,5 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v.3.0.
 //
-//
-//                Thread   Level  File      Line
-//                   |       |     |          |
-//                   |       |     |          |
-//                   |       |     |          |
-//               (1234567) TRACE main.c:main:123 hello, world!
-//                                       |       \___________/
-//                                       |             |
-//                                       |             |
-//                                      Func         Message
-//
 // Xerror is a suite of tools. For compiler errors, xerror provide a logging
 // mechanism, error codes, and exceptions. For user errors, xerror provides
 // formatting capabilities for error messages.
@@ -21,29 +10,26 @@
 
 #include "CException.h"
 
-//TODO cannot use str.h until it is independent of vector.h; both require xerror
-//but including str.h in this header creates a circular dependency.
 typedef char cstring;
-
 typedef int xerror;
 
-//this function enqueues a new error message to an internal thread-safe buffer.
-//The buffer will automatically flush to stderr when full or when the level is 
-//XFATAL. All messages are guaranteed to be newline terminated.
+//------------------------------------------------------------------------------
+//XerrorLog enqueues a new error message to an internal thread-safe buffer. The
+//buffer will automatically flush to stderr when full, when the level is XFATAL,
+//or if XERROR_DEBUG is defined. All messages are newline terminated.
+
 __attribute__((__format__(__printf__, 3, 4)))
 void XerrorLog(const cstring *func, const int level, const cstring *msg, ...);
 
 #define XFATAL 0
+#define XERROR 1
+#define XTRACE 2
 
 #define xerror_fatal(msg, ...) \
 XerrorLog(__func__, XFATAL, msg, ##__VA_ARGS__)
 
-#define XERROR 1
-
 #define xerror_issue(msg, ...) \
 XerrorLog(__func__, XERROR, msg, ##__VA_ARGS__)
-
-#define XTRACE 2
 
 #define xerror_trace(msg, ...) \
 XerrorLog(__func__, XTRACE, msg, ##__VA_ARGS__)
@@ -51,7 +37,9 @@ XerrorLog(__func__, XTRACE, msg, ##__VA_ARGS__)
 //manual stderr flush
 void XerrorFlush(void);
 
+//------------------------------------------------------------------------------
 //error codes
+
 #define XESUCCESS     0 //function returned successfully
 #define XENOMEM	      1 //dynamic allocation failed
 #define XEOPTION      2 //options parsing failed
@@ -72,6 +60,7 @@ void XerrorFlush(void);
 
 const cstring *XerrorDescription(const xerror err);
 
+//------------------------------------------------------------------------------
 //exceptions
 #define XXPARSE  ((CEXCEPTION_T) 1) // raised when grammar is ill-formed
 #define XXGRAPH  ((CEXCEPTION_T) 2) // raised when generic graphing issue found
@@ -83,8 +72,11 @@ do {								               \
 	Throw(exception);					               \
 } while (0)
 
-//print a stderr message in red font; does not log to the internal buffer. Prefix
-//a line number when ln > 0 and a file name when fname != NULL.
+//------------------------------------------------------------------------------
+//source code error messages
+
+//print a stderr message in red font; does not log to the internal buffer. 
+//Prefix a line number when ln > 0 and a file name when fname != NULL.
 void XerrorUser(const cstring *fname, const size_t ln, const cstring *msg, ...);
 
 //same actions as XerrorUser but prints in yellow font.

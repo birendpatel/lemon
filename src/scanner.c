@@ -96,10 +96,10 @@ xerror ScannerInit(cstring *src, channel(Token) *chan)
 
 	if (err) {
 		xerror_issue("cannot create thread: pthread error: %d", err);
-		return XETHREAD;
+		return false;
 	}
 
-	return XESUCCESS;
+	return true;
 }
 
 //pthread_init argument 

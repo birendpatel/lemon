@@ -3,7 +3,6 @@
 
 #pragma once
 
-#include "xerror.h"
 #include "channel.h"
 #include "str.h"
 
@@ -115,7 +114,7 @@ make_channel(token, Token, static)
 //------------------------------------------------------------------------------
 //Execute lexical analysis in a new detached thread. The input channel must be
 //initialised prior to this call and not freed until the final _EOF is received.
-//The scanner has the exclusive right to close the channel. On failure XETHREAD
+//The scanner has the exclusive right to close the channel. On failure false
 //is returned.
 
-xerror ScannerInit(cstring *src, Token_channel *chan);
+bool ScannerInit(cstring *src, Token_channel *chan);

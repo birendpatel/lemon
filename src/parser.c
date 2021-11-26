@@ -129,9 +129,9 @@ static parser *ParserInit(cstring *src)
 
 	prs->errors = 0;
 
-	xerror err = ScannerInit(src, prs->chan);
+	bool ok = ScannerInit(src, prs->chan);
 
-	if (err) {
+	if (!ok) {
 		const cstring *msg = XerrorDescription(err);
 		xerror_issue("cannot init scanner: %s", msg);
 		(void) TokenChannelShutdown(prs->chan);
