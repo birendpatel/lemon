@@ -123,9 +123,9 @@ void ArenaFree(void)
 
 	__attribute__((unused)) double total = (double) arena_tls.capacity;
 	__attribute__((unused)) double used = (double) arena_tls.remaining;
-	__attribute__((unused)) double percent = used / total;
+	__attribute__((unused)) double percent = (used / total) * 100;
 
-	ArenaTrace("allocation at %p released (%g%%)", start, percent);
+	ArenaTrace("allocation at %p released (%g%% unused)", start, percent);
 }
 
 void *ArenaAllocate(size_t bytes)
