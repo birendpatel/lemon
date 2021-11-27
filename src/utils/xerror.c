@@ -8,14 +8,13 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <unistd.h>
-#include <sys/syscall.h>
-
 #include "xerror.h"
 
 static const cstring *GetLevelName(const int);
 static void XerrorFlush__unsafe(void);
 static const cstring *RemoveFilePath(const cstring *);
+static void NewThreadID__unsafe(void);
+static size_t GetThreadID__unsafe(void);
 
 //colours provided by @gon1332 at stackoverflow.com/questions/2616906/
 #ifdef COLOURS
@@ -88,7 +87,31 @@ static xerror_queue xqueue = {
 };
 
 //------------------------------------------------------------------------------
-//note; mutex is not recursive. Naked calls to __unsafe functions may deadlock
+//the compiler is multithreaded so the logger needs to report thread IDs. But,
+//pthread_self() is opaque and the gettid syscall results in a large integer
+//that is difficult on your eyes when reading a long trace log. So, instead we 
+//manually create thread IDs in the TLS.
+
+static __thread size_t thread_id = 0;
+
+static void NewThreadID__unsafe(void)
+{
+	assert(thread_id == 0 && "attempted to reconfigure thread ID");
+
+	static size_t key = 1;
+	thread_id = key++;
+}
+
+static size_t GetThreadID__unsafe(void)
+{
+	if (thread_id == 0) {
+		NewThreadID__unsafe();
+	}
+
+	return thread_id;
+}
+
+//------------------------------------------------------------------------------
 
 void XerrorFlush(void)
 {
@@ -106,7 +129,10 @@ static void XerrorFlush__unsafe(void)
 	while (i < xqueue.len) {
 		message msg = xqueue.buffer[i];
 
-		(void) fprintf(stderr, "%s " , msg.header);
+		//faking the thread ID as a hex address gives the trace output
+		//a very slight offset; makes the ID easier to read since it
+		//doesn't clash against the left terminal border. 
+		(void) fprintf(stderr, "0x%s " , msg.header);
 
 		(void) fprintf(stderr, CYAN("\n\t-> %s\n"), msg.body);
 
@@ -172,11 +198,11 @@ void XerrorLog
 	assert(msg->header[HEADER_LIMIT - 1] == '\0' && "check xqueue init");
 	assert(msg->body[BODY_LIMIT - 1] == '\0' && "check xqueue init");
 
-	const cstring *fmt = "%p %s %s %s";
+	const cstring *fmt = "%zu %s %s %s";
 	char *header = msg->header;
 	char *body = msg->body;
 	const cstring *fname = RemoveFilePath(file);
-	void *tid = (void *) syscall(SYS_gettid);
+	const size_t tid = GetThreadID__unsafe();
 	const cstring *lname = GetLevelName(level);
 
 	(void) snprintf(header, HEADER_LIMIT, fmt, tid, lname, fname, func);
