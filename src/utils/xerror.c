@@ -124,19 +124,29 @@ void XerrorFlush(void)
 
 static void XerrorFlush__unsafe(void)
 {
-	size_t i = 0;
+	//colour of the header changes when the thread id of the next message
+	//is different than the previous message.
+	static size_t prev_thread_id = 0;
+	size_t curr_thread_id = 0;
 
-	while (i < xqueue.len) {
-		message msg = xqueue.buffer[i];
+	for (size_t i = 0; i < xqueue.len; i++) {
+		message *msg = &xqueue.buffer[i];
 
-		//faking the thread ID as a hex address gives the trace output
-		//a very slight offset; makes the ID easier to read since it
-		//doesn't clash against the left terminal border. 
-		(void) fprintf(stderr, "0x%s " , msg.header);
+		//use sscanf because the input is santised, well-defined, and
+		//created by a trusted source.
+		(void) sscanf(msg->header, "%zu", &curr_thread_id);
 
-		(void) fprintf(stderr, CYAN("\n\t-> %s\n"), msg.body);
+		cstring *fmt = "0x%s";
 
-		i++;
+		if (curr_thread_id != prev_thread_id && prev_thread_id) {
+			fmt = YELLOW("0x%s");
+		} 
+		
+		(void) fprintf(stderr, fmt, msg->header);
+		(void) fprintf(stderr, CYAN("\n\t-> %s\n"), msg->body);
+
+		prev_thread_id = curr_thread_id;
+
 	}
 
 	xqueue.len = 0;
