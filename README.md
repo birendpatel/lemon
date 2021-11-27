@@ -52,5 +52,3 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Add option for custom arena size (EASY)
 - [ ] Add diagnostic option to print resolver linked list (EASY)
 - [ ] Sweep files and remove superfluous includes (EASY)
-- [ ] Swap strdup with custom function in str.h to remove memory leak (MEDIUM)
-- [ ] Execute Valgrind with zero leaks (MEDIUM)
