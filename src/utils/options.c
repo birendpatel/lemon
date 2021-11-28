@@ -180,6 +180,22 @@ bool OptionsParse(int *argc, char ***argv)
 	return status;
 }
 
+void OptionsPrint(void)
+{
+	const cstring *fmt =
+		"Dstate: %d\n"
+		"Dtokens: %d\n"
+		"Ddeps: %d\n"
+		"Arena: %zu\n";
+
+	fprintf(stderr,
+		fmt,
+		(int) OptionsDstate(),
+		(int) OptionsDtokens(),
+		(int) OptionsDdeps(),
+		OptionsArena());
+}
+
 bool OptionsDstate(void)
 {
 	bool flag = false;

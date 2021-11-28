@@ -1,4 +1,5 @@
-// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.  //
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+//
 // This file orchestrates the major compiler phases and performs all cleanup,
 // initialisation, and error handling required before, after, and between each
 // phase.
@@ -27,7 +28,17 @@ const cstring *GetRootFileName(char **);
 
 int main(int argc, char **argv)
 {
-	Initialise(&argc, &argv);
+	if (!OptionsParse(&argc, &argv)) {
+		xerror_fatal("cannot parse compiler arguments");
+		Terminate(EXIT_FAILURE);
+	}
+
+	size_t arena_size = OptionsArena();
+
+	if (!ArenaInit(arena_size)) {
+		xerror_fatal("cannot initialise new arena");
+		Terminate(EXIT_FAILURE);
+	}
 
 	const cstring *filename = GetRootFileName(argv);
 
@@ -53,21 +64,6 @@ _Noreturn void Terminate(int status)
 	ArenaFree();
 	XerrorFlush();
 	exit(status);
-}
-
-void Initialise(int *argc, char ***argv)
-{
-	assert(argc);
-	assert(argv);
-
-	const size_t default_arena_size = MiB(1);
-
-	OptionsParse(argc, argv);
-
-	if (!ArenaInit(default_arena_size)) {
-		xerror_fatal("cannot initialise new arena");
-		Terminate(EXIT_FAILURE);
-	}
 }
 
 //returns "main" if argv is empty

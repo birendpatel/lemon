@@ -12,6 +12,9 @@
 //(*argv)[argc - 1] are the unparsed elements and (*argv)[argc] is NULL
 bool OptionsParse(int *argc, char ***argv);
 
+//print all options values to stderr
+void OptionsPrint(void);
+
 //get options values; execute ./lemon --help on the terminal to see all the
 //available options
 bool OptionsDstate(void);
