@@ -107,19 +107,7 @@ static void *StartRoutine(void *pthread_payload)
 {
 	scanner *self = (scanner *) pthread_payload;
 
-	const bool trace = OptionsGetFlag(DIAGNOSTIC_MULTITHREADING);
-
-	if (trace) {
-		xerror_trace("scanner running in detached thread");
-		XerrorFlush();
-	}
-
 	Scan(self);
-
-	if (trace) {
-		xerror_trace("scanner shutting down");
-		XerrorFlush();
-	}
 
 	pthread_exit(NULL);
 
@@ -403,7 +391,7 @@ static void SendToken(scanner *self)
 	assert(self);
 	assert(self->chan->flags & CHANNEL_OPEN);
 
-	if (OptionsGetFlag(DIAGNOSTIC_LEXICAL_TOKENS)) {
+	if (OptionsDtokens()) {
 		TokenPrint(self);
 	}
 
