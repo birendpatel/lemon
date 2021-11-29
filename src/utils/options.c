@@ -8,6 +8,7 @@
 
 #include "arena.h"
 #include "options.h"
+#include "version.h"
 #include "xerror.h"
 
 typedef struct options options;
@@ -59,7 +60,7 @@ enum argp_keys {
 	key_arena_default = 'a',
 };
 
-const cstring *argp_program_version = "Alpha";
+const cstring *argp_program_version = LEMON_VERSION;
 const cstring *argp_program_bug_address = "github.com/birendpatel/lemon/issues";
 static char args_doc[] = "[filename]";
 static char doc[] = "\nThis is the C Lemon compiler for the Lemon language.";

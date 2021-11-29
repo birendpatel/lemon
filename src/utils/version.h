@@ -1,9 +1,10 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-//
-// 5 digit version code; e.g., 100908 is version 10.9.8 (maj.min.patch)
 
 #pragma once
 
+#define LEMON_VERSION "alpha" " (" __DATE__ ")"
+
+// 5 digit gcc version code; e.g., 100908 is version 10.9.8 (maj.min.patch)
 #ifdef __GNUC__
 	#define GCC_VERSION_MAJ (__GNUC__ * 10000)
 	#define GCC_VERSION_MIN (__GNUC_MINOR__ * 100)
