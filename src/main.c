@@ -1,5 +1,4 @@
-// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-//
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.  //
 // This file orchestrates the major compiler phases and performs all cleanup,
 // initialisation, and error handling required before, after, and between each
 // phase.
@@ -64,10 +63,24 @@ int main(int argc, char **argv)
 
 _Noreturn void Terminate(int status)
 {
-	assert(status == EXIT_SUCCESS || status == EXIT_FAILURE);
-
 	ArenaFree();
 	XerrorFlush();
+
+	switch(status) {
+	case EXIT_SUCCESS:
+		xuser_help(NULL, 0, "compilation succeeded");
+		break;
+
+	case EXIT_FAILURE:
+		xuser_error(NULL, 0, "compilation failed");
+		break;
+
+	default:
+		assert(0 != 0 && "invalid termination status code");
+		__builtin_unreachable();
+		break;
+	}
+
 	exit(status);
 }
 
