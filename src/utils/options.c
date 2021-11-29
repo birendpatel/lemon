@@ -1,5 +1,4 @@
-// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.  
 #include <argp.h>
 #include <assert.h>
 #include <errno.h>
@@ -88,7 +87,7 @@ static argp_option options_info[] = {
 		.name  = "Arena",
 		.key   = key_arena_default,
 		.arg   = "megabytes",
-		.doc   = "Set the default arena size.",
+		.doc   = "Set the default arena size up to 1 GiB",
 		.group = group_memory
 	},
 
@@ -114,8 +113,13 @@ static error_t Parser(int key, char *arg, unused argp_state *state)
 		char *endptr = NULL;
 		double value = strtod(arg, &endptr);
 
-		if (arg == endptr || *endptr != '\0' || value <= 0.0) {
-			xerror_warn("bad arena request; using default");
+		const cstring *msg1 = "bad arena size; using default";
+		const cstring *msg2 = "arena size out of range; using default";
+
+		if (arg == endptr || *endptr != '\0') {
+			xuser_warn(NULL, 0, msg1);
+		} else if (value <= 0.0 || value > 1000.0) {
+			xuser_warn(NULL, 0, msg2);
 		} else {
 			opt.memory.arena_default = MiB(value);
 		}
