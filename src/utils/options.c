@@ -13,10 +13,13 @@
 #include "xerror.h"
 
 typedef struct options options;
+typedef struct argp_option argp_option;
+typedef struct argp_state argp_state;
+typedef struct argp argp;
 
-#define __attribute__((unused)) unused
+#define unused __attribute__((unused)) 
 
-static error_t Parser__unsafe(int, char *, unused struct argp_state *);
+static error_t Parser__unsafe(int, char *, unused argp_state *);
 static void Print(void);
 
 //------------------------------------------------------------------------------
@@ -58,7 +61,7 @@ enum argp_keys {
 	key_diagnostic_state = 256,
 	key_diagnostic_tokens = 257,
 	key_diagnostic_dependencies = 258,
-	key_arena_defaut = 'a',
+	key_arena_default = 'a',
 };
 
 const cstring *argp_program_version = "Alpha";
@@ -66,37 +69,37 @@ const cstring *argp_program_bug_address = "github.com/birendpatel/lemon/issues";
 static char args_doc[] = "[filename]";
 static char doc[] = "\nThis is the C Lemon compiler for the Lemon language.";
 
-static struct argp_option options_info[] = {
+static argp_option options_info[] = {
 	{
 		.name  = "Dstate",
 		.key   = key_diagnostic_state,
-		.doc   = "Print the options state before compilation begins.",
+		.doc   = "Print the options state.",
 		.group = group_diagnostic
 	},
 	{
 		.name  = "Dtokens",
 		.key   = key_diagnostic_tokens,
-		.doc   = "Print tokens as they are found during tokenization.",
+		.doc   = "Print tokens found during lexical analysis.",
 		.group = group_diagnostic
 	},
 	{
 		.name  = "Ddeps",
 		.key   = key_diagnostic_dependencies,
-		.doc   = "print the topological sort of the dependency graph.",
+		.doc   = "Print the dependency graph topological sort.",
 		.group = group_diagnostic
 	},
 	{
 		.name  = "Arena",
 		.key   = key_arena_default,
-		.arg   = "value"
-		.doc   = "set the default arena size in bytes.",
+		.arg   = "megabytes",
+		.doc   = "Set the default arena size.",
 		.group = group_memory
 	},
 
 	{0} //terminator required by GNU argp
 };
 
-static error_t Parser__unsafe(int key, char *arg, struct argp_state *state)
+static error_t Parser__unsafe(int key, char *arg, unused argp_state *state)
 {
 	switch (key) {
 	case key_diagnostic_state:
@@ -141,7 +144,7 @@ bool OptionsParse(int *argc, char ***argv)
 
 	pthread_mutex_lock(&opt.mutex);
 
-	struct argp args_data = {
+	argp args_data = {
 		.options = options_info,
 		.parser = Parser__unsafe,
 		.args_doc = args_doc,

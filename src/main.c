@@ -33,6 +33,10 @@ int main(int argc, char **argv)
 		Terminate(EXIT_FAILURE);
 	}
 
+	if (OptionsDstate()) {
+		OptionsPrint();
+	}
+
 	size_t arena_size = OptionsArena();
 
 	if (!ArenaInit(arena_size)) {
