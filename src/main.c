@@ -51,11 +51,14 @@ int main(int argc, char **argv)
 		Terminate(EXIT_FAILURE);
 	}
 
-	//TODO temp
-	for (module *curr = net->head; curr != NULL; curr = curr->next) {
-		puts(curr->alias);
+	if (OptionsDdeps()) {
+		for (module *curr = net->head; curr; curr = curr->next) {
+			puts(curr->alias);
+		}
+
 	}
 
+	
 	Terminate(EXIT_SUCCESS);
 }
 
