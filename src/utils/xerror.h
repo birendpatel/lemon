@@ -30,11 +30,15 @@ void XerrorLog
 void XerrorFlush(void);
 
 #define XTRACE 0
-#define XERROR 1
-#define XFATAL 2
+#define XWARN  1
+#define XERROR 2
+#define XFATAL 3
 
 #define xerror_trace(msg, ...) \
 XerrorLog(__FILE__, __func__, XTRACE, msg, ##__VA_ARGS__)
+
+#define xerror_warn(msg, ...) \
+XerrorLog(__FILE__, __func__, XWARN, msg, ##__VA_ARGS__)
 
 #define xerror_issue(msg, ...) \
 XerrorLog(__FILE__, __func__, XERROR, msg, ##__VA_ARGS__)

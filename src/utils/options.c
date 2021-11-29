@@ -109,8 +109,16 @@ static error_t Parser(int key, char *arg, unused argp_state *state)
 		opt.diagnostic.dependencies = 1;
 		break;
 
-	case key_arena_default:
-		puts(arg);
+	case key_arena_default: /* label bypass */ ;
+		char *endptr = NULL;
+		double value = strtod(arg, &endptr);
+
+		if (arg == endptr || *endptr != '\0' || value <= 0.0) {
+			xerror_warn("bad arena request; using default");
+		} else {
+			opt.memory.arena_default = MiB(value);
+		}
+		
 		break;
 
 	default:

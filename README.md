@@ -49,5 +49,4 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Add support for escape characters in string literals (HARD)
 - [ ] Convert all diagnostic output to JSON (HARD)
 - [ ] Update map.h insertions to recycle removed slots before aborting (MEDIUM)
-- [ ] Add option for custom arena size (EASY)
 - [ ] Sweep files and remove superfluous includes (EASY)

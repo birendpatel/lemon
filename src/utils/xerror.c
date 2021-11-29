@@ -158,6 +158,7 @@ static const cstring *GetLevelName(const int level)
 
 	static const cstring *lookup[] = {
 		[XTRACE] = "TRACE",
+		[XWARN]  = "WARN",
 		[XERROR] = "ERROR",
 		[XFATAL] = "FATAL"
 		
