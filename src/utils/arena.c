@@ -26,11 +26,6 @@ static size_t Align(const size_t bytes)
 {
 	assert(ALIGNMENT != 0 && "degenerate alignment");
 	assert(!(ALIGNMENT & (ALIGNMENT - 1)) && "not a power of 2");
-
-	//in the supremely unlikely but paranoid case where size_max isn't a
-	//power of two, the same check needs to be performed on the halved
-	//value since size_max + 1 == 0. If the halved value is a power of two
-	//then obviously so is its double.
 	assert(!((SIZE_MAX/2 + 1) & (SIZE_MAX/2)) && "not a power of 2");
 
 	const size_t max_multiple = SIZE_MAX - ALIGNMENT + 1;
@@ -54,11 +49,10 @@ static size_t Align(const size_t bytes)
 }
 
 //------------------------------------------------------------------------------
-//an arena is a contiguous block of calloced memory with an sbrk() style pointer
-//that progressively bumps in multiples of 16. If the top pointer reaches the
-//location at (char*) arena.top + capacity, then the arena is out of memory. The
-//GCC storage class __thread (_Thread_local in C11) substitutes in for a more
-//cumbersome pthread_key_t implementation.
+//An arena is a bump allocator in multiples of 16. If the top pointer reaches
+//the location at (char*) arena.top + capacity, then the arena is out of memory.
+//The GCC storage class __thread (_Thread_local in C11) is used in place of a 
+//more cumbersome and slow pthread_key_t lookup.
 
 struct arena {
 	void *top;
