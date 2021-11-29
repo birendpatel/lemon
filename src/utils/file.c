@@ -1,4 +1,7 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
+//
+// Disk IO utilities for transferring lemon source code, standard libraries, and
+// precompiled/cached IR to RAM.
 
 #include <assert.h>
 #include <errno.h>
