@@ -3,8 +3,6 @@
 #include <argp.h>
 #include <assert.h>
 #include <errno.h>
-#include <pthread.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -19,13 +17,11 @@ typedef struct argp argp;
 
 #define unused __attribute__((unused)) 
 
-static error_t Parser__unsafe(int, char *, unused argp_state *);
-static void Print(void);
+static error_t Parser(int, char *, unused argp_state *);
 
 //------------------------------------------------------------------------------
 
 struct options {
-	pthread_mutex_t mutex;
 	struct {
 		unsigned int state: 1;
 		unsigned int tokens : 1;
@@ -37,7 +33,6 @@ struct options {
 };
 
 static options opt = {
-	.mutex = PTHREAD_MUTEX_INITIALIZER,
 	.diagnostic = {
 		.state = 0,
 		.tokens = 0,
@@ -99,7 +94,7 @@ static argp_option options_info[] = {
 	{0} //terminator required by GNU argp
 };
 
-static error_t Parser__unsafe(int key, char *arg, unused argp_state *state)
+static error_t Parser(int key, char *arg, unused argp_state *state)
 {
 	switch (key) {
 	case key_diagnostic_state:
@@ -134,19 +129,9 @@ bool OptionsParse(int *argc, char ***argv)
 	assert(argc);
 	assert(argv);
 
-	static bool called = false;
-	bool status = false;
-
-	if (called) {
-		xerror_issue("attempted to parse options twice");
-		return false;
-	}
-
-	pthread_mutex_lock(&opt.mutex);
-
 	argp args_data = {
 		.options = options_info,
-		.parser = Parser__unsafe,
+		.parser = Parser,
 		.args_doc = args_doc,
 		.doc = doc
 	};
@@ -160,8 +145,7 @@ bool OptionsParse(int *argc, char ***argv)
 	case 0:
 		*argc = *argc - unparsed_index;
 		*argv = *argv + unparsed_index;
-		status = true;
-		break;
+		return true;
 
 	case ENOMEM:
 		xerror_fatal("out of memory");
@@ -176,15 +160,17 @@ bool OptionsParse(int *argc, char ***argv)
 		break;
 	}
 
-	called = true;
-
-	pthread_mutex_unlock(&opt.mutex);
-
-	return status;
+	return false;
 }
 
-void OptionsPrint(void)
+//------------------------------------------------------------------------------
+
+void OptionsDstate(void)
 {
+	if (!opt.diagnostic.state) {
+		return;
+	}
+
 	const cstring *fmt =
 		"Dstate: %d\n"
 		"Dtokens: %d\n"
@@ -193,52 +179,23 @@ void OptionsPrint(void)
 
 	fprintf(stderr,
 		fmt,
-		(int) OptionsDstate(),
+		(int) opt.diagnostic.state,
 		(int) OptionsDtokens(),
 		(int) OptionsDdeps(),
 		OptionsArena());
 }
 
-bool OptionsDstate(void)
-{
-	bool flag = false;
-
-	pthread_mutex_lock(&opt.mutex);
-	flag = opt.diagnostic.state;
-	pthread_mutex_unlock(&opt.mutex);
-
-	return flag;
-}
-
 bool OptionsDtokens(void)
 {
-	bool flag = false;
-
-	pthread_mutex_lock(&opt.mutex);
-	flag = opt.diagnostic.tokens;
-	pthread_mutex_unlock(&opt.mutex);
-
-	return flag;
+	return opt.diagnostic.tokens;
 }
 
 bool OptionsDdeps(void)
 {
-	bool flag = false;
-
-	pthread_mutex_lock(&opt.mutex);
-	flag = opt.diagnostic.dependencies;
-	pthread_mutex_unlock(&opt.mutex);
-
-	return flag;
+	return opt.diagnostic.dependencies;
 }
 
 size_t OptionsArena(void)
 {
-	size_t bytes = 0;
-
-	pthread_mutex_lock(&opt.mutex);
-	bytes = opt.memory.arena_default;
-	pthread_mutex_unlock(&opt.mutex);
-
-	return bytes;
+	return opt.memory.arena_default;
 }
