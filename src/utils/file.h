@@ -1,6 +1,7 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
-// File IO utilities
+// Disk IO utilities for transferring lemon source code, standard libraries, and
+// precompiled/cached IR to RAM.
 
 #pragma once
 
