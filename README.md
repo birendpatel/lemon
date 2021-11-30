@@ -44,8 +44,6 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Write map unit tests (HARD)
 - [ ] Write str unit tests (EASY)
 - [ ] Write graph unit tests (EASY) 
-- [ ] Add a lookup table for pthreads errors (EASY)
-- [ ] Implement the pthreads lookup table for all pthreads error paths (MEDIUM)
 - [ ] Add support for escape characters in string literals (HARD)
 - [ ] Convert all diagnostic output to JSON (HARD)
 - [ ] Update map.h insertions to recycle removed slots before aborting (MEDIUM)

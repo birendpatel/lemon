@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -95,7 +96,8 @@ bool ScannerInit(cstring *src, channel(Token) *chan)
 	int err = pthread_create(&thread, &attr, StartRoutine, scn);
 
 	if (err) {
-		xerror_issue("cannot create thread: pthread error: %d", err);
+		const cstring *msg = strerror(err);
+		xerror_issue("cannot create thread: pthread error: %s", msg);
 		return false;
 	}
 
