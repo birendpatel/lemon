@@ -4,6 +4,7 @@
 // phase.
 
 #include <assert.h>
+#include <stdbool.h>
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -18,7 +19,7 @@
 	#error "Lemon requires GCC 8.3.0 or greater."
 #endif
 
-void Initialize(int *, char ***);
+void Initialise(int *, char ***);
 _Noreturn void Terminate(int);
 const cstring *GetRootFileName(char **);
 
@@ -26,7 +27,19 @@ const cstring *GetRootFileName(char **);
 
 int main(int argc, char **argv)
 {
-	Initialize(&argc, &argv);
+	if (!OptionsParse(&argc, &argv)) {
+		xerror_fatal("cannot parse compiler arguments");
+		Terminate(EXIT_FAILURE);
+	}
+
+	OptionsDstate();
+
+	size_t arena_size = OptionsArena();
+
+	if (!ArenaInit(arena_size)) {
+		xerror_fatal("cannot initialise new arena");
+		Terminate(EXIT_FAILURE);
+	}
 
 	const cstring *filename = GetRootFileName(argv);
 
@@ -37,30 +50,37 @@ int main(int argc, char **argv)
 		Terminate(EXIT_FAILURE);
 	}
 
-	for (module *curr = net->head; curr != NULL; curr = curr->next) {
-		puts(curr->alias);
+	if (OptionsDdeps()) {
+		for (module *curr = net->head; curr; curr = curr->next) {
+			puts(curr->alias);
+		}
+
 	}
 
+	
 	Terminate(EXIT_SUCCESS);
-}
-
-void Initialize(int *argc, char ***argv)
-{
-	assert(argc);
-	assert(argv);
-
-	const size_t default_arena_size = MiB(100);
-
-	OptionsParse(argc, argv);
-	ArenaInit(default_arena_size);
 }
 
 _Noreturn void Terminate(int status)
 {
-	assert(status == EXIT_SUCCESS || status == EXIT_FAILURE);
-
 	ArenaFree();
 	XerrorFlush();
+
+	switch(status) {
+	case EXIT_SUCCESS:
+		xuser_help(NULL, 0, "compilation succeeded");
+		break;
+
+	case EXIT_FAILURE:
+		xuser_error(NULL, 0, "compilation failed");
+		break;
+
+	default:
+		assert(0 != 0 && "invalid termination status code");
+		__builtin_unreachable();
+		break;
+	}
+
 	exit(status);
 }
 
@@ -79,7 +99,7 @@ const cstring *GetRootFileName(char **argv)
 
 	if (sentinel != NULL) {
 		const cstring *msg = "all input files except %s were ignored";
-		XwarnUser(NULL, 0, msg, fname);
+		xuser_warn(NULL, 0, msg, fname);
 	}
 
 	return fname;

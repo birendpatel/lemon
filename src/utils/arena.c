@@ -1,9 +1,7 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <assert.h>
-#include <pthread.h>
-#include <stdbool.h>
-#include <stdlib.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "arena.h"
@@ -18,161 +16,179 @@
 typedef struct arena arena;
 typedef struct header header;
 
-static void *ArenaAllocate__private(const size_t, const bool);
-static header *GetHeader(void *);
-static size_t Align(const size_t);
+//configurable to any power of two
+#define ALIGNMENT ((size_t) 0x10)
+
+//rounds the input UP to the nearest multiple of the arena alignment. If the
+//rounded input would overflow, then rounds the input DOWN to the nearest
+//multiple.
+static size_t Align(const size_t bytes)
+{
+	assert(ALIGNMENT != 0 && "degenerate alignment");
+	assert(!(ALIGNMENT & (ALIGNMENT - 1)) && "not a power of 2");
+	assert(!((SIZE_MAX/2 + 1) & (SIZE_MAX/2)) && "not a power of 2");
+
+	const size_t max_multiple = SIZE_MAX - ALIGNMENT + 1;
+	assert(max_multiple % ALIGNMENT == 0 && "incorrect overflow defense");
+
+	if (bytes > max_multiple) {
+		ArenaTrace("request trimmed to prevent overflow");
+		return max_multiple;
+	}
+
+	const size_t mask = ALIGNMENT - 1;
+	const size_t offset = (ALIGNMENT- (bytes & mask)) & mask;
+
+	const size_t adjustment = bytes + offset;
+
+	if (bytes != adjustment) {
+		ArenaTrace("aligned %zu to %zu", bytes, adjustment);
+	}
+
+	return adjustment;
+}
 
 //------------------------------------------------------------------------------
+//An arena is a bump allocator in multiples of 16. If the top pointer reaches
+//the location at (char*) arena.top + capacity, then the arena is out of memory.
+//The GCC storage class __thread (_Thread_local in C11) is used in place of a 
+//more cumbersome and slow pthread_key_t lookup.
 
 struct arena {
-	void *start;
 	void *top;
 	size_t capacity;
 	size_t remaining;
-	pthread_mutex_t mutex;
 };
 
-static arena mempool =  {
-	.start = NULL,
+static __thread arena arena_tls =  {
 	.top = NULL,
 	.capacity = 0,
-	.remaining = 0,
-	.mutex = PTHREAD_MUTEX_INITIALIZER
+	.remaining = 0
 };
 
 //------------------------------------------------------------------------------
+//a header hides just in front of each memory region returned to the user; it is
+//the primary mechanism that enables block reallocation.
 
 struct header {
 	size_t bytes;
 };
 
-static header *GetHeader(void *ptr)
+static header *GetHeader(void *user_region)
 {
-	assert(ptr);
+	assert(user_region);
 
 	const size_t offset = sizeof(header);
-	
-	return (header *) ((char *) ptr - offset);
+
+	return (header *) ((char *) user_region - offset);
 }
 
 //------------------------------------------------------------------------------
 
-void ArenaInit(size_t bytes)
+bool ArenaInit(size_t bytes)
 {
-	assert(bytes);
+	ArenaTrace("request for arena with %zu bytes", bytes);
 
-	pthread_mutex_lock(&mempool.mutex);
-	
-	mempool.start = calloc(bytes, 1);
+	bytes = Align(bytes);
 
-	if (!mempool.start) {
-		xerror_fatal("cannot allocate memory to global arena");
-		abort();
+	arena_tls.capacity = bytes;
+	arena_tls.remaining = bytes;
+	arena_tls.top = calloc(bytes, 1);
+
+	if (!arena_tls.top) {
+		xerror_fatal("stdlib calloc; out of memory");
+		return false;
 	}
 
-	mempool.top = mempool.start;
-	mempool.capacity = bytes;
-	mempool.remaining = bytes;
-
-	pthread_mutex_unlock(&mempool.mutex);
-
-	ArenaTrace("initialized arena with %zu bytes", mempool.capacity);
+	ArenaTrace("initialised arena at %p", arena_tls.top);
+	
+	return true;
 }
 
 void ArenaFree(void)
 {
-	pthread_mutex_lock(&mempool.mutex);
-	
-	free(mempool.start);
+	if (!arena_tls.top) {
+		return;
+	}
 
-	pthread_mutex_unlock(&mempool.mutex);
+	const size_t offset = arena_tls.capacity - arena_tls.remaining;
+	void *start = (char *) arena_tls.top - offset;
+	free(start);
 
-	ArenaTrace("allocation at %p released", (void *) mempool.start);
-}
+	__attribute__((unused)) double total = (double) arena_tls.capacity;
+	__attribute__((unused)) double used = (double) arena_tls.remaining;
+	__attribute__((unused)) double percent = (used / total) * 100;
 
-//------------------------------------------------------------------------------
-
-//returns input rounded up to nearest multiple of 16
-static size_t Align(const size_t bytes)
-{
-	const size_t alignment = 0x10;
-	const size_t mask = alignment - 1;
-
-	return bytes + ((alignment - (bytes & mask)) & mask);
+	ArenaTrace("allocation at %p released (%g%% unused)", start, percent);
 }
 
 void *ArenaAllocate(size_t bytes)
 {
-	return ArenaAllocate__private(bytes, true);
-}
+	if (!arena_tls.top) {
+		xerror_fatal("thread local arena not initialised");
+		return NULL;
+	}
 
-static void *ArenaAllocate__private(const size_t bytes, const bool need_mutex)
-{
-	assert(bytes);
-
-	ArenaTrace("user request for %zu bytes", bytes);
+	ArenaTrace("request for new block with %zu bytes", bytes);
 
 	const size_t user_bytes = Align(bytes);
 	const size_t total_bytes = sizeof(header) + user_bytes;
-	void *user_region= NULL;
 
-	ArenaTrace("allocating %zu bytes (total %zu)", user_bytes, total_bytes);
-
-	if (need_mutex) {
-		pthread_mutex_lock(&mempool.mutex);
+	if (total_bytes < user_bytes) {
+		xerror_fatal("region + header causes overflow");
+		return NULL;
 	}
 
-	assert(mempool.start && "mempool not initialised (or deinitialised)");
-
-	if (total_bytes > mempool.remaining) {
-		xerror_fatal("exhausted memory in global arena");
-		abort();
+	if (total_bytes > arena_tls.remaining) {
+		xerror_fatal("arena; out of memory");
+		return NULL;
 	}
 
-	header *metadata = mempool.top;
+	header *metadata = arena_tls.top;
 	metadata->bytes = user_bytes;
-	user_region = metadata + 1;
 
-	mempool.top = (void *) ((char *) mempool.top + total_bytes);
-	mempool.remaining -= total_bytes;
+	arena_tls.top = (void *) ((char *) arena_tls.top + total_bytes);
+	arena_tls.remaining -= total_bytes;
 
-	ArenaTrace("done; %zu bytes remain", mempool.remaining);
+	ArenaTrace("request fulfilled; block header at %p", (void *) metadata);
+	ArenaTrace("arena; %zu bytes remain", arena_tls.remaining);
 
-	if (need_mutex) {
-		pthread_mutex_unlock(&mempool.mutex);
-	}
-
+	void *user_region = metadata + 1;
 	return user_region;
 }
 
-void *ArenaReallocate(void *ptr, size_t bytes)
+void *ArenaReallocate(void *old, size_t bytes)
 {
-	assert(ptr);
-	assert(bytes);
-
-	void *new = NULL;
-	header *metadata = GetHeader(ptr);
-
-	ArenaTrace("reallocation of %zu bytes requested", bytes);
-
-	pthread_mutex_lock(&mempool.mutex);
-
-	assert(mempool.start && "mempool not initialised (or deinitialised)");
-
-	if (metadata->bytes >= bytes) {
-		ArenaTrace("no realloc; block has %zu bytes", metadata->bytes);
-		new = ptr;
-		goto unlock;
+	if (!arena_tls.top) {
+		xerror_fatal("thread local arena not initialised");
+		return NULL;
 	}
 
-	new = ArenaAllocate__private(bytes, false);
+	if (!old) {
+		xerror_fatal("request to reallocate NULL block");
+		return NULL;
+	}
 
-	memcpy(new, ptr, metadata->bytes);
+	void *new = NULL;
+	header *metadata = GetHeader(old);
 
-	ArenaTrace("reallocated from %p to %p", ptr, new);
+	ArenaTrace("request; realloc %p to %zu bytes", (void *) metadata, bytes);
 
-unlock:
-	pthread_mutex_unlock(&mempool.mutex);
+	if (metadata->bytes >= bytes) {
+		ArenaTrace("denied; block has %zu bytes", metadata->bytes);
+		return old;
+	}
+
+	new = ArenaAllocate(bytes);
+
+	if (!new) {
+		xerror_fatal("new block request failed");
+		return NULL;
+	}
+
+	memcpy(new, old, metadata->bytes);
+
+	ArenaTrace("data copied from user block at %p to %p", old, new);
 
 	return new;
 }

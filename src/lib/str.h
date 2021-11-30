@@ -20,22 +20,21 @@ make_vector(char, Char, static)
 
 typedef char cstring;
 
-static cstring *cStringDuplicate(const cstring *cstr)
+//no strdup, will cause memory leak without arena
+static cstring *cStringDuplicate(const cstring *src)
 {
-	cstring *new = strdup(cstr);
+	cstring *dest = allocate(sizeof(char) * (strlen(src) + 1));
 
-	if (!new) {
-		abort();
-	}
+	strcpy(dest, src);
 
-	return new;
+	return dest;
 }
 
 static cstring *cStringFromView(const char *data, const size_t len)
 {
 	const size_t bytes = sizeof(char) * len;
 
-	char *new = ArenaAllocate(bytes + 1);
+	char *new = allocate(bytes + 1);
 
 	memcpy(new, data, bytes);
 

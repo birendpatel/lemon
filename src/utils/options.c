@@ -1,169 +1,129 @@
-// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
-
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.  
 #include <argp.h>
 #include <assert.h>
 #include <errno.h>
-#include <pthread.h>
-#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "arena.h"
 #include "options.h"
+#include "version.h"
 #include "xerror.h"
 
 typedef struct options options;
+typedef struct argp_option argp_option;
+typedef struct argp_state argp_state;
+typedef struct argp argp;
 
-error_t UnsafeParser(int, __attribute__((unused)) char *, struct argp_state *);
-static const options *AcquireReadOnly(void);
-static void ReleaseReadOnly(void);
-static void UnsafePrint(void);
+#define unused __attribute__((unused)) 
+
+static error_t Parser(int, char *, unused argp_state *);
+
 //------------------------------------------------------------------------------
 
 struct options {
-	pthread_mutex_t mutex;
 	struct {
-		unsigned int options_state : 1;
-		unsigned int compiler_passes : 1;
-		unsigned int lexical_tokens : 1;
-		unsigned int multithreading : 1;
+		unsigned int state: 1;
+		unsigned int tokens : 1;
+		unsigned int dependencies : 1;
 	} diagnostic;
 	struct {
-		unsigned int disassemble : 1;
-	} ir;
-	struct {
-		unsigned int no_run : 1;
-	} vm;
-	struct {
-		unsigned int interactive : 1;
-	} user;
+		size_t arena_default;
+	} memory;
 };
 
 static options opt = {
-	.mutex = PTHREAD_MUTEX_INITIALIZER,
 	.diagnostic = {
-		.options_state = 0,
-		.compiler_passes = 0,
-		.lexical_tokens = 0,
-		.multithreading = 0
+		.state = 0,
+		.tokens = 0,
+		.dependencies = 0
 	},
-	.ir = {
-		.disassemble = 0
-	},
-	.vm = {
-		.no_run = 0
-	},
-	.user = {
-		.interactive = 0
+	.memory = {
+		.arena_default = MiB(1)
 	}
 };
 
 //------------------------------------------------------------------------------
 //gnu argp
 
-enum argp_keys {
-	diagnostic_all_key = 256,
-	diagnostic_options_state_key = 257,
-	diagnostic_compiler_passes_key = 258,
-	diagnostic_lexical_tokens_key = 259,
-	diagnostic_multithreading_key = 260,
-	ir_disassemble_key = 'S',
-	vm_no_run_key = 'k',
-	user_interactive_key = 'i',
+enum argp_groups {
+	group_default = 0,
+	group_diagnostic,
+	group_memory,
 };
 
-#define LEMON_VERSION "Alpha"
+enum argp_keys {
+	key_diagnostic_state = 256,
+	key_diagnostic_tokens = 257,
+	key_diagnostic_dependencies = 258,
+	key_arena_default = 'a',
+};
+
 const cstring *argp_program_version = LEMON_VERSION;
 const cstring *argp_program_bug_address = "github.com/birendpatel/lemon/issues";
-static char args_doc[] = "<file 1> ... <file n>";
-static char doc[] = "\nThis is the C Lemon interpreter for the Lemon language.";
+static char args_doc[] = "[filename]";
+static char doc[] = "\nThis is the C Lemon compiler for the Lemon language.";
 
-static struct argp_option options_info[] = {
+static argp_option options_info[] = {
 	{
-		.name = "Dall",
-		.key  = diagnostic_all_key,
-		.doc  = "Enable all diagnostics."
+		.name  = "Dstate",
+		.key   = key_diagnostic_state,
+		.doc   = "Print the options state.",
+		.group = group_diagnostic
 	},
 	{
-		.name = "Dopt",
-		.key  = diagnostic_options_state_key,
-		.doc  = "Print the options state before compilation begins."
+		.name  = "Dtokens",
+		.key   = key_diagnostic_tokens,
+		.doc   = "Print tokens found during lexical analysis.",
+		.group = group_diagnostic
 	},
 	{
-		.name = "Dpass",
-		.key  = diagnostic_compiler_passes_key,
-		.doc  = "Signal the entry/exit points for each compiler pass."
+		.name  = "Ddeps",
+		.key   = key_diagnostic_dependencies,
+		.doc   = "Print the dependency graph topological sort.",
+		.group = group_diagnostic
 	},
 	{
-		.name = "Dtokens",
-		.key  = diagnostic_lexical_tokens_key,
-		.doc  = "Print tokens as they are found during tokenization."
-	},
-	{
-		.name = "Dthread",
-		.key  = diagnostic_multithreading_key,
-		.doc  = "Signal when threads are created and destroyed."
-	},
-	{
-		.name = "Iasm",
-		.key  = ir_disassemble_key,
-		.doc  = "Disassemble and print the bytecode."
-	},
-	{
-		.name = "Mkill",
-		.key = vm_no_run_key,
-		.doc = "Do not load and execute the compiled bytecode."
-	},
-	{
-		.key = user_interactive_key,
-		.doc = "Launch the REPL after the input files have executed."
+		.name  = "Arena",
+		.key   = key_arena_default,
+		.arg   = "megabytes",
+		.doc   = "Set the default arena size up to 1 GiB",
+		.group = group_memory
 	},
 
 	{0} //terminator required by GNU argp
 };
 
-error_t UnsafeParser
-(
-	int key,
-	__attribute__((unused)) char *arg,
-	struct argp_state *state
-)
+static error_t Parser(int key, char *arg, unused argp_state *state)
 {
-	options *opt = (options *) state->input;
-
 	switch (key) {
-	case diagnostic_all_key:
-		opt->diagnostic.options_state = 1;
-		opt->diagnostic.compiler_passes = 1;
-		opt->diagnostic.lexical_tokens = 1;
-		opt->diagnostic.multithreading = 1;
+	case key_diagnostic_state:
+		opt.diagnostic.state = 1;
 		break;
 
-	case diagnostic_options_state_key:
-		opt->diagnostic.options_state = 1;
+	case key_diagnostic_tokens:
+		opt.diagnostic.tokens = 1;
 		break;
 
-	case diagnostic_compiler_passes_key:
-		opt->diagnostic.compiler_passes = 1;
+	case key_diagnostic_dependencies:
+		opt.diagnostic.dependencies = 1;
 		break;
 
-	case diagnostic_lexical_tokens_key:
-		opt->diagnostic.lexical_tokens = 1;
-		break;
+	case key_arena_default: /* label bypass */ ;
+		char *endptr = NULL;
+		double value = strtod(arg, &endptr);
 
-	case diagnostic_multithreading_key:
-		opt->diagnostic.multithreading = 1;
-		break;
+		const cstring *msg1 = "bad arena size; using default";
+		const cstring *msg2 = "arena size out of range; using default";
 
-	case ir_disassemble_key:
-		opt->ir.disassemble = 1;
-		break;
-
-	case vm_no_run_key:
-		opt->vm.no_run = 1;
-		break;
-
-	case user_interactive_key:
-		opt->user.interactive = 1;
+		if (arg == endptr || *endptr != '\0') {
+			xuser_warn(NULL, 0, msg1);
+		} else if (value <= 0.0 || value > 1000.0) {
+			xuser_warn(NULL, 0, msg2);
+		} else {
+			opt.memory.arena_default = MiB(value);
+		}
+		
 		break;
 
 	default:
@@ -174,24 +134,17 @@ error_t UnsafeParser
 	return 0;
 }
 
-void OptionsParse(int *argc, char ***argv)
+//------------------------------------------------------------------------------
+//api
+
+bool OptionsParse(int *argc, char ***argv)
 {
 	assert(argc);
-	assert(*argc);
 	assert(argv);
-	assert(*argv);
 
-	static bool called = false;
-
-	if (called) {
-		xerror_issue("attempted to parse options more than once");
-		XerrorFlush();
-		return;
-	}
-
-	struct argp args_data = {
+	argp args_data = {
 		.options = options_info,
-		.parser = UnsafeParser,
+		.parser = Parser,
 		.args_doc = args_doc,
 		.doc = doc
 	};
@@ -199,129 +152,63 @@ void OptionsParse(int *argc, char ***argv)
 	int unparsed_index = 0;
 	error_t err = 0;
 
-	pthread_mutex_lock(&opt.mutex);
-
 	err = argp_parse(&args_data, *argc, *argv, 0, &unparsed_index, &opt);
 
 	switch (err) {
 	case 0:
 		*argc = *argc - unparsed_index;
 		*argv = *argv + unparsed_index;
-		break;
+		return true;
 
 	case ENOMEM:
-		xerror_fatal("dynamic allocation failed");
+		xerror_fatal("out of memory");
 		break;
 
 	case EINVAL:
-		XerrorUser(NULL, 0, "invalid option or option argument");
+		xuser_error(NULL, 0, "invalid option or option argument");
 		break;
 
 	default:
-		//argp docs only list ENOMEM and EINVAL but suggest that other
-		//error codes could appear depending on the implementation.
-		xerror_fatal("unknown argp error");
+		xerror_fatal("undocumented GNU argp error");
 		break;
 	}
 
-	if (err) {
-		abort();
-	}
-
-	if (opt.diagnostic.options_state) {
-		UnsafePrint();
-	}
-
-	called = true;
-
-	pthread_mutex_unlock(&opt.mutex);
-}
-
-static void UnsafePrint(void)
-{
-	static const cstring *fmt =
-		"diagnostic\n"
-		"\toptions state: %d\n"
-		"\tcompiler passes: %d\n"
-		"\tlexical tokens: %d\n"
-		"\tmultithreading: %d\n"
-		"\nintermediate representation\n"
-		"\tdisassemble: %d\n"
-		"\nvirtual machine\n"
-		"\tno run: %d\n"
-		"\nuser preferences\n"
-		"\tinteractive: %d\n"
-		"\n";
-
-	const int dopt = opt.diagnostic.options_state;
-	const int dpass = opt.diagnostic.compiler_passes;
-	const int dtokens = opt.diagnostic.lexical_tokens;
-	const int dthread = opt.diagnostic.multithreading;
-	const int irdasm = opt.ir.disassemble;
-	const int mnorun = opt.vm.no_run;
-	const int uinteractive = opt.user.interactive;
-
-	fprintf(stderr, fmt, dopt, dpass, dtokens, dthread, irdasm, mnorun,
-		uinteractive);
+	return false;
 }
 
 //------------------------------------------------------------------------------
-//read-only functions
 
-//generate compiler cast warning if read-only contract isn't enforced by caller
-static const options *AcquireReadOnly(void)
+void OptionsDstate(void)
 {
-	pthread_mutex_lock(&opt.mutex);
-
-	return (const options *) &opt;
-}
-
-static void ReleaseReadOnly(void)
-{
-	pthread_mutex_unlock(&opt.mutex);
-}
-
-bool OptionsGetFlag(const options_flag flag)
-{
-	bool status = false;
-
-	const options *ro_opt = AcquireReadOnly();
-
-	switch(flag) {
-	case DIAGNOSTIC_OPTIONS_STATE:
-		status = ro_opt->diagnostic.options_state;
-		break;
-
-	case DIAGNOSTIC_COMPILER_PASSES:
-		status = ro_opt->diagnostic.compiler_passes;
-		break;
-
-	case DIAGNOSTIC_LEXICAL_TOKENS:
-		status = ro_opt->diagnostic.lexical_tokens;
-		break;
-
-	case DIAGNOSTIC_MULTITHREADING:
-		status = ro_opt->diagnostic.multithreading;
-		break;
-
-	case IR_DISASSEMBLE:
-		status = ro_opt->ir.disassemble;
-		break;
-
-	case VM_NO_RUN:
-		status = ro_opt->vm.no_run;
-		break;
-
-	case USER_INTERACTIVE:
-		status = ro_opt->user.interactive;
-		break;
-
-	default:
-		xerror_issue("invalid flag argument: %d", flag);
-		break;
+	if (!opt.diagnostic.state) {
+		return;
 	}
 
-	ReleaseReadOnly();
+	const cstring *fmt =
+		"Dstate: %d\n"
+		"Dtokens: %d\n"
+		"Ddeps: %d\n"
+		"Arena: %zu\n";
 
-	return status;
+	fprintf(stderr,
+		fmt,
+		(int) opt.diagnostic.state,
+		(int) OptionsDtokens(),
+		(int) OptionsDdeps(),
+		OptionsArena());
+}
+
+bool OptionsDtokens(void)
+{
+	return opt.diagnostic.tokens;
+}
+
+bool OptionsDdeps(void)
+{
+	return opt.diagnostic.dependencies;
+}
+
+size_t OptionsArena(void)
+{
+	return opt.memory.arena_default;
 }

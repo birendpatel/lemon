@@ -1,7 +1,7 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 //
 // Multi-producer multi-consumer thread-safe FIFO blocking queue with a fixed
-// buffer length. 
+// buffer length.
 
 #pragma once
 
@@ -21,20 +21,14 @@
 	#define ChannelTrace(msg, ...)
 #endif
 
-//channel functions may return any integer error code s.t. INT_MIN < x < INT_MAX
-#ifndef CHANNEL_ESUCCESS
-	#error "channel.h requires user to implement CHANNEL_ESUCCESS int code"
-#endif
+//channel functions return integer error codes
+#define CHANNEL_ESUCCESS 0
 
 //one or more threads are waiting
-#ifndef CHANNEL_EBUSY
-	#error "channel.h requires user to implement CHANNEL_EBUSY int code"
-#endif
+#define CHANNEL_EBUSY 1
 
 //attempted to send on a closed channel or recv on a closed empty channel
-#ifndef CHANNEL_ECLOSED
-	#error "channel.h requires user to implement CHANNEL_ECLOSED int code"
-#endif
+#define CHANNEL_ECLOSED 2
 
 #define alias_channel(pfix)						       \
 typedef struct pfix##_channel pfix##_channel;
@@ -42,7 +36,7 @@ typedef struct pfix##_channel pfix##_channel;
 //the producer or consumer wishing to perform an action on the channel must
 //first acquire the top-level mutex.
 //
-//senders wait on cond_full if the queue.len == queue.cap and consumer wait on 
+//senders wait on cond_full if the queue.len == queue.cap and consumer wait on
 //cond_empty if queue.len == 0.
 //
 //data is the internal buffer with maximum capacity queue.cap and current size
@@ -81,7 +75,7 @@ cls void pfix##ChannelInit(pfix##_channel *self, const size_t n)	       \
 	assert(self);							       \
 	assert(n);							       \
 									       \
-	self->data = ArenaAllocate(sizeof(T) * n);			       \
+	self->data = allocate(sizeof(T) * n);			               \
 									       \
 	self->cap = n;							       \
 	self->len = 0;							       \

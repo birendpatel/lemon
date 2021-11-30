@@ -86,7 +86,7 @@ symtable *SymTableSpawn(symtable *parent, const tabletag tag, const size_t cap)
 {
 	assert((parent != NULL) ^ (tag == TABLE_GLOBAL)); //logical xor
 
-	symtable *child = ArenaAllocate(sizeof(symtable));
+	symtable *child = allocate(sizeof(symtable));
 
 	*child = (symtable) {
 		.tag = tag,

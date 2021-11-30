@@ -1,4 +1,5 @@
-// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.  //
+// Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.  
+// 
 // Associative array from string keys to any type T, implemented as a linear
 // probing hash table.
 
@@ -149,7 +150,7 @@ cls pfix##_map pfix##MapInit(const uint64_t capacity)			       \
 	struct pfix##_map new = {					       \
 		.len = 0,						       \
 		.cap = capacity,					       \
-		.buffer = ArenaAllocate(bufsize)                               \
+		.buffer = allocate(bufsize)                                    \
 	};								       \
 								               \
 	for (uint64_t i = 0; i < capacity; i++) {			       \

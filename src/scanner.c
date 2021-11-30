@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <ctype.h>
+#include <errno.h>
 #include <limits.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -55,14 +56,17 @@ struct scanner {
 	token tok;
 };
 
-//dynamically allocates a scanner; the new detached thread is responsible for
-//this resource
-xerror ScannerInit(cstring *src, Token_channel *chan)
+bool ScannerInit(cstring *src, channel(Token) *chan)
 {
 	assert(src);
 	assert(chan);
 
-	scanner *scn = ArenaAllocate(sizeof(scanner));
+	//allocated in the parent arena. this avoids sending the src and chan
+	//as a payload into the new thread, which means having to block the
+	//parent thread until the data is copied. The scanner makes no other
+	//dynamic allocations so this also mitigates the overhead of creating
+	//a new arena.
+	scanner *scn = allocate(sizeof(scanner));
 
 	*scn = (scanner) {
 		.chan = chan,
@@ -92,31 +96,20 @@ xerror ScannerInit(cstring *src, Token_channel *chan)
 	int err = pthread_create(&thread, &attr, StartRoutine, scn);
 
 	if (err) {
-		xerror_issue("cannot create thread: pthread error: %d", err);
-		return XETHREAD;
+		const cstring *msg = strerror(err);
+		xerror_issue("cannot create thread: pthread error: %s", msg);
+		return false;
 	}
 
-	return XESUCCESS;
+	return true;
 }
 
-//pthread_init argument; releases the scanner resource on shutdown 
+//pthread_init argument 
 static void *StartRoutine(void *pthread_payload)
 {
 	scanner *self = (scanner *) pthread_payload;
 
-	const bool trace = OptionsGetFlag(DIAGNOSTIC_MULTITHREADING);
-
-	if (trace) {
-		xerror_trace("scanner running in detached thread");
-		XerrorFlush();
-	}
-
 	Scan(self);
-
-	if (trace) {
-		xerror_trace("scanner shutting down");
-		XerrorFlush();
-	}
 
 	pthread_exit(NULL);
 
@@ -200,18 +193,18 @@ static const cstring *GetTokenName(token_type type)
 
 static void TokenPrint(scanner *self)
 {
-	const cstring *lexfmt = "TOKEN { line %-10zu: %-20s: %.*s: %d %d }\n";
+	const cstring *lexfmt = "TOKEN { line %-10zu: %-20s: '%.*s': %d %d }\n";
 	const cstring *nolexfmt = "TOKEN { line %-10zu: %-20s: %d %d }\n";
 
 	const size_t line = self->tok.line;
 	const cstring *name = GetTokenName(self->tok.type);
-	const cstring *view = self->tok.lexeme.view;
 	const size_t len = self->tok.lexeme.len;
+	const cstring *view = self->tok.lexeme.view;
 	const int valid = self->tok.flags.valid;
 	const int badstr = self->tok.flags.bad_string;
 
 	if (view) {
-		fprintf(stderr, lexfmt, line, name, view, len, valid, badstr);
+		fprintf(stderr, lexfmt, line, name, len, view, valid, badstr);
 	} else {
 		fprintf(stderr, nolexfmt, line, name, valid, badstr);
 	}
@@ -400,16 +393,14 @@ static void SendToken(scanner *self)
 	assert(self);
 	assert(self->chan->flags & CHANNEL_OPEN);
 
-	if (OptionsGetFlag(DIAGNOSTIC_LEXICAL_TOKENS)) {
+	if (OptionsDtokens()) {
 		TokenPrint(self);
 	}
 
-	xerror err = TokenChannelSend(self->chan, self->tok);
+	int err = TokenChannelSend(self->chan, self->tok);
 
 	if (err) {
-		xerror_fatal("cannot send token: %s", XerrorDescription(err));
-		xerror_fatal("cannot fulfill EOF contract on token channel");
-		xerror_fatal("hanging");
+		xerror_fatal("cannot send token; cannot send EOF; hanging");
 		Hang();
 	}
 }
