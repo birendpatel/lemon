@@ -17,13 +17,17 @@ static void InsertChildren(network *, module *, const cstring *);
 static void Sort(network *, module *);
 static void ReportCycle(const cstring *, const cstring *);
 
-static bool ResolveSymbols(network *);
-static symbol *LookupSymbol(frame *, const cstring *, symtable **);
+static symbol *LookupSymbol(frame *, const cstring *, const size_t);
+static void ReportUndeclared(frame *, const cstring *, const size_t);
 static symbol *InsertSymbol(frame *, const cstring *, symbol);
-static void ReportRedeclaration(frame *, const cstring *);
+static void ReportRedeclaration(frame *, const cstring *, symbol);
+static size_t GetSymbolLine(symbol);
+
 static symtable *PushSymTable(frame *, const tabletag, const size_t);
 static symtable *PopSymTable(frame *);
 static type *UnwindType(type *);
+
+static bool ResolveSymbols(network *);
 static void ResolveModule(frame *);
 static void ResolveImports(frame *);
 static void ResolveDeclarations(frame *);
@@ -179,7 +183,6 @@ static void ReportCycle(const cstring *parent, const cstring *child)
 struct frame {
 	module *ast;
 	symtable *top;
-	size_t line;
 };
 
 static bool ResolveSymbols(network *net)
@@ -197,7 +200,6 @@ static bool ResolveSymbols(network *net)
 			frame active = {
 				.ast = node,
 				.top = net->global,
-				.line = 0
 			};
 
 			ResolveModule(&active);
@@ -213,24 +215,35 @@ static bool ResolveSymbols(network *net)
 }
 
 //------------------------------------------------------------------------------
+//symbol resolution utilities
 
-static symbol *LookupSymbol(frame *self, const cstring *key, symtable **target)
+//throwx XXSYMBOL exception is key does not exist in the active stack
+static symbol *LookupSymbol(frame *self, const cstring *key, const size_t line)
 {
 	assert(self);
 	assert(key);
+	assert(line);
 
-	const cstring *msg = "%s not declared before use";
+	symbol *ref = SymTableLookup(self->top, key, NULL);
 
-	symbol *ref = SymTableLookup(self->top, key, target);
-
-	//TODO need line numbers on type nodes and more verbose description
 	if (!ref) {
-		const cstring *fname = self->ast->alias;
-		xuser_error(fname, 0, msg, key);
+		ReportUndeclared(self, key, line);
 		Throw(XXSYMBOL);
 	}
 
 	return ref;
+}
+
+static void ReportUndeclared(frame *self, const cstring *key, const size_t line)
+{
+	assert(self);
+	assert(key);
+	assert(line);
+
+	const cstring *msg = "%s was not declared before use";
+	const cstring *fname = self->ast->alias;
+
+	xuser_error(fname, line, msg, key);
 }
 
 //throws XXSYMBOL exception if symbol alredy exists in the active table
@@ -242,7 +255,7 @@ static symbol *InsertSymbol(frame *self, const cstring *key, symbol value)
 	symbol *ref = SymTableInsert(self->top, key, value);
 
 	if (!ref) {
-		ReportRedeclaration(self, key);
+		ReportRedeclaration(self, key, value);
 		Throw(XXSYMBOL);
 	}
 
@@ -251,58 +264,64 @@ static symbol *InsertSymbol(frame *self, const cstring *key, symbol value)
 
 //notify user; not all symbols have line information so redeclarations of some
 //symbols, like native types in the global table, print generic messages.
-static void ReportRedeclaration(frame *self, const cstring *key)
+static void ReportRedeclaration(frame *self, const cstring *key, symbol value)
 {
 	assert(self);
 	assert(key);
 
-	const cstring *longmsg = "%s redeclared; previously on line %zu";
-	const cstring *shortmsg = "%s redeclared";
-
+	const cstring *msg = "%s redeclared; previously declared on line %zu";
 	const cstring *fname = self->ast->alias;
-	const size_t line = self->line;
-	size_t prev_line = 0;
-	symtable *container = NULL;
+	
+	symbol *symref = SymTableLookup(self->top, key, NULL);
 
-	symbol *current = SymTableLookup(self->top, key, &container);
+	const size_t curr_line = GetSymbolLine(value);
+	const size_t prev_line = GetSymbolLine(*symref);
 
-	assert(container == self->top && "redeclaration in new scope");
-	assert(current && "false redeclaration; symbol is new");
-	assert(current->tag != SYMBOL_NATIVE && "native access in non-global");
-	assert(current->tag != SYMBOL_MODULE && "module redeclared itself");
+	xerror_fatal("%d\n", symref->tag);
+	assert(prev_line);
 
-	switch (current->tag) {
+	xuser_error(fname, curr_line, msg, key, prev_line);
+}
+
+//returns 0 if symbol does not carry line information
+static size_t GetSymbolLine(symbol sym)
+{
+	switch (sym.tag) {
+	case SYMBOL_NATIVE:
+		return 0;
+
+	case SYMBOL_MODULE:
+		return 0;
+
 	case SYMBOL_IMPORT:
-		prev_line = current->import.line;
-		break;
+		return sym.import.line;
 
 	case SYMBOL_FUNCTION:
-		prev_line = current->function.line;
-		break;
+		return sym.function.line;
 
 	case SYMBOL_METHOD:
-		prev_line = current->method.line;
-		break;
+		return sym.method.line;
 
 	case SYMBOL_UDT:
-		prev_line = current->udt.line;
-		break;
+		return sym.udt.line;
 
 	case SYMBOL_VARIABLE:
-		prev_line = current->variable.line;
-		break;
+		return sym.variable.line;
+
+	case SYMBOL_FIELD:
+		return sym.field.line;
+
+	case SYMBOL_LABEL:
+		return sym.label.line;
 
 	default:
-		assert(prev_line == 0);
-		break;
-	}
-
-	if (prev_line) {
-		xuser_error(fname, line, longmsg, key, prev_line);
-	} else {
-		xuser_error(fname, line, shortmsg, key);
+		assert(0 != 0 && "invalid symbol tab");
+		__builtin_unreachable();
 	}
 }
+
+//------------------------------------------------------------------------------
+//frame management
 
 //returned pointer is always non-null
 static symtable *PushSymTable(frame *self, const tabletag tag, const size_t cap)
@@ -329,6 +348,8 @@ static symtable *PopSymTable(frame *self)
 
 	return old_top;
 }
+
+//------------------------------------------------------------------------------
 
 //return the tail (NODE_BASE) or penultimate node (NODE_NAMED) in the singly
 //linked type list.
@@ -391,7 +412,6 @@ static void ResolveImports(frame *self)
 		import *node = &imports.buffer[i];
 
 		const cstring *name = node->alias;
-		self->line = node->line;
 		entry.import.line = node->line;
 
 		symbol *ref = InsertSymbol(self, name, entry);
@@ -507,7 +527,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 	switch (node->tag) {
 	case NODE_BASE:
 		key = node->base.name;
-		ref = LookupSymbol(self, key, NULL);
+		ref = LookupSymbol(self, key, node->line);
 
 		switch (ref->tag) {
 		case SYMBOL_UDT:
@@ -526,7 +546,7 @@ static symbol *LookupMemberType(frame *self, type *node)
 
 	case NODE_NAMED:
 		key = node->named.name;
-		ref = LookupSymbol(self, key, NULL);
+		ref = LookupSymbol(self, key, node->line);
 
 		if (ref->tag != SYMBOL_IMPORT) {
 			xuser_error(fname, 0 , "'%s' is not an import", key);

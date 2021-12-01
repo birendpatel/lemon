@@ -13,6 +13,11 @@ typedef struct symtable symtable;
 
 //------------------------------------------------------------------------------
 // Symbols are associated with a cstring identifier and placed into a hash table
+//
+// the data type is compressed from the parser linked list into a compact string
+// representation. For example, [10]*int32 has a parser list representation as
+// [10] --> * --> int32, while in the symbol table it is just "[10]*int32".
+// This essentially converts the type back into the original source literal.
 
 typedef enum symboltag {
 	SYMBOL_NATIVE,
