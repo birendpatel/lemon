@@ -806,6 +806,8 @@ static type *RecType(parser *self)
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
+		node->line = self->tok.line;
+
 		prev_name = cStringFromLexeme(self);
 
 		GetNextValidToken(self);
@@ -831,21 +833,28 @@ static type *RecType(parser *self)
 
 	case _STAR:
 		node->tag = NODE_POINTER;
+		node->line = self->tok.line;
 		GetNextValidToken(self);
 		node->pointer.reference = RecType(self);
+
 		break;
 
 	case _LEFTBRACKET:
+		node->tag = NODE_ARRAY;
+		node->line = self->tok.line;
+
 		move_check(_LITERALINT, "missing array size");
 		node->array.len = ExtractArrayIndex(self);
 		move_check_move(_RIGHTBRACKET, "missing ']'");
+
 		node->array.element = RecType(self);
+
 		break;
 
 	default:
 		usererror("missing data type");
 		Throw(XXPARSE);
-		break;
+		__builtin_unreachable();
 	}
 
 	return node;
