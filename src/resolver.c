@@ -23,8 +23,8 @@ static symbol *InsertSymbol(frame *, const cstring *, symbol);
 static void ReportRedeclaration(frame *, const cstring *, symbol);
 static size_t GetSymbolLine(symbol);
 
-static symtable *PushSymTable(frame *, const tabletag, const size_t);
-static symtable *PopSymTable(frame *);
+static void PushSymTable(frame *, const tabletag, const size_t);
+static void PopSymTable(frame *);
 static type *UnwindType(type *);
 static cstring *StringFromType(type *);
 static void StringFromType__recursive(vstring *, type *);
@@ -331,20 +331,16 @@ static size_t GetSymbolLine(symbol sym)
 //------------------------------------------------------------------------------
 //frame management
 
-//returned pointer is always non-null
-static symtable *PushSymTable(frame *self, const tabletag tag, const size_t cap)
+static void PushSymTable(frame *self, const tabletag tag, const size_t cap)
 {
 	assert(self);
 
 	symtable *top = SymTableSpawn(self->top, tag, cap);
 
 	self->top = top;
-
-	return top;
 }
 
-//restore the parent of the current active table; returns the child
-static symtable *PopSymTable(frame *self)
+static void PopSymTable(frame *self)
 {
 	assert(self);
 
@@ -353,8 +349,6 @@ static symtable *PopSymTable(frame *self)
 	assert(old_top->parent && "attempted to pop global symbol table");
 
 	self->top = old_top->parent;
-
-	return old_top;
 }
 
 //------------------------------------------------------------------------------
@@ -434,23 +428,31 @@ static void StringFromType__recursive(vstring *vstr, type *node)
 
 //------------------------------------------------------------------------------
 
-//TODO add module name to global symbol table?
-//this will cause the global to potentially resize so needs to be init larger
 static void ResolveModule(frame *self)
 {
 	assert(self);
 
-	const module *const node = self->ast;
+	symbol sym = {
+		.tag = SYMBOL_MODULE,
+		.module = {
+			.table = NULL,
+			.referenced = false
+		}
+	};
+
+	module *const node = self->ast;
+	symbol *symref = InsertSymbol(self, node->alias, sym);
 
 	const size_t capacity = node->imports.len + node->declarations.len;
+	PushSymTable(self, TABLE_MODULE, capacity);
 
-	node->table = PushSymTable(self, TABLE_MODULE, capacity);
+	symref->module.table = self->top;
+	node->table = self->top;
 
 	ResolveImports(self);
-
 	ResolveDeclarations(self);
 
-	(void) PopSymTable(self);
+	PopSymTable(self);
 }
 
 static void ResolveImports(frame *self)
@@ -523,11 +525,12 @@ static void ResolveUDT(frame *self, decl *node)
 	//THEN load the udt table itself; returned pointer from PushSymTable
 	//lets us backfill the child pointer in order to doubly link the tables
 	const size_t capacity = node->udt.members.len;
-	symref->udt.table = PushSymTable(self, TABLE_UDT, capacity);
+	PushSymTable(self, TABLE_UDT, capacity);
+	symref->udt.table = self->top;
 
 	ResolveMembers(self, node->udt.members);
 
-	(void) PopSymTable(self);
+	PopSymTable(self);
 }
 
 //note; resolves the member's type but if the type is a named reference to a
