@@ -542,6 +542,7 @@ static decl RecStruct(parser *self)
 
 //<member list>
 //throws error if no members found
+//member line number corresponds to the leading identifier
 static vector(Member) RecParseMembers(parser *self)
 {
 	assert(self);
@@ -552,6 +553,8 @@ static vector(Member) RecParseMembers(parser *self)
 	member attr = {
 		.name = NULL,
 		.typ = NULL,
+		.entry = NULL,
+		.line = 0,
 		.public = false
 	};
 
@@ -564,6 +567,7 @@ static vector(Member) RecParseMembers(parser *self)
 		check(_IDENTIFIER, "missing struct member name");
 
 		attr.name = cStringFromLexeme(self);
+		attr.line = self->tok.line;
 
 		move_check_move(_COLON, "missing ':' after name");
 
@@ -706,6 +710,7 @@ static decl RecMethod(parser *self)
 
 //<parameter list>
 //throws error if no parameters found
+//line number corresponds to leading identifier
 static vector(Param) RecParseParameters(parser *self)
 {
 	assert(self);
@@ -716,6 +721,8 @@ static vector(Param) RecParseParameters(parser *self)
 	param attr  = {
 		.name = NULL,
 		.typ = NULL,
+		.entry = NULL,
+		.line = 0,
 		.mutable = false
 	};
 
@@ -732,6 +739,7 @@ static vector(Param) RecParseParameters(parser *self)
 		check(_IDENTIFIER, "missing function parameter name");
 
 		attr.name = cStringFromLexeme(self);
+		attr.line = self->tok.line;
 
 		move_check_move(_COLON, "missing ':' after name");
 

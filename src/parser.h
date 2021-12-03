@@ -44,6 +44,7 @@ struct member {
 	cstring *name;
 	type *typ; 
 	symbol *entry;
+	size_t line;
 	bool public;
 };
 
@@ -56,6 +57,7 @@ struct param {
 	cstring *name; 
 	type *typ;
 	symbol *entry;
+	size_t line;
 	bool mutable;
 };
 

@@ -277,7 +277,6 @@ static void ReportRedeclaration(frame *self, const cstring *key, symbol value)
 	const size_t curr_line = GetSymbolLine(value);
 	const size_t prev_line = GetSymbolLine(*symref);
 
-	xerror_fatal("%d\n", symref->tag);
 	assert(prev_line);
 
 	xuser_error(fname, curr_line, msg, key, prev_line);
@@ -488,6 +487,7 @@ static void ResolveMembers(frame *self, vector(Member) members)
 		.tag = SYMBOL_FIELD,
 		.field = {
 			.type = NULL,
+			.line = 0,
 			.referenced = false,
 			.public = false
 		}
@@ -495,6 +495,8 @@ static void ResolveMembers(frame *self, vector(Member) members)
 
 	while (i < members.len) {
 		member *node = &members.buffer[i];
+
+		sym.field.line = node->line;
 
 		node->entry = InsertSymbol(self, node->name, sym);
 
