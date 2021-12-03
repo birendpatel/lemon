@@ -121,6 +121,7 @@ static void vStringAppendcString(vstring *vstr, const cstring *cstr)
 	vStringTerminate__internal(vstr);
 }
 
+//append the string representation of the input number to vstr
 static void vStringAppendIntMax(vstring *vstr, intmax_t number)
 {
 	assert(vstr);

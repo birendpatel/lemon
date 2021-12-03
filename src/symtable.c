@@ -31,7 +31,7 @@
 	}								       \
 }
 
-symtable *SymTableInit(void)
+symtable *SymTableInit(const size_t total_modules)
 {
 	typedef struct pair {
 		const cstring *key;
@@ -65,12 +65,13 @@ symtable *SymTableInit(void)
 		NATIVE_FUNC("typeof"),
 	};
 
-	const size_t total_entries = sizeof(table) / sizeof(table[0]);
+	const size_t total_native = sizeof(table) / sizeof(table[0]);
+	const size_t total_entries = total_modules + total_native;
 
 	symtable *global = SymTableSpawn(NULL, TABLE_GLOBAL, total_entries);
 	assert(global);
 
-	for (size_t i = 0; i < total_entries; i++) {
+	for (size_t i = 0; i < total_native; i++) {
 		const pair *p = table + i;
 		symbol *entry = SymTableInsert(global, p->key, p->value);
 		assert(entry && "duplicate entry");

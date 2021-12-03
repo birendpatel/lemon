@@ -47,13 +47,16 @@ network *ResolverInit(const cstring *filename)
 
 	net->dependencies = ModuleGraphInit();
 	net->head = NULL;
-	net->global = SymTableInit();
 
 	bool ok = ResolveDependencies(net, filename);
 
 	if (!ok) {
 		return NULL; 
 	}
+
+	//graph API doesn't allow for removals so the len member is the true
+	//underlying hash table count.
+	net->global = SymTableInit(net->dependencies.len);
 
 	ok = ResolveSymbols(net);
 
@@ -437,7 +440,7 @@ static void ResolveModule(frame *self)
 {
 	assert(self);
 
-	module *node = self->ast;
+	const module *const node = self->ast;
 
 	const size_t capacity = node->imports.len + node->declarations.len;
 

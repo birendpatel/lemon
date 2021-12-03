@@ -142,8 +142,11 @@ struct symtable {
 //API
 
 //create the global symbol table and populate it with the predeclared native
-//types and functions; returned pointer is non-NULL
-symtable *SymTableInit(void);
+//types and functions; returned pointer is non-NULL.
+//
+//the total_modules input ensures that the global symbol table will not resize
+//so that pointers returned by SymTableInsert always remain valid.
+symtable *SymTableInit(const size_t total_modules);
 
 //always returns a valid child symbol table; input capacity guarantees that the
 //underlying hash table buffer will not issue a dynamic resize when the total
