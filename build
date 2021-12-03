@@ -52,7 +52,8 @@ files = [
 ]
 
 library_flags = [
-    "-lpthread"
+    "-lpthread",
+    "-lm"
 ]
 
 include_flags = [

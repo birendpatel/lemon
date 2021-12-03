@@ -26,6 +26,8 @@ static size_t GetSymbolLine(symbol);
 static symtable *PushSymTable(frame *, const tabletag, const size_t);
 static symtable *PopSymTable(frame *);
 static type *UnwindType(type *);
+static cstring *StringFromType(type *);
+static void StringFromType__recursive(vstring *, type *);
 
 static bool ResolveSymbols(network *);
 static void ResolveModule(frame *);
@@ -144,8 +146,6 @@ void InsertChildren(network *net, module *parent, const cstring *parentname)
 			Throw(XXGRAPH);
 		}
 	}
-
-
 }
 
 //since C does not allow closures a cheeky static variable keeps track of the
@@ -180,6 +180,8 @@ static void ReportCycle(const cstring *parent, const cstring *child)
 //------------------------------------------------------------------------------
 // Phase 2: resolve symbols
 
+//@ast: root node of the AST currently undergoing symbol resolution
+//@top: active LIFO stack within the n-ary symtable tree; non-null
 struct frame {
 	module *ast;
 	symtable *top;
@@ -217,21 +219,21 @@ static bool ResolveSymbols(network *net)
 //------------------------------------------------------------------------------
 //symbol resolution utilities
 
-//throwx XXSYMBOL exception is key does not exist in the active stack
+//throw XXSYMBOL exception is key does not exist in the active stack
 static symbol *LookupSymbol(frame *self, const cstring *key, const size_t line)
 {
 	assert(self);
 	assert(key);
 	assert(line);
 
-	symbol *ref = SymTableLookup(self->top, key, NULL);
+	symbol *symref = SymTableLookup(self->top, key, NULL);
 
-	if (!ref) {
+	if (!symref) {
 		ReportUndeclared(self, key, line);
 		Throw(XXSYMBOL);
 	}
 
-	return ref;
+	return symref;
 }
 
 static void ReportUndeclared(frame *self, const cstring *key, const size_t line)
@@ -252,18 +254,17 @@ static symbol *InsertSymbol(frame *self, const cstring *key, symbol value)
 	assert(self);
 	assert(key);
 
-	symbol *ref = SymTableInsert(self->top, key, value);
+	symbol *symref = SymTableInsert(self->top, key, value);
 
-	if (!ref) {
+	if (!symref) {
 		ReportRedeclaration(self, key, value);
 		Throw(XXSYMBOL);
 	}
 
-	return ref;
+	return symref;
 }
 
-//notify user; not all symbols have line information so redeclarations of some
-//symbols, like native types in the global table, print generic messages.
+//notify user of attempt to redeclare a variable within the same scope
 static void ReportRedeclaration(frame *self, const cstring *key, symbol value)
 {
 	assert(self);
@@ -271,8 +272,13 @@ static void ReportRedeclaration(frame *self, const cstring *key, symbol value)
 
 	const cstring *msg = "%s redeclared; previously declared on line %zu";
 	const cstring *fname = self->ast->alias;
-	
-	symbol *symref = SymTableLookup(self->top, key, NULL);
+
+	symtable *table = NULL;
+	symbol *symref = SymTableLookup(self->top, key, &table);
+
+	assert(table);
+	assert(table == self->top && "redeclared var is not in same scope");
+	assert(table->tag != TABLE_GLOBAL && "key redeclared in global scope");
 
 	const size_t curr_line = GetSymbolLine(value);
 	const size_t prev_line = GetSymbolLine(*symref);
@@ -374,8 +380,59 @@ static type *UnwindType(type *node)
 		__builtin_unreachable();
 	}
 }
+
+//unwind the singly linked type list and compress it recursively into a compact
+//string notation; i..e, the type list [10] -> * -> int32 becomes "[10]*int32"
+static cstring *StringFromType(type *node)
+{
+	assert(node);
+
+	const size_t typical_type_length = 16;
+
+	vstring vstr = vStringInit(typical_type_length);
+
+	StringFromType__recursive(&vstr, node);
+
+	return cStringFromvString(&vstr);
+}
+
+static void StringFromType__recursive(vstring *vstr, type *node)
+{
+	assert(node);
+	assert(vstr);
+	
+	switch (node->tag) {
+	case NODE_BASE:
+		vStringAppendcString(vstr, node->base.name);
+		break;
+
+	case NODE_NAMED:
+		vStringAppendcString(vstr, node->named.name);
+		StringFromType__recursive(vstr, node->named.reference);
+		break;
+
+	case NODE_POINTER:
+		vStringAppend(vstr, '*');
+		StringFromType__recursive(vstr, node->pointer.reference);
+		break;
+	
+	case NODE_ARRAY:
+		vStringAppend(vstr, '[');
+		vStringAppendIntMax(vstr, node->array.len);
+		vStringAppend(vstr, ']');
+		StringFromType__recursive(vstr, node->array.element);
+		break;
+
+	default:
+		assert(0 != 0 && "invalid type tag");
+		__builtin_unreachable();
+	}
+}
+
 //------------------------------------------------------------------------------
 
+//TODO add module name to global symbol table?
+//this will cause the global to potentially resize so needs to be init larger
 static void ResolveModule(frame *self)
 {
 	assert(self);
