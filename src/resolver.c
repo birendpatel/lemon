@@ -458,6 +458,7 @@ static void ResolveModule(frame *self)
 static void ResolveImports(frame *self)
 {
 	assert(self);
+	assert(self->top->tag == TABLE_MODULE);
 
 	symbol entry = {
 		.tag = SYMBOL_IMPORT,
@@ -469,23 +470,29 @@ static void ResolveImports(frame *self)
 
 	vector(Import) imports = self->ast->imports;
 
-	for (size_t i = 0; i < imports.len; i++) {
+	size_t i = 0;
+
+	while (i < imports.len) {
 		import *node = &imports.buffer[i];
-
-		const cstring *name = node->alias;
 		entry.import.line = node->line;
+		node->entry = InsertSymbol(self, node->alias, entry);
 
-		symbol *ref = InsertSymbol(self, name, entry);
-		node->entry = ref;
+		i++;
 	}
 }
 
 static void ResolveDeclarations(frame *self)
 {
 	assert(self);
+	assert(self->top->tag == TABLE_MODULE);
 
 	static void (*const jump[])(frame *, decl *) = {
 		[NODE_UDT] = ResolveUDT,
+		/*
+		[NODE_FUNCTION] = ResolveFunction,
+		[NODE_METHOD] = ResolveMethod,
+		[NODE_VARIABLE] = ResolveVariable
+		*/
 	};
 
 	vector(Decl) declarations = self->ast->declarations;
