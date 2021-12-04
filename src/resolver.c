@@ -522,7 +522,7 @@ static void ResolveUDT(frame *self, decl *node)
 			.bytes = 0,
 			.line = node->line,
 			.referenced = false,
-			.public = false
+			.public = node->udt.public
 		}
 	};
 

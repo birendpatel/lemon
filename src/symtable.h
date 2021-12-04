@@ -71,6 +71,7 @@ struct symbol {
 			};
 		} method;
 
+		//@bytes not calculated during symbol resolution
 		struct {
 			symtable *table;
 			size_t bytes;
