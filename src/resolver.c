@@ -23,6 +23,7 @@ static symbol *InsertSymbol(frame *, const cstring *, symbol);
 static void ReportRedeclaration(frame *, const cstring *, symbol);
 static size_t GetSymbolLine(symbol);
 
+static void check_pair(int *);
 static void PushSymTable(frame *, const tabletag, const size_t);
 static void PopSymTable(frame *);
 static type *UnwindType(type *);
@@ -351,6 +352,29 @@ static void PopSymTable(frame *self)
 	self->top = old_top->parent;
 }
 
+//debug mode wrappers to ensure that every push is paired with a pop
+static void check_pair(int *pushed)
+{
+	assert(pushed);
+	assert(*pushed == 0);
+}
+
+#define push(self, tag, cap) 						       \
+	__attribute__((cleanup(check_pair))) int sym_table_stack__pushed = 0;  \
+								               \
+	do {								       \
+		PushSymTable(self, tag, cap);				       \
+		sym_table_stack__pushed++;				       \
+		assert(sym_table_stack__pushed == 1);			       \
+	} while (0)
+
+#define pop(self) 							       \
+	do {								       \
+		PopSymTable(self);					       \
+		sym_table_stack__pushed--;			       	       \
+		assert(sym_table_stack__pushed == 0);                          \
+	} while (0)
+
 //------------------------------------------------------------------------------
 
 //return the tail (NODE_BASE) or penultimate node (NODE_NAMED) in the singly
@@ -444,7 +468,7 @@ static void ResolveModule(frame *self)
 	symbol *symref = InsertSymbol(self, node->alias, sym);
 
 	const size_t capacity = node->imports.len + node->declarations.len;
-	PushSymTable(self, TABLE_MODULE, capacity);
+	push(self, TABLE_MODULE, capacity);
 
 	symref->module.table = self->top;
 	node->table = self->top;
@@ -452,7 +476,7 @@ static void ResolveModule(frame *self)
 	ResolveImports(self);
 	ResolveDeclarations(self);
 
-	PopSymTable(self);
+	pop(self);
 }
 
 static void ResolveImports(frame *self)
@@ -532,12 +556,12 @@ static void ResolveUDT(frame *self, decl *node)
 	//THEN load the udt table itself; returned pointer from PushSymTable
 	//lets us backfill the child pointer in order to doubly link the tables
 	const size_t capacity = node->udt.members.len;
-	PushSymTable(self, TABLE_UDT, capacity);
+	push(self, TABLE_UDT, capacity);
 	symref->udt.table = self->top;
 
 	ResolveMembers(self, node->udt.members);
 
-	PopSymTable(self);
+	pop(self);
 }
 
 //note; resolves the member's type but if the type is a named reference to a
