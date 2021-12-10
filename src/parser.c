@@ -256,7 +256,7 @@ static cstring *cStringFromLexeme(parser *self)
 #define usererror(msg, ...) 					               \
 do {								               \
 	xuser_error(self->root.alias, self->tok.line, msg, ##__VA_ARGS__);     \
-	self->errors++;					               \
+	self->errors++;					                       \
 } while (0)
 
 //if the extracted index is not a simple nonnegative integer less than LLONG_MAX
@@ -497,7 +497,7 @@ static decl RecDecl(parser *self)
 		return RecVariable(self);
 
 	default:
-		usererror(msg, view, len);
+		usererror(msg, len, view);
 		Throw(XXPARSE);
 		__builtin_unreachable();
 	}

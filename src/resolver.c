@@ -760,10 +760,10 @@ static symbol *LookupNamedType(frame *self, type *node)
 	underlying->udt.referenced = true;
 
 	pop(self);
-
 	return symref;
 
 fail:
+	pop(self);
 	return NULL;
 }
 
