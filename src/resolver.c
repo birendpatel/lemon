@@ -23,7 +23,7 @@ static symbol *InsertSymbol(frame *, const cstring *, symbol);
 static void ReportRedeclaration(frame *, const cstring *, symbol);
 static size_t GetSymbolLine(symbol);
 static void 
-ReportUnexpected(frame *, const symboltag, const cstring *, const size_t);
+ReportUnexpected(frame *, const cstring *, const symboltag, const size_t);
 
 static void check_pair(int *);
 static void PushSymTable(frame *self, symtable *table);
@@ -40,6 +40,8 @@ static void ResolveDeclarations(frame *);
 static void ResolveUDT(frame *, decl *);
 static void ResolveMembers(frame *, vector(Member));
 static symbol *LookupMemberType(frame *, type *);
+static symbol *LookupBaseType(frame *, type *);
+static symbol *LookupNamedType(frame *, type *);
 
 //------------------------------------------------------------------------------
 
@@ -335,18 +337,18 @@ static size_t GetSymbolLine(symbol sym)
 static void ReportUnexpected
 (
 	frame *self,
-	const symboltag want,
-	const cstring *have,
+	const cstring *want,
+	const symboltag have,
 	const size_t line
 )
 {
 	assert(self);
-	assert(have);
+	assert(want);
 
-	const cstring *wantname = SymbolLookupName(want);
+	const cstring *havename = SymbolLookupName(have);
 	const cstring *msg = "expected '%s' but found '%s'";
 
-	xuser_error(self->ast->alias, line, msg, want, have);
+	xuser_error(self->ast->alias, line, msg, want, havename);
 }
 
 //------------------------------------------------------------------------------
@@ -387,11 +389,11 @@ static void check_pair(int *pushed)
 	assert(*pushed == 0);
 }
 
-#define push(self, tag, cap) 					               \
+#define push(self, table) 					               \
 	__attribute__((cleanup(check_pair))) int sym_table_stack__pushed = 0;  \
 								               \
 	do {								       \
-		PushSymTable(self, tag, cap);			               \
+		PushSymTable(self, table);			               \
 		sym_table_stack__pushed++;				       \
 		assert(sym_table_stack__pushed == 1);			       \
 	} while (0)
