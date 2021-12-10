@@ -47,6 +47,7 @@ struct symbol {
 		} module;
 
 		struct {
+			symtable *table;
 			size_t line;
 			struct {
 				unsigned int referenced: 1;
@@ -163,3 +164,6 @@ symbol *SymTableInsert(symtable *table, const cstring *key, symbol value);
 //if the target is non-null then it contains a pointer  on return to the table 
 //in which the key exists
 symbol *SymTableLookup(symtable *table, const cstring *key, symtable **target);
+
+//convert symbol tag to a printable name
+const cstring *SymbolLookupName(const symboltag tag);

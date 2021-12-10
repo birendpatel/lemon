@@ -130,3 +130,25 @@ symbol *SymTableLookup(symtable *table, const cstring *key, symtable **target)
 	//else table is global and therefore the symbol cannot exist
 	return NULL;
 }
+
+const cstring *SymbolLookupName(const symboltag tag)
+{
+	static const cstring *lookup[] = {
+		[SYMBOL_NATIVE] = "native type",
+		[SYMBOL_MODULE] = "module",
+		[SYMBOL_IMPORT] = "import directive",
+		[SYMBOL_FUNCTION] = "function",
+		[SYMBOL_METHOD] = "method",
+		[SYMBOL_UDT] = "user defined type",
+		[SYMBOL_VARIABLE] = "variable",
+		[SYMBOL_FIELD] = "field",
+		[SYMBOL_PARAMETER] = "parameter",
+		[SYMBOL_LABEL] = "label"
+	};
+
+	if (tag < SYMBOL_NATIVE || tag > SYMBOL_LABEL) {
+		return "INVALID SYMBOL LOOKUP";
+	}
+
+	return lookup[tag];
+}

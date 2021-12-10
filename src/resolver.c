@@ -22,9 +22,12 @@ static void ReportUndeclared(frame *, const cstring *, const size_t);
 static symbol *InsertSymbol(frame *, const cstring *, symbol);
 static void ReportRedeclaration(frame *, const cstring *, symbol);
 static size_t GetSymbolLine(symbol);
+static void 
+ReportUnexpected(frame *, const symboltag, const cstring *, const size_t);
 
 static void check_pair(int *);
-static void PushSymTable(frame *, const tabletag, const size_t);
+static void PushSymTable(frame *self, symtable *table);
+static void PushNewSymTable(frame *, const tabletag, const size_t);
 static void PopSymTable(frame *);
 static type *UnwindType(type *);
 static cstring *StringFromType(type *);
@@ -246,7 +249,7 @@ static void ReportUndeclared(frame *self, const cstring *key, const size_t line)
 	assert(key);
 	assert(line);
 
-	const cstring *msg = "%s was not declared before use";
+	const cstring *msg = "'%s' was not declared before use";
 	const cstring *fname = self->ast->alias;
 
 	xuser_error(fname, line, msg, key);
@@ -329,16 +332,41 @@ static size_t GetSymbolLine(symbol sym)
 	}
 }
 
+static void ReportUnexpected
+(
+	frame *self,
+	const symboltag want,
+	const cstring *have,
+	const size_t line
+)
+{
+	assert(self);
+	assert(have);
+
+	const cstring *wantname = SymbolLookupName(want);
+	const cstring *msg = "expected '%s' but found '%s'";
+
+	xuser_error(self->ast->alias, line, msg, want, have);
+}
+
 //------------------------------------------------------------------------------
 //frame management
 
-static void PushSymTable(frame *self, const tabletag tag, const size_t cap)
+static void PushNewSymTable(frame *self, const tabletag tag, const size_t cap)
 {
 	assert(self);
 
 	symtable *top = SymTableSpawn(self->top, tag, cap);
 
 	self->top = top;
+}
+
+static void PushSymTable(frame *self, symtable *table)
+{
+	assert(self);
+	assert(table);
+
+	self->top = table;
 }
 
 static void PopSymTable(frame *self)
@@ -359,11 +387,21 @@ static void check_pair(int *pushed)
 	assert(*pushed == 0);
 }
 
-#define push(self, tag, cap) 						       \
+#define push(self, tag, cap) 					               \
 	__attribute__((cleanup(check_pair))) int sym_table_stack__pushed = 0;  \
 								               \
 	do {								       \
-		PushSymTable(self, tag, cap);				       \
+		PushSymTable(self, tag, cap);			               \
+		sym_table_stack__pushed++;				       \
+		assert(sym_table_stack__pushed == 1);			       \
+	} while (0)
+
+
+#define push_new(self, tag, cap) 					       \
+	__attribute__((cleanup(check_pair))) int sym_table_stack__pushed = 0;  \
+								               \
+	do {								       \
+		PushNewSymTable(self, tag, cap);			       \
 		sym_table_stack__pushed++;				       \
 		assert(sym_table_stack__pushed == 1);			       \
 	} while (0)
@@ -468,7 +506,7 @@ static void ResolveModule(frame *self)
 	symbol *symref = InsertSymbol(self, node->alias, sym);
 
 	const size_t capacity = node->imports.len + node->declarations.len;
-	push(self, TABLE_MODULE, capacity);
+	push_new(self, TABLE_MODULE, capacity);
 
 	symref->module.table = self->top;
 	node->table = self->top;
@@ -479,6 +517,14 @@ static void ResolveModule(frame *self)
 	pop(self);
 }
 
+//introduces an import symbol scoped to the frame's active module; the symbol
+//contains a backdoor to the referenced module's top-level symbol table.
+//
+//note; the module symbol gets marked with a reference but the import symbol
+//does not. This lets the sematic analyser differentiate between two classes
+//of errors: "module unused" versus "module imported but unused". Only the
+//main file can ever issue a "module unused". But, this is only relevant for
+//backend compiler tasks and assertions - not for end-user warnings.
 static void ResolveImports(frame *self)
 {
 	assert(self);
@@ -487,6 +533,7 @@ static void ResolveImports(frame *self)
 	symbol entry = {
 		.tag = SYMBOL_IMPORT,
 		.import = {
+			.table = NULL,
 			.line = 0,
 			.referenced = false
 		}
@@ -498,6 +545,12 @@ static void ResolveImports(frame *self)
 
 	while (i < imports.len) {
 		import *node = &imports.buffer[i];
+
+		symbol *symref = LookupSymbol(self, node->alias, node->line);
+		assert(symref->tag == SYMBOL_MODULE);
+		symref->module.referenced = true;
+
+		entry.import.table = symref->module.table;
 		entry.import.line = node->line;
 		node->entry = InsertSymbol(self, node->alias, entry);
 
@@ -550,32 +603,23 @@ static void ResolveUDT(frame *self, decl *node)
 		}
 	};
 
-	//place udt symbol in the parent
 	symbol *symref = InsertSymbol(self, node->udt.name, sym);
 
-	//THEN load the udt table itself; returned pointer from PushSymTable
-	//lets us backfill the child pointer in order to doubly link the tables
 	const size_t capacity = node->udt.members.len;
-	push(self, TABLE_UDT, capacity);
+	push_new(self, TABLE_UDT, capacity);
+
 	symref->udt.table = self->top;
+	node->udt.entry = symref;
 
 	ResolveMembers(self, node->udt.members);
 
 	pop(self);
 }
 
-//note; resolves the member's type but if the type is a named reference to a
-//global native then an error is issued. The type must be public, but native
-//types have no public/private qualifier and so the compiler refuses to resolve
-//the reference. In any case, even if the compiler could resolve it, it doesnt
-//make sense to do so because something like math.bool is obviously meaningless
 static void ResolveMembers(frame *self, vector(Member) members)
 {
 	assert(self);
 	assert(members.len > 0);
-
-	size_t fail = 0;
-	size_t i = 0;
 
 	symbol sym = {
 		.tag = SYMBOL_FIELD,
@@ -587,13 +631,22 @@ static void ResolveMembers(frame *self, vector(Member) members)
 		}
 	};
 
+	size_t fail = 0;
+	size_t i = 0;
+
 	while (i < members.len) {
 		member *node = &members.buffer[i];
 
 		sym.field.line = node->line;
+		sym.field.type = StringFromType(node->typ);
+		sym.field.public = node->public;
 
-		node->entry = InsertSymbol(self, node->name, sym);
+		symbol *symref = InsertSymbol(self, node->name, sym);
+		
+		node->entry = symref;
 
+		//check all field types before throwing an exception; lets us 
+		//generate many error messages within a single compile attempt
 		if (!LookupMemberType(self, node->typ)) {
 			fail++;
 		}
@@ -616,69 +669,99 @@ static symbol *LookupMemberType(frame *self, type *node)
 	assert(node);
 
 	node = UnwindType(node);
-	const cstring *fname = self->ast->alias;
-	symbol *ref = NULL;
-	cstring *key = NULL;
 
 	switch (node->tag) {
 	case NODE_BASE:
-		key = node->base.name;
-		ref = LookupSymbol(self, key, node->line);
-
-		switch (ref->tag) {
-		case SYMBOL_UDT:
-			ref->udt.referenced = true;
-			__attribute__((fallthrough));
-
-		case SYMBOL_NATIVE:
-			return ref;
-
-		default:
-			//TODO line info
-			xuser_error(fname, 0, "'%s' not a declared type", key);
-		}
-
-		return NULL;
+		return LookupBaseType(self, node);
 
 	case NODE_NAMED:
-		key = node->named.name;
-		ref = LookupSymbol(self, key, node->line);
-
-		if (ref->tag != SYMBOL_IMPORT) {
-			xuser_error(fname, 0 , "'%s' is not an import", key);
-			return NULL;
-		}
-
-		ref->import.referenced = true;
-
-		//TODO have to actually load the other module's symbol table..
-		//this is still searching in the local spaghetti stack
-		ref = LookupMemberType(self, node->named.reference);
-
-		if (!ref) {
-			return NULL;
-		}
-
-		if (ref->tag == SYMBOL_NATIVE) {
-			const cstring *msg = "named global type is redundant";
-			xuser_error(fname, 0, msg);
-			return NULL;
-		}
-
-		assert(ref->tag == SYMBOL_UDT);
-
-		if (!ref->udt.public) {
-			const cstring *msg = "reference to private type";
-			xuser_error(fname, 0, msg);
-			return NULL;
-		}
-
-		return ref;
-
+		return LookupNamedType(self, node);
+	
 	default:
 		assert(0 != 0 && "invalid node tag");
 		__builtin_unreachable();
 	}
 }
 
-//------------------------------------------------------------------------------
+//check that the atomic type exists in the current symbol table stack and if so
+//then mark it as referenced and return the associated symbol. Otherwise return
+//NULL.
+static symbol *LookupBaseType(frame *self, type *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_BASE);
+
+	const size_t line = node->line;
+	const cstring *key = node->base.name;
+	
+	symbol *symref = LookupSymbol(self, key, line);
+	const symboltag tag = symref->tag;
+
+	switch (tag) {
+	case SYMBOL_UDT:
+		symref->udt.referenced = true;
+		__attribute__((fallthrough));
+
+	case SYMBOL_NATIVE:
+		return symref;
+
+	default: /* label bypass */ ;
+		ReportUnexpected(self, "type", tag, line);
+		return NULL;
+	}
+}
+
+//check that the named type exists in the current symbol table stack and that its
+//base type is a public UDT. Mark the base type as referenced and return the
+//import symbol. Otherwise return NULL.
+static symbol *LookupNamedType(frame *self, type *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_NAMED);
+
+	const size_t line = node->line;
+	const cstring *key = node->named.name;
+
+	symbol *symref = LookupSymbol(self, key, line);
+	const symboltag tag = symref->tag;
+
+	switch (tag) {
+	case SYMBOL_IMPORT:
+		symref->import.referenced = true;
+		break;
+
+	default:
+		ReportUnexpected(self, "imported module name", tag, line);
+		goto fail;
+	}
+
+	push(self, symref->import.table);
+
+	symbol *underlying = LookupBaseType(self, node->named.reference);
+
+	if (underlying->tag == SYMBOL_NATIVE) {
+		const cstring *msg = "named global type is redundant";
+		xuser_error(self->ast->alias, line, msg);
+		goto fail;
+	}
+
+	assert(underlying->tag == SYMBOL_UDT);
+
+	if (!underlying->udt.public) {
+		const cstring *msg = "reference to a private type";
+		xuser_error(self->ast->alias, line, msg);
+		goto fail;
+	}
+
+	underlying->udt.referenced = true;
+
+	pop(self);
+
+	return symref;
+
+fail:
+	return NULL;
+}
+
