@@ -403,7 +403,7 @@ static void UnloadTemporaryStack(frame *self)
 	assert(self);
 	assert(self->history.len != 0 && "stack is empty");
 
-	(void) SymTableVectorPop(&self->history);
+	self->top = SymTableVectorPop(&self->history);
 }
 
 //debug mode wrappers to ensure that every push is paired with a pop
