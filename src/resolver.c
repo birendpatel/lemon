@@ -26,9 +26,10 @@ static void
 ReportUnexpected(frame *, const cstring *, const symboltag, const size_t);
 
 static void check_pair(int *);
-static void PushSymTable(frame *self, symtable *table);
-static void PushNewSymTable(frame *, const tabletag, const size_t);
+static void PushSymTable(frame *, const tabletag, const size_t);
 static void PopSymTable(frame *);
+static void LoadTemporaryStack(frame *, symtable *);
+static void UnloadTemporaryStack(frame *);
 static type *UnwindType(type *);
 static cstring *StringFromType(type *);
 static void StringFromType__recursive(vstring *, type *);
@@ -189,11 +190,18 @@ static void ReportCycle(const cstring *parent, const cstring *child)
 //------------------------------------------------------------------------------
 // Phase 2: resolve symbols
 
+make_vector(symtable *, SymTable, static)
+
+//the frame tracks stacks of data during the depth-first AST traveral
 //@ast: root node of the AST currently undergoing symbol resolution
-//@top: active LIFO stack within the n-ary symtable tree; non-null
+//@top: leaf table of the active stack within the n-ary symtable tree; non-null
+//@history: stack of symbol table stacks; whenever the compiler needs to context
+//switch to a different module's root symbol table, the previous symbol table
+//stack is recorded in the history for later restoration.
 struct frame {
 	module *ast;
 	symtable *top;
+	vector(SymTable) history;
 };
 
 static bool ResolveSymbols(network *net)
@@ -204,14 +212,18 @@ static bool ResolveSymbols(network *net)
 
 	CEXCEPTION_T e;
 
+	frame active = {
+		.ast = NULL,
+		.top = NULL,
+		.history = SymTableVectorInit(0, VECTOR_DEFAULT_CAPACITY)
+	};
+
 	Try {
 		module *node = net->head;
 
 		while (node) {
-			frame active = {
-				.ast = node,
-				.top = net->global,
-			};
+			active.ast = node;
+			active.top = net->global;
 
 			ResolveModule(&active);
 
@@ -354,21 +366,13 @@ static void ReportUnexpected
 //------------------------------------------------------------------------------
 //frame management
 
-static void PushNewSymTable(frame *self, const tabletag tag, const size_t cap)
+static void PushSymTable(frame *self, const tabletag tag, const size_t cap)
 {
 	assert(self);
 
 	symtable *top = SymTableSpawn(self->top, tag, cap);
 
 	self->top = top;
-}
-
-static void PushSymTable(frame *self, symtable *table)
-{
-	assert(self);
-	assert(table);
-
-	self->top = table;
 }
 
 static void PopSymTable(frame *self)
@@ -382,6 +386,26 @@ static void PopSymTable(frame *self)
 	self->top = old_top->parent;
 }
 
+//save the current symbol table chain and load a new one temporarily
+static void LoadTemporaryStack(frame *self, symtable *table)
+{
+	assert(self);
+	assert(table);
+
+	SymTableVectorPush(&self->history, self->top);
+
+	self->top = table;
+}
+
+//restore the previous symbol table chain
+static void UnloadTemporaryStack(frame *self)
+{
+	assert(self);
+	assert(self->history.len != 0 && "stack is empty");
+
+	(void) SymTableVectorPop(&self->history);
+}
+
 //debug mode wrappers to ensure that every push is paired with a pop
 static void check_pair(int *pushed)
 {
@@ -389,28 +413,34 @@ static void check_pair(int *pushed)
 	assert(*pushed == 0);
 }
 
-#define push(self, table) 					               \
-	__attribute__((cleanup(check_pair))) int sym_table_stack__pushed = 0;  \
+#define push(self, tag, cap) 					               \
+	__attribute__((cleanup(check_pair))) int sym_table__pushed = 0;        \
 								               \
 	do {								       \
-		PushSymTable(self, table);			               \
-		sym_table_stack__pushed++;				       \
-		assert(sym_table_stack__pushed == 1);			       \
-	} while (0)
-
-
-#define push_new(self, tag, cap) 					       \
-	__attribute__((cleanup(check_pair))) int sym_table_stack__pushed = 0;  \
-								               \
-	do {								       \
-		PushNewSymTable(self, tag, cap);			       \
-		sym_table_stack__pushed++;				       \
-		assert(sym_table_stack__pushed == 1);			       \
+		PushSymTable(self, tag, cap);			               \
+		sym_table__pushed++;				               \
+		assert(sym_table__pushed == 1);  			       \
 	} while (0)
 
 #define pop(self) 							       \
 	do {								       \
 		PopSymTable(self);					       \
+		sym_table__pushed--;			        	       \
+		assert(sym_table__pushed == 0);                                \
+	} while (0)
+
+#define push_stack(self, table) 					       \
+	__attribute__((cleanup(check_pair))) int sym_table_stack__pushed = 0;  \
+								               \
+	do {								       \
+		LoadTemporaryStack(self, table);			       \
+		sym_table_stack__pushed++;				       \
+		assert(sym_table_stack__pushed == 1);			       \
+	} while (0)
+
+#define pop_stack(self) 						       \
+	do {								       \
+		UnloadTemporaryStack(self);				       \
 		sym_table_stack__pushed--;			       	       \
 		assert(sym_table_stack__pushed == 0);                          \
 	} while (0)
@@ -508,7 +538,7 @@ static void ResolveModule(frame *self)
 	symbol *symref = InsertSymbol(self, node->alias, sym);
 
 	const size_t capacity = node->imports.len + node->declarations.len;
-	push_new(self, TABLE_MODULE, capacity);
+	push(self, TABLE_MODULE, capacity);
 
 	symref->module.table = self->top;
 	node->table = self->top;
@@ -608,7 +638,7 @@ static void ResolveUDT(frame *self, decl *node)
 	symbol *symref = InsertSymbol(self, node->udt.name, sym);
 
 	const size_t capacity = node->udt.members.len;
-	push_new(self, TABLE_UDT, capacity);
+	push(self, TABLE_UDT, capacity);
 
 	symref->udt.table = self->top;
 	node->udt.entry = symref;
@@ -739,14 +769,14 @@ static symbol *LookupNamedType(frame *self, type *node)
 		goto fail;
 	}
 
-	push(self, symref->import.table);
+	push_stack(self, symref->import.table);
 
 	symbol *underlying = LookupBaseType(self, node->named.reference);
 
 	if (underlying->tag == SYMBOL_NATIVE) {
 		const cstring *msg = "named global type is redundant";
 		xuser_error(self->ast->alias, line, msg);
-		goto fail;
+		goto restore;
 	}
 
 	assert(underlying->tag == SYMBOL_UDT);
@@ -754,16 +784,18 @@ static symbol *LookupNamedType(frame *self, type *node)
 	if (!underlying->udt.public) {
 		const cstring *msg = "reference to a private type";
 		xuser_error(self->ast->alias, line, msg);
-		goto fail;
+		goto restore;
 	}
 
 	underlying->udt.referenced = true;
 
-	pop(self);
+	pop_stack(self);
 	return symref;
 
+restore:
+	pop_stack(self);
+
 fail:
-	pop(self);
 	return NULL;
 }
 
