@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "arena.h"
 #include "file.h"
@@ -358,7 +359,12 @@ static void ReportUnexpected
 	assert(want);
 
 	const cstring *havename = SymbolLookupName(have);
-	const cstring *msg = "expected '%s' but found '%s'";
+	cstring *msg = "expected %s but found %s";
+
+	if (strcmp(want, "type") == 0 && have == SYMBOL_IMPORT) {
+		msg = "expected %s but found %s"
+		      "\n\t-> did you forget to reference an imported type?";
+	}
 
 	xuser_error(self->ast->alias, line, msg, want, havename);
 }
@@ -758,7 +764,6 @@ static symbol *LookupNamedType(frame *self, type *node)
 
 	symbol *symref = LookupSymbol(self, key, line);
 	const symboltag tag = symref->tag;
-
 	switch (tag) {
 	case SYMBOL_IMPORT:
 		symref->import.referenced = true;
