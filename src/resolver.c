@@ -40,15 +40,27 @@ static void ResolveModule(frame *);
 static void ResolveImports(frame *);
 static void ResolveDeclarations(frame *);
 
+static void ResolveUDTPrototype(frame *, decl *);
 static void ResolveUDT(frame *, decl *);
 static void ResolveMembers(frame *, vector(Member));
-static symbol *LookupMemberType(frame *, type *);
 
+static symbol *LookupType(frame *, type *);
 static symbol *LookupBaseType(frame *, type *);
 static symbol *LookupNamedType(frame *, type *);
 
+static void ResolveFunctionPrototype(frame *, decl *);
 static void ResolveFunction(frame *, decl *);
+static size_t CountDeclsWithinFiat(vector(Fiat));
 static cstring *CreateFuncSignature(decl *);
+static void ResolveParameters(frame *, vector(Param));
+static void ResolveReturnType(frame *, type *);
+
+static void ResolveMethodPrototype(frame *, decl *);
+static void ResolveMethod(frame *, decl *);
+static cstring *CreateMethodSignature(decl *);
+static void ResolveRecvType(frame *, type *);
+
+static void ResolveBlock(frame *, stmt *);
 
 //------------------------------------------------------------------------------
 
@@ -606,30 +618,39 @@ static void ResolveDeclarations(frame *self)
 	assert(self);
 	assert(self->top->tag == TABLE_MODULE);
 
-	static void (*const jump[])(frame *, decl *) = {
-		[NODE_UDT] = ResolveUDT,
-		[NODE_FUNCTION] = ResolveFunction
-		/*
-		[NODE_METHOD] = ResolveMethod,
-		[NODE_VARIABLE] = ResolveVariable
-		*/
+	static void (*const jump[][2])(frame *, decl *) = {
+		[NODE_UDT] = {
+			ResolveUDTPrototype,
+			ResolveUDT
+		},
+		[NODE_FUNCTION] = {
+			ResolveFunctionPrototype,
+			ResolveFunction
+		},
+		[NODE_METHOD] = {
+			ResolveMethodPrototype,
+			ResolveMethod
+		}
+		//[NODE_VARIABLE] = [ResolveVariableProtoyype, ResolveVariable]
 	};
 
 	vector(Decl) declarations = self->ast->declarations;
 
-	size_t i = 0;
-
-	while (i < declarations.len) {
+	//forward declarations 
+	for (size_t i = 0; i < declarations.len; i++) {
 		decl *node = &declarations.buffer[i];
-		jump[node->tag](self, node);
+		jump[node->tag][0](self, node);
+	}
 
-		i++;
+	for (size_t i = 0; i < declarations.len; i++) {
+		decl *node = &declarations.buffer[i];
+		jump[node->tag][1](self, node);
 	}
 }
 
 //------------------------------------------------------------------------------
 
-static void ResolveUDT(frame *self, decl *node)
+static void ResolveUDTPrototype(frame *self, decl *node)
 {
 	assert(self);
 	assert(node);
@@ -646,7 +667,16 @@ static void ResolveUDT(frame *self, decl *node)
 		}
 	};
 
-	symbol *symref = InsertSymbol(self, node->udt.name, sym);
+	(void) InsertSymbol(self, node->udt.name, sym);
+}
+
+static void ResolveUDT(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_UDT);
+
+	symbol *symref = LookupSymbol(self, node->udt.name, node->line);
 
 	const size_t capacity = node->udt.members.len;
 	push(self, TABLE_UDT, capacity);
@@ -690,7 +720,7 @@ static void ResolveMembers(frame *self, vector(Member) members)
 
 		//check all field types before throwing an exception; lets us 
 		//generate many error messages within a single compile attempt
-		if (!LookupMemberType(self, node->typ)) {
+		if (!LookupType(self, node->typ)) {
 			fail++;
 		}
 
@@ -702,11 +732,13 @@ static void ResolveMembers(frame *self, vector(Member) members)
 	}
 }
 
+//-----------------------------------------------------------------------------
+
 //if the node is a base type, returns a reference to the type symbol entry. If
 //the node is a named type, returns a reference to its base type symbol entry.
 //returns NULL if any lookup fails or if the lookup succeeds but the referenced
 //symbol is semantically meaningless.
-static symbol *LookupMemberType(frame *self, type *node)
+static symbol *LookupType(frame *self, type *node)
 {
 	assert(self);
 	assert(node);
@@ -811,7 +843,7 @@ fail:
 
 //------------------------------------------------------------------------------
 
-static void ResolveFunction(frame *self, decl *node)
+static void ResolveFunctionPrototype(frame *self, decl *node)
 {
 	assert(self);
 	assert(node);
@@ -827,22 +859,48 @@ static void ResolveFunction(frame *self, decl *node)
 		}
 	};
 
-	symbol *symref = InsertSymbol(self, node->function.name, sym);
+	(void) InsertSymbol(self, node->function.name, sym);
+}
 
+static void ResolveFunction(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_FUNCTION);
+	
+	symbol *symref = LookupSymbol(self, node->function.name, node->line);
+
+	vector(Fiat) fiats = node->function.block->block.fiats;
+	const size_t num_decls = CountDeclsWithinFiat(fiats);
 	const size_t num_params = node->function.params.len;
-	const size_t num_fiats = node->function.block->block.fiats.len;
-	const size_t table_capacity = num_params + num_fiats;
+	const size_t table_capacity = num_params + num_decls;
 
 	push(self, TABLE_FUNCTION, table_capacity);
-
-	//add param and fiats to func table
-	
-	//check all types
 
 	symref->function.table = self->top;
 	node->function.entry = symref;
 
+	//add param and fiats to func table
+	ResolveParameters(self, node->function.params);
+	ResolveReturnType(self, node->function.ret);
+	ResolveBlock(self, node->function.block);
+	
 	pop(self);
+}
+
+static size_t CountDeclsWithinFiat(vector(Fiat) fiats)
+{
+	size_t count = 0;
+
+	for (size_t i = 0; i < fiats.len; i++) {
+		fiat node = fiats.buffer[i];
+
+		if (node.tag == NODE_DECL) {
+			count++;
+		}
+	}
+
+	return count;	
 }
 
 static cstring *CreateFuncSignature(decl *node)
@@ -875,4 +933,166 @@ static cstring *CreateFuncSignature(decl *node)
 	}
 
 	return cStringFromvString(&vstr);
+}
+
+static void ResolveParameters(frame *self, vector(Param) params)
+{
+	assert(self);
+
+	symbol sym = {
+		.tag = SYMBOL_PARAMETER,
+		.parameter = {
+			.type = NULL,
+			.line = 0,
+			.referenced = false
+		}
+	};
+
+	size_t fail = 0;
+	size_t i = 0;
+
+	while (i < params.len) {
+		param *node = &params.buffer[i];
+
+		sym.parameter.type = StringFromType(node->typ);
+		sym.parameter.line = node->line;
+
+		symbol *symref = InsertSymbol(self, node->name, sym);
+
+		if (!LookupType(self, node->typ)) {
+			fail++;
+		}
+
+		node->entry = symref;
+
+		i++;
+	}
+
+	if (fail) {
+		Throw(XXSYMBOL);
+	}
+}
+
+//if node is null (returns void) then no-op
+static void ResolveReturnType(frame *self, type *node)
+{
+	assert(self);
+
+	if (!node) {
+		return;
+	}
+
+	if (!LookupType(self, node)) {
+		Throw(XXSYMBOL);
+	}
+}
+
+//-----------------------------------------------------------------------------
+
+static void ResolveMethodPrototype(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_METHOD);
+	
+	symbol sym = {
+		.tag = SYMBOL_METHOD,
+		.method = {
+			.table = NULL,
+			.signature = CreateMethodSignature(node),
+			.line = node->line,
+			.referenced = false
+		}
+	};
+
+	(void) InsertSymbol(self, node->method.name, sym);
+}
+
+static void ResolveMethod(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_METHOD);
+	
+	symbol *symref = LookupSymbol(self, node->method.name, node->line);
+
+	vector(Fiat) fiats = node->method.block->block.fiats;
+	const size_t num_decls = CountDeclsWithinFiat(fiats);
+	const size_t num_params = node->method.params.len;
+	const size_t table_capacity = num_params + num_decls;
+
+	push(self, TABLE_METHOD, table_capacity);
+
+	symref->method.table = self->top;
+	node->method.entry = symref;
+
+	ResolveParameters(self, node->method.params);
+	ResolveRecvType(self, node->method.recv);
+	ResolveReturnType(self, node->method.ret);
+	ResolveBlock(self, node->method.block);
+	
+	pop(self);
+}
+
+static cstring *CreateMethodSignature(decl *node)
+{
+	assert(node);
+	assert(node->tag == NODE_METHOD);
+
+	vstring vstr = vStringInit(VECTOR_DEFAULT_CAPACITY);
+
+	vector(Param) params = node->method.params;
+
+	//comma concatenate the parameter type list
+	if (params.len != 0) {
+		for (size_t i = 0; i < params.len; i++) {
+			if (i > 0) {
+				vStringAppend(&vstr, ',');
+			}
+
+			type *node = params.buffer[i].typ;
+			vStringAppendcString(&vstr, StringFromType(node));
+		}
+	}
+
+	vStringAppend(&vstr, ':');
+
+	type *return_type = node->method.ret;
+
+	if (return_type) {
+		vStringAppendcString(&vstr, StringFromType(return_type));
+	}
+
+	vStringAppend(&vstr, ':');
+
+	type *recv_type = node->method.recv;
+
+	if (recv_type) {
+		vStringAppendcString(&vstr, StringFromType(recv_type));
+	}
+
+	return cStringFromvString(&vstr);
+}
+
+//if node is null (returns void) then no-op
+static void ResolveRecvType(frame *self, type *node)
+{
+	assert(self);
+
+	if (!node) {
+		return;
+	}
+
+	if (!LookupType(self, node)) {
+		Throw(XXSYMBOL);
+	}
+}
+
+//-----------------------------------------------------------------------------
+
+static void ResolveBlock(frame *self, stmt *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_BLOCK);
 }
