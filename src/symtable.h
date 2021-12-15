@@ -170,3 +170,6 @@ symbol *SymTableLookup(symtable *table, const cstring *key, symtable **target);
 
 //convert symbol tag to a printable name
 const cstring *SymbolLookupName(const symboltag tag);
+
+//print the input symbol table and its children, grandchildren, etc.
+void SymTablePrint(symtable *root);

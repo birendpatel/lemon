@@ -152,3 +152,12 @@ const cstring *SymbolLookupName(const symboltag tag)
 
 	return lookup[tag];
 }
+
+//------------------------------------------------------------------------------
+
+void SymTablePrint(symtable *root)
+{
+	assert(root);
+
+	
+}

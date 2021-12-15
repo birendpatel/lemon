@@ -57,6 +57,9 @@ int main(int argc, char **argv)
 
 	}
 
+	if (OptionsDsym()) {
+		SymTablePrint(net->global);
+	}
 	
 	Terminate(EXIT_SUCCESS);
 }

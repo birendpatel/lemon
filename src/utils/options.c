@@ -26,6 +26,7 @@ struct options {
 		unsigned int state: 1;
 		unsigned int tokens : 1;
 		unsigned int dependencies : 1;
+		unsigned int symbols : 1;
 	} diagnostic;
 	struct {
 		size_t arena_default;
@@ -36,7 +37,8 @@ static options opt = {
 	.diagnostic = {
 		.state = 0,
 		.tokens = 0,
-		.dependencies = 0
+		.dependencies = 0,
+		.symbols = 0
 	},
 	.memory = {
 		.arena_default = MiB(1)
@@ -56,6 +58,7 @@ enum argp_keys {
 	key_diagnostic_state = 256,
 	key_diagnostic_tokens = 257,
 	key_diagnostic_dependencies = 258,
+	key_diagnostic_symbols = 259,
 	key_arena_default = 'a',
 };
 
@@ -84,10 +87,16 @@ static argp_option options_info[] = {
 		.group = group_diagnostic
 	},
 	{
+		.name  = "Dsym",
+		.key   = key_diagnostic_symbols,
+		.doc   = "Print the symbol table parent pointer tree.",
+		.group = group_diagnostic
+	},
+	{
 		.name  = "Arena",
 		.key   = key_arena_default,
 		.arg   = "megabytes",
-		.doc   = "Set the default arena size up to 1 GiB",
+		.doc   = "Set the default arena size up to 1 GiB.",
 		.group = group_memory
 	},
 
@@ -107,6 +116,10 @@ static error_t Parser(int key, char *arg, unused argp_state *state)
 
 	case key_diagnostic_dependencies:
 		opt.diagnostic.dependencies = 1;
+		break;
+
+	case key_diagnostic_symbols:
+		opt.diagnostic.symbols = 1;
 		break;
 
 	case key_arena_default: /* label bypass */ ;
@@ -206,6 +219,11 @@ bool OptionsDtokens(void)
 bool OptionsDdeps(void)
 {
 	return opt.diagnostic.dependencies;
+}
+
+bool OptionsDsym(void)
+{
+	return opt.diagnostic.symbols;
 }
 
 size_t OptionsArena(void)
