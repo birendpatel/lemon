@@ -39,11 +39,16 @@ static bool ResolveSymbols(network *);
 static void ResolveModule(frame *);
 static void ResolveImports(frame *);
 static void ResolveDeclarations(frame *);
+
 static void ResolveUDT(frame *, decl *);
 static void ResolveMembers(frame *, vector(Member));
 static symbol *LookupMemberType(frame *, type *);
+
 static symbol *LookupBaseType(frame *, type *);
 static symbol *LookupNamedType(frame *, type *);
+
+static void ResolveFunction(frame *, decl *);
+static cstring *CreateFuncSignature(decl *);
 
 //------------------------------------------------------------------------------
 
@@ -213,7 +218,7 @@ static bool ResolveSymbols(network *net)
 
 	CEXCEPTION_T e;
 
-	frame active = {
+	frame current = {
 		.ast = NULL,
 		.top = NULL,
 		.history = SymTableVectorInit(0, VECTOR_DEFAULT_CAPACITY)
@@ -223,10 +228,10 @@ static bool ResolveSymbols(network *net)
 		module *node = net->head;
 
 		while (node) {
-			active.ast = node;
-			active.top = net->global;
+			current.ast = node;
+			current.top = net->global;
 
-			ResolveModule(&active);
+			ResolveModule(&current);
 
 			node = node->next;
 		}
@@ -603,8 +608,8 @@ static void ResolveDeclarations(frame *self)
 
 	static void (*const jump[])(frame *, decl *) = {
 		[NODE_UDT] = ResolveUDT,
+		[NODE_FUNCTION] = ResolveFunction
 		/*
-		[NODE_FUNCTION] = ResolveFunction,
 		[NODE_METHOD] = ResolveMethod,
 		[NODE_VARIABLE] = ResolveVariable
 		*/
@@ -804,3 +809,70 @@ fail:
 	return NULL;
 }
 
+//------------------------------------------------------------------------------
+
+static void ResolveFunction(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_FUNCTION);
+	
+	symbol sym = {
+		.tag = SYMBOL_FUNCTION,
+		.function = {
+			.table = NULL,
+			.signature = CreateFuncSignature(node),
+			.line = node->line,
+			.referenced = false
+		}
+	};
+
+	symbol *symref = InsertSymbol(self, node->function.name, sym);
+
+	const size_t num_params = node->function.params.len;
+	const size_t num_fiats = node->function.block->block.fiats.len;
+	const size_t table_capacity = num_params + num_fiats;
+
+	push(self, TABLE_FUNCTION, table_capacity);
+
+	//add param and fiats to func table
+	
+	//check all types
+
+	symref->function.table = self->top;
+	node->function.entry = symref;
+
+	pop(self);
+}
+
+static cstring *CreateFuncSignature(decl *node)
+{
+	assert(node);
+	assert(node->tag == NODE_FUNCTION);
+
+	vstring vstr = vStringInit(VECTOR_DEFAULT_CAPACITY);
+
+	vector(Param) params = node->function.params;
+
+	//comma concatenate the parameter type list
+	if (params.len != 0) {
+		for (size_t i = 0; i < params.len; i++) {
+			if (i > 0) {
+				vStringAppend(&vstr, ',');
+			}
+
+			type *node = params.buffer[i].typ;
+			vStringAppendcString(&vstr, StringFromType(node));
+		}
+	}
+
+	vStringAppend(&vstr, ':');
+
+	type *return_type = node->function.ret;
+
+	if (return_type) {
+		vStringAppendcString(&vstr, StringFromType(return_type));
+	}
+
+	return cStringFromvString(&vstr);
+}

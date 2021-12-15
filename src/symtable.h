@@ -54,6 +54,9 @@ struct symbol {
 			};
 		} import;
 
+		//signature translates func (int32, bool) -> float64 to the
+		//string "int32,bool,float64", void parameter list results in
+		//":float64" and void return results in "int32,bool:"
 		struct {
 			symtable *table;
 			cstring *signature;
