@@ -60,6 +60,9 @@ static void ResolveMethod(frame *, decl *);
 static cstring *CreateMethodSignature(decl *);
 static void ResolveRecvType(frame *, type *);
 
+static void ResolveVariablePrototype(frame *, decl *);
+static void ResolveVariable(frame *, decl *);
+
 static void ResolveBlock(frame *, stmt *);
 
 //------------------------------------------------------------------------------
@@ -630,8 +633,11 @@ static void ResolveDeclarations(frame *self)
 		[NODE_METHOD] = {
 			ResolveMethodPrototype,
 			ResolveMethod
+		},
+		[NODE_VARIABLE] = {
+			ResolveVariablePrototype,
+			ResolveVariable
 		}
-		//[NODE_VARIABLE] = [ResolveVariableProtoyype, ResolveVariable]
 	};
 
 	vector(Decl) declarations = self->ast->declarations;
@@ -814,6 +820,10 @@ static symbol *LookupNamedType(frame *self, type *node)
 	push_stack(self, symref->import.table);
 
 	symbol *underlying = LookupBaseType(self, node->named.reference);
+
+	if (!underlying) {
+		goto restore;
+	}
 
 	if (underlying->tag == SYMBOL_NATIVE) {
 		const cstring *msg = "named global type is redundant";
@@ -1084,6 +1094,42 @@ static void ResolveRecvType(frame *self, type *node)
 	}
 
 	if (!LookupType(self, node)) {
+		Throw(XXSYMBOL);
+	}
+}
+
+//-----------------------------------------------------------------------------
+
+static void ResolveVariablePrototype(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_VARIABLE);
+
+	symbol sym = {
+		.tag = SYMBOL_VARIABLE,
+		.variable = {
+			.type = StringFromType(node->variable.vartype),
+			.line = node->line,
+			.referenced = false,
+			.public = node->variable.public
+		}
+	};
+
+	(void) InsertSymbol(self, node->variable.name, sym);
+}
+
+static void ResolveVariable(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_VARIABLE);
+
+	symbol *symref = LookupSymbol(self, node->variable.name, node->line);
+
+	node->variable.entry = symref;
+
+	if (!LookupType(self, node->variable.vartype)) {
 		Throw(XXSYMBOL);
 	}
 }
