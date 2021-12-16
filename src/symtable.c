@@ -4,6 +4,8 @@
 #include <stdint.h>
 
 #include "arena.h"
+#include "json.h"
+#include "str.h"
 #include "symtable.h"
 
 //------------------------------------------------------------------------------
@@ -153,11 +155,34 @@ const cstring *SymbolLookupName(const symboltag tag)
 	return lookup[tag];
 }
 
+const cstring *SymTableLookupNam(const tabletag tag)
+{
+	static const cstring *lookup[] = {
+		[TABLE_GLOBAL] = "global table",
+		[TABLE_MODULE] = "module table",
+		[TABLE_FUNCTION] = "function table",
+		[TABLE_METHOD] = "method table",
+		[TABLE_UDT] = "udt table"
+	};
+
+	if (tag < TABLE_GLOBAL || tag > TABLE_UDT) {
+		return "INVALID TABLE LOOKUP";
+	}
+
+	return lookup[tag];
+}
+
 //------------------------------------------------------------------------------
 
-void SymTablePrint(symtable *root)
+cstring *SymTableToJSON(symtable *root)
 {
 	assert(root);
 
-	
+	json *output = JsonInit();
+
+	OpenObject(output);
+
+	CloseObject(output);
+
+	return JsonToString(output); 
 }

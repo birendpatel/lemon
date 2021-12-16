@@ -58,7 +58,8 @@ int main(int argc, char **argv)
 	}
 
 	if (OptionsDsym()) {
-		SymTablePrint(net->global);
+		const cstring *json = SymTableToJSON(net->global);
+		puts(json);
 	}
 	
 	Terminate(EXIT_SUCCESS);

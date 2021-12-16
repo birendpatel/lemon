@@ -168,8 +168,11 @@ symbol *SymTableInsert(symtable *table, const cstring *key, symbol value);
 //in which the key exists
 symbol *SymTableLookup(symtable *table, const cstring *key, symtable **target);
 
+//convert symbol table tag to a printable name
+const cstring *SymTableLookupName(const tabletag tag);
+
 //convert symbol tag to a printable name
 const cstring *SymbolLookupName(const symboltag tag);
 
 //print the input symbol table and its children, grandchildren, etc.
-void SymTablePrint(symtable *root);
+cstring *SymTableToJSON(symtable *root);
