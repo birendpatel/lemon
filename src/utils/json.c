@@ -45,19 +45,20 @@ static void AddIndentation(json *self)
 
 //------------------------------------------------------------------------------
 
-JsonOpenObject(json *self)
+void JsonOpenObject(json *self)
 {
 	assert(self);
 
 	const cstring *open = "{\n";
 
+	vStringAppend(&self->vstr, '\n');
+	AddIndentation(self);
 	vStringAppendcString(&self->vstr, open);
 
 	self->depth++;
-	AddIndentation(self);
 }
 
-JsonCloseObject(json *self)
+void JsonCloseObject(json *self)
 {
 	assert(self);
 

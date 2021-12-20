@@ -180,9 +180,11 @@ cstring *SymTableToJSON(symtable *root)
 
 	json *output = JsonInit();
 
-	OpenObject(output);
+	JsonOpenObject(output);
+	JsonOpenObject(output);
 
-	CloseObject(output);
+	JsonCloseObject(output);
+	JsonCloseObject(output);
 
 	return JsonToString(output); 
 }
