@@ -8,15 +8,17 @@
 
 #include <stdint.h>
 
+#include "map.h"
 #include "str.h"
 #include "vector.h"
-
-//------------------------------------------------------------------------------
-// JSON parse trees must be rooted at either a json_object or json_array node
 
 typedef struct json_object json_object;
 typedef struct json_value json_value;
 typedef struct json_array json_array;
+
+//------------------------------------------------------------------------------
+//true, false, and null tags do not have an associated payload; the object,
+//array, and string pointers must not be NULL
 
 typedef enum json_value_tag {
 	JSON_VALUE_OBJECT,
@@ -28,8 +30,6 @@ typedef enum json_value_tag {
 	JSON_VALUE_NULL,
 } json_value_tag;
 
-//true, false, and null tags do not have an associated payload; the object,
-//array, and string pointers must not be NULL
 struct json_value {
 	json_value_tag tag;
 	union {
@@ -37,23 +37,38 @@ struct json_value {
 		json_array *array;
 		cstring *string;
 		int64_t number;
-	}
+	};
 };
 
 make_map(json_value, JsonValue, static)
+
 make_vector(json_value, JsonValue, static)
+
+//------------------------------------------------------------------------------
+//JSON parse trees must be rooted at either a json_object or json_array node
 
 struct json_object {
 	map(JsonValue) values;
 };
 
+//returned pointer is always valid
+json_object *JsonObjectInit(void);
+
+//return false if the key already exists
+bool JsonObjectAdd(json_object *object, cstring *key, json_value value);
+
 struct json_array {
 	vector(JsonValue) values;
 };
 
-//------------------------------------------------------------------------------
-// convert a JSON parse tree to a dynamically allocated C string or return NULL
-// if the input parse tree is ill-formed
+//returned pointer is always valid
+json_array *JsonArrayInit(void);
 
-cstring *JsonSerializeObject(json_object object);
-cstring *JsonSerializeArray(json_array array);
+void JsonArrayAdd(json_array *array, json_value value);
+
+//------------------------------------------------------------------------------
+//convert a JSON parse tree to a dynamically allocated C string or return NULL
+//if the input parse tree is ill-formed
+
+cstring *JsonSerializeObject(const json_object *object);
+cstring *JsonSerializeArray(const json_array *array);

@@ -178,13 +178,7 @@ cstring *SymTableToJSON(symtable *root)
 {
 	assert(root);
 
-	json *output = JsonInit();
+	json_object *object = JsonObjectInit();
 
-	JsonOpenObject(output);
-	JsonOpenObject(output);
-
-	JsonCloseObject(output);
-	JsonCloseObject(output);
-
-	return JsonToString(output); 
+	return JsonSerializeObject(object);
 }

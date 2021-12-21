@@ -1,72 +1,114 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
-#include <stdlib.h>
-
 #include "arena.h"
 #include "json.h"
 
-static void AddIndentation(json *);
+typedef struct json json;
 
-//@vstr: contains the serialized output
-//@indent: tracks nesting depth 
-struct json {
-	vstring vstr;
-	size_t depth;
-};
+static cstring *Serialize(const void *, const json_value_tag);
+static void SerializeObject(json *, const json_object *);
+static void Dispatch(json *, const json_value);
 
 //------------------------------------------------------------------------------
 
-json *JsonInit(void)
+json_object *JsonObjectInit(void)
 {
-	json *new = allocate(sizeof(json));
-	new->vstr = vStringInit(KiB(1));
-	new->depth = 0;
+	const size_t bytes = sizeof(json_object);
+	json_object *new = allocate(bytes);
+	new->values = JsonValueMapInit(MAP_DEFAULT_CAPACITY);
 
 	return new;
 }
 
-cstring *JsonToString(json *self)
+bool JsonObjectAdd(json_object *object, cstring *key, json_value value)
 {
-	assert(self);
+	assert(object);
+	assert(key);
 
-	cstring *buffer = cStringFromvString(&self->vstr);
-
-	return cStringDuplicate(buffer);
+	return JsonValueMapInsert(&object->values, key, value);
 }
 
-static void AddIndentation(json *self)
+json_array *JsonArrayInit(void)
 {
-	assert(self);
+	const size_t bytes = sizeof(json_array);
+	json_array *new = allocate(bytes);
+	new->values = JsonValueVectorInit(0, VECTOR_DEFAULT_CAPACITY);
 
-	for (size_t i = 0; i < self->depth; i++) {
-		vStringAppend(&self->vstr, '\t');
-	}
+	return new;
+}
+
+void JsonArrayAdd(json_array *array, json_value value)
+{
+	assert(array);
+
+	JsonValueVectorPush(&array->values, value);
 }
 
 //------------------------------------------------------------------------------
+// pre-order traversal
 
-void JsonOpenObject(json *self)
+cstring *JsonSerializeObject(const json_object *object)
 {
-	assert(self);
-
-	const cstring *open = "{\n";
-
-	vStringAppend(&self->vstr, '\n');
-	AddIndentation(self);
-	vStringAppendcString(&self->vstr, open);
-
-	self->depth++;
+	return Serialize(object, JSON_VALUE_OBJECT);
 }
 
-void JsonCloseObject(json *self)
+cstring *JsonSerializeArray(const json_array *array)
+{
+	return Serialize(array, JSON_VALUE_ARRAY);
+}
+
+struct json {
+	vstring vstr;
+	size_t indent;
+};
+
+static cstring *Serialize(const void *data, const json_value_tag tag)
+{
+	assert(data);
+	assert(tag == JSON_VALUE_OBJECT || tag == JSON_VALUE_ARRAY);
+
+	json js = {
+		.vstr = vStringInit(KiB(1)),
+		.indent = 0
+	};
+
+	SerializeObject(&js, data);
+
+	return cStringFromvString(&js.vstr);
+}
+
+static void SerializeObject(json *self, const json_object *object)
 {
 	assert(self);
 
-	const cstring *close = "}\n";
+	vStringAppend(&self->vstr, '{');
+	self->indent++;
 
-	self->depth--;
+	map(JsonValue) map = object->values;
 
-	vStringAppend(&self->vstr, '\n');
-	AddIndentation(self);
-	vStringAppendcString(&self->vstr, close);
+	for (size_t i = 0; i < map.cap; i++) {
+		if (map.buffer[i].status != SLOT_CLOSED) {
+			continue;
+		}
+
+		vStringAppendcString(&self->vstr, map.buffer[i].key);
+		Dispatch(self, map.buffer[i].value);
+	}
+
+	vStringAppend(&self->vstr, '}');
+	self->indent--;
+}
+
+static void Dispatch(json *self, const json_value value)
+{
+	assert(self);
+
+	switch (value.tag) {
+	case JSON_VALUE_OBJECT:
+		SerializeObject(self, value.object);
+		break;
+
+	default:
+		break;
+	}
 }
