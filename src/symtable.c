@@ -8,6 +8,8 @@
 #include "str.h"
 #include "symtable.h"
 
+static void SerializeSymTable(json_array *, symtable *);
+
 //------------------------------------------------------------------------------
 
 #define NATIVE_TYPE(keyname, size) 				               \
@@ -155,7 +157,7 @@ const cstring *SymbolLookupName(const symboltag tag)
 	return lookup[tag];
 }
 
-const cstring *SymTableLookupNam(const tabletag tag)
+const cstring *SymTableLookupName(const tabletag tag)
 {
 	static const cstring *lookup[] = {
 		[TABLE_GLOBAL] = "global table",
@@ -179,6 +181,13 @@ cstring *SymTableToJSON(symtable *root)
 	assert(root);
 
 	json_object *object = JsonObjectInit();
+
+	json_value tagname = {
+		.tag = JSON_VALUE_STRING,
+		.string = cStringDuplicate(SymTableLookupName(root->tag))
+	};
+
+	JsonObjectAdd(object, "type", tagname);
 
 	return JsonSerializeObject(object);
 }

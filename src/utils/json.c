@@ -7,7 +7,12 @@ typedef struct json json;
 
 static cstring *Serialize(const void *, const json_value_tag);
 static void SerializeObject(json *, const json_object *);
+static void SerializeArray(json *, const json_array *);
 static void Dispatch(json *, const json_value);
+static void SerializeString(json *, const cstring *);
+static void StartNextLine(json *);
+static void PutJsonString(json *, const cstring *);
+static void PutCharNextLine(json *, const char);
 
 //------------------------------------------------------------------------------
 
@@ -47,6 +52,11 @@ void JsonArrayAdd(json_array *array, json_value value)
 //------------------------------------------------------------------------------
 // pre-order traversal
 
+struct json {
+	vstring vstr;
+	size_t indent;
+};
+
 cstring *JsonSerializeObject(const json_object *object)
 {
 	return Serialize(object, JSON_VALUE_OBJECT);
@@ -56,11 +66,6 @@ cstring *JsonSerializeArray(const json_array *array)
 {
 	return Serialize(array, JSON_VALUE_ARRAY);
 }
-
-struct json {
-	vstring vstr;
-	size_t indent;
-};
 
 static cstring *Serialize(const void *data, const json_value_tag tag)
 {
@@ -72,32 +77,55 @@ static cstring *Serialize(const void *data, const json_value_tag tag)
 		.indent = 0
 	};
 
-	SerializeObject(&js, data);
+	if (tag == JSON_VALUE_OBJECT) {
+		SerializeObject(&js, data);
+	} else {
+		SerializeArray(&js, data);
+	}
 
 	return cStringFromvString(&js.vstr);
 }
 
-static void SerializeObject(json *self, const json_object *object)
+//------------------------------------------------------------------------------
+//formatting and whitespace utilities
+
+static void StartNextLine(json *self)
 {
 	assert(self);
 
-	vStringAppend(&self->vstr, '{');
-	self->indent++;
+	static const cstring *tab = "    ";
 
-	map(JsonValue) map = object->values;
-
-	for (size_t i = 0; i < map.cap; i++) {
-		if (map.buffer[i].status != SLOT_CLOSED) {
-			continue;
-		}
-
-		vStringAppendcString(&self->vstr, map.buffer[i].key);
-		Dispatch(self, map.buffer[i].value);
+	if (self->vstr.len == 0) {
+		return;
 	}
 
-	vStringAppend(&self->vstr, '}');
-	self->indent--;
+	vStringAppend(&self->vstr, '\n');
+
+	for (size_t i = 0; i < self->indent; i++) {
+		vStringAppendcString(&self->vstr, tab);
+	}
 }
+
+static void PutJsonString(json *self, const cstring *cstr)
+{
+	assert(self);
+	assert(cstr);
+
+	vStringAppend(&self->vstr, '"');
+	vStringAppendcString(&self->vstr, cstr);
+	vStringAppend(&self->vstr, '"');
+}
+
+static void PutCharNextLine(json *self, const char ch)
+{
+	assert(self);
+
+	StartNextLine(self);
+
+	vStringAppend(&self->vstr, ch);
+}
+
+//------------------------------------------------------------------------------
 
 static void Dispatch(json *self, const json_value value)
 {
@@ -108,7 +136,82 @@ static void Dispatch(json *self, const json_value value)
 		SerializeObject(self, value.object);
 		break;
 
+	case JSON_VALUE_ARRAY:
+		SerializeArray(self, value.array);
+		break;
+
+	case JSON_VALUE_STRING:
+		SerializeString(self, value.string);
+		break;
+
 	default:
 		break;
 	}
+}
+
+static void SerializeObject(json *self, const json_object *object)
+{
+	assert(self);
+	assert(object);
+
+	StartNextLine(self);
+
+	vStringAppend(&self->vstr, '{');
+	self->indent++;
+
+	map(JsonValue) map = object->values;
+	size_t items_placed = 0;
+
+	for (size_t i = 0; i < map.cap; i++) {
+		if (map.buffer[i].status != SLOT_CLOSED) {
+			continue;
+		}
+
+		if (items_placed != 0) {
+			vStringAppend(&self->vstr, ',');
+		}
+
+		StartNextLine(self);
+
+		PutJsonString(self, map.buffer[i].key);
+		vStringAppendcString(&self->vstr, ": ");
+		Dispatch(self, map.buffer[i].value);
+
+		items_placed++;
+	}
+	
+	self->indent--;
+	PutCharNextLine(self, '}');
+}
+
+static void SerializeArray(json *self, const json_array *array)
+{
+	assert(self);
+	assert(array);
+
+	StartNextLine(self);
+
+	vStringAppend(&self->vstr, '[');
+	self->indent++;
+
+	vector(JsonValue) vec = array->values;
+
+	for (size_t i = 0; i < vec.len; i++) {
+		if (i != 0) {
+			vStringAppend(&self->vstr, ',');
+		}
+
+		Dispatch(self, vec.buffer[i]);
+	}
+
+	self->indent--;
+	PutCharNextLine(self, ']');
+}
+
+static void SerializeString(json *self, const cstring *cstr)
+{
+	assert(self);
+	assert(cstr);
+
+	PutJsonString(self, cstr);
 }
