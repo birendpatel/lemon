@@ -1,18 +1,27 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
+#include <assert.h>
+#include <inttypes.h>
+#include <math.h>
+#include <stdbool.h>
+#include <stdio.h>
+
 #include "arena.h"
 #include "json.h"
 
 typedef struct json json;
 
+static void StartNextLine(json *);
+static void PutJsonString(json *, const cstring *);
+static void PutCharNextLine(json *, const char);
 static cstring *Serialize(const void *, const json_value_tag);
 static void SerializeObject(json *, const json_object *);
 static void SerializeArray(json *, const json_array *);
 static void Dispatch(json *, const json_value);
 static void SerializeString(json *, const cstring *);
-static void StartNextLine(json *);
-static void PutJsonString(json *, const cstring *);
-static void PutCharNextLine(json *, const char);
+static void SerializeNumber(json *, const int64_t);
+static void SerializeBoolean(json *, bool);
+static void SerializeNull(json *);
 
 //------------------------------------------------------------------------------
 
@@ -95,7 +104,7 @@ static void StartNextLine(json *self)
 
 	static const cstring *tab = "    ";
 
-	if (self->vstr.len == 0) {
+	if (self->vstr.buffer[0] == '\0') {
 		return;
 	}
 
@@ -144,7 +153,25 @@ static void Dispatch(json *self, const json_value value)
 		SerializeString(self, value.string);
 		break;
 
+	case JSON_VALUE_NUMBER:
+		SerializeNumber(self, value.number);
+		break;
+
+	case JSON_VALUE_TRUE:
+		SerializeBoolean(self, true);
+		break;
+
+	case JSON_VALUE_FALSE:
+		SerializeBoolean(self, false);
+		break;
+
+	case JSON_VALUE_NULL:
+		SerializeNull(self);
+		break;
+
 	default:
+		assert(0 != 0 && "invalid json value tag");
+		__builtin_unreachable();
 		break;
 	}
 }
@@ -153,8 +180,6 @@ static void SerializeObject(json *self, const json_object *object)
 {
 	assert(self);
 	assert(object);
-
-	StartNextLine(self);
 
 	vStringAppend(&self->vstr, '{');
 	self->indent++;
@@ -189,8 +214,6 @@ static void SerializeArray(json *self, const json_array *array)
 	assert(self);
 	assert(array);
 
-	StartNextLine(self);
-
 	vStringAppend(&self->vstr, '[');
 	self->indent++;
 
@@ -214,4 +237,37 @@ static void SerializeString(json *self, const cstring *cstr)
 	assert(cstr);
 
 	PutJsonString(self, cstr);
+}
+
+static void SerializeNumber(json *self, const int64_t number)
+{
+	assert(self);
+
+	size_t num_digits = (size_t) (ceil(log10((double) number)) + 1);
+
+	cstring *cstr = allocate(num_digits * sizeof(char));
+
+	sprintf(cstr, "%" PRIx64 "", number);
+
+	vStringAppendcString(&self->vstr, cstr);
+}
+
+static void SerializeBoolean(json *self, bool flag)
+{
+	assert(self);
+
+	cstring *cstr = "false";
+
+	if (flag) {
+		cstr = "true";
+	}
+
+	vStringAppendcString(&self->vstr, cstr);
+}
+
+static void SerializeNull(json *self)
+{
+	assert(self);
+
+	vStringAppendcString(&self->vstr, "null");
 }

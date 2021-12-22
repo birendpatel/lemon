@@ -9,6 +9,9 @@
 #include "symtable.h"
 
 static void SerializeSymTable(json_array *, symtable *);
+static json_value ParseTable(symtable *);
+static json_value ParseTableTag(const tabletag);
+static json_value ParseEntries(map(Symbol));
 
 //------------------------------------------------------------------------------
 
@@ -138,12 +141,12 @@ symbol *SymTableLookup(symtable *table, const cstring *key, symtable **target)
 const cstring *SymbolLookupName(const symboltag tag)
 {
 	static const cstring *lookup[] = {
-		[SYMBOL_NATIVE] = "native type",
+		[SYMBOL_NATIVE] = "native",
 		[SYMBOL_MODULE] = "module",
-		[SYMBOL_IMPORT] = "import directive",
+		[SYMBOL_IMPORT] = "import",
 		[SYMBOL_FUNCTION] = "function",
 		[SYMBOL_METHOD] = "method",
-		[SYMBOL_UDT] = "user defined type",
+		[SYMBOL_UDT] = "udt",
 		[SYMBOL_VARIABLE] = "variable",
 		[SYMBOL_FIELD] = "field",
 		[SYMBOL_PARAMETER] = "parameter",
@@ -160,11 +163,11 @@ const cstring *SymbolLookupName(const symboltag tag)
 const cstring *SymTableLookupName(const tabletag tag)
 {
 	static const cstring *lookup[] = {
-		[TABLE_GLOBAL] = "global table",
-		[TABLE_MODULE] = "module table",
-		[TABLE_FUNCTION] = "function table",
-		[TABLE_METHOD] = "method table",
-		[TABLE_UDT] = "udt table"
+		[TABLE_GLOBAL] = "global",
+		[TABLE_MODULE] = "module",
+		[TABLE_FUNCTION] = "function",
+		[TABLE_METHOD] = "method",
+		[TABLE_UDT] = "udt"
 	};
 
 	if (tag < TABLE_GLOBAL || tag > TABLE_UDT) {
@@ -175,19 +178,48 @@ const cstring *SymTableLookupName(const tabletag tag)
 }
 
 //------------------------------------------------------------------------------
+//convert a symbol table parent pointer tree to a JSON parse tree via the
+//standard recursive descent algorithm
 
 cstring *SymTableToJSON(symtable *root)
 {
 	assert(root);
 
-	json_object *object = JsonObjectInit();
+	json_value value = ParseTable(root);
 
-	json_value tagname = {
-		.tag = JSON_VALUE_STRING,
-		.string = cStringDuplicate(SymTableLookupName(root->tag))
+	assert(value.tag == JSON_VALUE_OBJECT);
+
+	return JsonSerializeObject(value.object);
+}
+
+//returns a json object representation of the input table and its children
+static json_value ParseTable(symtable *root)
+{
+	assert(root);
+
+	json_value value = {
+		.tag = JSON_VALUE_OBJECT,
+		.object = JsonObjectInit()
 	};
 
-	JsonObjectAdd(object, "type", tagname);
+	JsonObjectAdd(value.object, "type", ParseTableTag(root->tag));
 
-	return JsonSerializeObject(object);
+	return value;
+}
+
+//returns a json string representation of the symbol table type; note lookup
+//is duplicated to avoid -Wcast-qual error
+static json_value ParseTableTag(const tabletag tag)
+{
+	const cstring *tagname = SymTableLookupName(tag);
+
+	return (json_value) {
+		.tag = JSON_VALUE_STRING,
+		.string = cStringDuplicate(tagname)
+	};
+}
+
+static json_value ParseEntries(__attribute__((unused)) map(Symbol) entries)
+{
+	return (json_value) {0};
 }
