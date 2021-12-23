@@ -1,7 +1,6 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <assert.h>
-#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 
@@ -247,7 +246,7 @@ static void SerializeNumber(json *self, const int64_t number)
 	
 	cstring *cstr = allocate(((size_t) num_length + 1) * sizeof(char));
 
-	(void) sprintf(cstr, "%" PRIx64 "", number);
+	(void) sprintf(cstr, "%" PRId64 "", number);
 
 	vStringAppendcString(&self->vstr, cstr);
 }

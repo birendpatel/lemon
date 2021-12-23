@@ -48,6 +48,4 @@ This project is licensed under the GNU General Public License v3.0. You may find
 - [ ] Convert all diagnostic output to JSON (HARD)
 - [ ] Update map.h insertions to recycle removed slots before aborting (MEDIUM)
 - [ ] Sweep files and remove superfluous includes (EASY)
-- [ ] Add symbol table printing flag (MEDIUM)
 - [ ] Add assertions for verifying AST symbol hooks (MEDIUM)
-- [ ] Remove all instances of num digit calculations via log and ceil (EASY)

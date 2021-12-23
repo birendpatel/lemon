@@ -8,7 +8,6 @@
 
 #include <assert.h>
 #include <inttypes.h>
-#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -127,11 +126,12 @@ static void vStringAppendIntMax(vstring *vstr, intmax_t number)
 	assert(vstr);
 	assert(vstr->len != 0);
 
-	const size_t num_digits = (size_t) (ceil(log10((double) number)) + 1);
+	const int length = snprintf(NULL, 0, "%" PRIdMAX "", number);
+	assert(length > 0);
 
-	cstring *digits = allocate(num_digits * sizeof(char) + 1);
-	digits[num_digits] = '\0';
-	snprintf(digits, num_digits, "%" PRIdMAX "", number);
+	cstring *digits = allocate((size_t) length * sizeof(char) + 1);
+	digits[length] = '\0';
+	snprintf(digits, (size_t) length, "%" PRIdMAX "", number);
 
 	vStringAppendcString(vstr, digits);	
 }
