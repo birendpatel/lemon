@@ -37,18 +37,6 @@ static json_value ParseLabel(const symbol);
 	}								       \
 }
 
-#define NATIVE_FUNC(keyname) 				               	       \
-{								               \
-	.key = keyname,							       \
-	.value = {							       \
-		.tag = SYMBOL_FUNCTION,					       \
-		.function = {					               \
-			.table = NULL,					       \
-			.referenced = false				       \
-		}							       \
-	}								       \
-}
-
 symtable *SymTableInit(const size_t total_modules)
 {
 	typedef struct pair {
@@ -77,10 +65,6 @@ symtable *SymTableInit(const size_t total_modules)
 		NATIVE_TYPE("complex64", 8),
 		NATIVE_TYPE("complex128", 16),
 		NATIVE_TYPE("string", 8),
-		NATIVE_FUNC("assert"),
-		NATIVE_FUNC("print"),
-		NATIVE_FUNC("sizeof"),
-		NATIVE_FUNC("typeof"),
 	};
 
 	const size_t total_native = sizeof(table) / sizeof(table[0]);
@@ -99,7 +83,6 @@ symtable *SymTableInit(const size_t total_modules)
 }
 
 #undef NATIVE_TYPE
-#undef NATIVE_FUNC
 
 symtable *SymTableSpawn(symtable *parent, const tabletag tag, const size_t cap)
 {
@@ -399,8 +382,8 @@ static json_value ParseFunction(const symbol sym)
 
 	JsonObjectAdd(value.object, "line", line);
 
-	symtable *table = sym.function.table;
-	JsonObjectAdd(value.object, "table", ParseTable(table));
+	//symtable *table = sym.function.table;
+	//JsonObjectAdd(value.object, "table", ParseTable(table));
 
 	return value;
 }
