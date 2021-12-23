@@ -1,7 +1,6 @@
 // Copyright (C) 2021 Biren Patel. GNU General Public License v3.0.
 
 #include <assert.h>
-#include <inttypes.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -34,7 +33,7 @@ json_object *JsonObjectInit(void)
 	return new;
 }
 
-bool JsonObjectAdd(json_object *object, cstring *key, json_value value)
+bool JsonObjectAdd(json_object *object, const cstring *key, json_value value)
 {
 	assert(object);
 	assert(key);
@@ -243,11 +242,12 @@ static void SerializeNumber(json *self, const int64_t number)
 {
 	assert(self);
 
-	size_t num_digits = (size_t) (ceil(log10((double) number)) + 1);
+	int num_length = snprintf(NULL, 0, "%" PRIx64 "", number);
+	assert(num_length > 0);
+	
+	cstring *cstr = allocate(((size_t) num_length + 1) * sizeof(char));
 
-	cstring *cstr = allocate(num_digits * sizeof(char));
-
-	sprintf(cstr, "%" PRIx64 "", number);
+	(void) sprintf(cstr, "%" PRIx64 "", number);
 
 	vStringAppendcString(&self->vstr, cstr);
 }

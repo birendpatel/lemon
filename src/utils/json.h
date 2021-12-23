@@ -55,7 +55,7 @@ struct json_object {
 json_object *JsonObjectInit(void);
 
 //return false if the key already exists
-bool JsonObjectAdd(json_object *object, cstring *key, json_value value);
+bool JsonObjectAdd(json_object *object, const cstring *key, json_value value);
 
 struct json_array {
 	vector(JsonValue) values;
