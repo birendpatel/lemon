@@ -64,7 +64,8 @@ cls pfix##_vector pfix##VectorInit(const size_t, const size_t);	               \
 cls void pfix##VectorPush(pfix##_vector *, T);   	                       \
 cls T pfix##VectorGet(const pfix##_vector *, const size_t);                    \
 cls void pfix##VectorReset(pfix##_vector *);				       \
-cls T pfix##VectorSet(pfix##_vector *, const size_t , T);
+cls T pfix##VectorSet(pfix##_vector *, const size_t , T);		       \
+cls T pfix##VectorPop(pfix##_vector *);
 
 #define VECTOR_DEFAULT_CAPACITY ((size_t) 8)
 
@@ -125,6 +126,21 @@ cls void pfix##VectorPush(pfix##_vector *self, T datum)                        \
 	VectorTrace("push successful");					       \
 }
 
+#define impl_vector_pop(T, pfix, cls)					       \
+cls T pfix##VectorPop(pfix##_vector *self)                                     \
+{									       \
+	assert(self);							       \
+	assert(self->buffer);						       \
+	assert(self->len <= self->cap);					       \
+									       \
+	T top = pfix##VectorGet(self, self->len - 1);			       \
+									       \
+	self->len--;							       \
+									       \
+	return top;							       \
+}
+
+
 #define impl_vector_get(T, pfix, cls)					       \
 cls T pfix##VectorGet(const pfix##_vector *self, const size_t index)           \
 {									       \
@@ -177,6 +193,7 @@ cls void pfix##VectorReset(pfix##_vector *self)		         	       \
 	impl_vector_push(T, pfix, cls)					       \
 	impl_vector_get(T, pfix, cls)					       \
 	impl_vector_set(T, pfix, cls)					       \
-	impl_vector_reset(T, pfix, cls)
+	impl_vector_reset(T, pfix, cls)					       \
+	impl_vector_pop(T, pfix, cls)
 
 #define vector(pfix) pfix##_vector

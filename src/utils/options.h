@@ -26,5 +26,7 @@ bool OptionsDtokens(void); //true if --Dtokens
 
 bool OptionsDdeps(void); //true if --Ddeps
 
+bool OptionsDsym(void); //true if --Dsym
+
 size_t OptionsArena(void); //returns a default size if --Arena not specified
 

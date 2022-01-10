@@ -44,6 +44,7 @@ struct member {
 	cstring *name;
 	type *typ; 
 	symbol *entry;
+	size_t line;
 	bool public;
 };
 
@@ -56,6 +57,7 @@ struct param {
 	cstring *name; 
 	type *typ;
 	symbol *entry;
+	size_t line;
 	bool mutable;
 };
 
@@ -123,6 +125,8 @@ struct type {
 			intmax_t len; //may be zero
 		} array;
 	};
+
+	size_t line;
 };
 
 //------------------------------------------------------------------------------

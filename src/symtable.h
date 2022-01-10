@@ -13,6 +13,11 @@ typedef struct symtable symtable;
 
 //------------------------------------------------------------------------------
 // Symbols are associated with a cstring identifier and placed into a hash table
+//
+// the data type is compressed from the parser linked list into a compact string
+// representation. For example, [10]*int32 has a parser list representation as
+// [10] --> * --> int32, while in the symbol table it is just "[10]*int32".
+// This essentially converts the type back into the original source literal.
 
 typedef enum symboltag {
 	SYMBOL_NATIVE,
@@ -42,12 +47,16 @@ struct symbol {
 		} module;
 
 		struct {
+			symtable *table;
 			size_t line;
 			struct {
 				unsigned int referenced: 1;
 			};
 		} import;
 
+		//signature translates func (int32, bool) -> float64 to the
+		//string "int32,bool,float64", void parameter list results in
+		//":float64" and void return results in "int32,bool:"
 		struct {
 			symtable *table;
 			cstring *signature;
@@ -66,6 +75,7 @@ struct symbol {
 			};
 		} method;
 
+		//@bytes not calculated during symbol resolution
 		struct {
 			symtable *table;
 			size_t bytes;
@@ -137,8 +147,11 @@ struct symtable {
 //API
 
 //create the global symbol table and populate it with the predeclared native
-//types and functions; returned pointer is non-NULL
-symtable *SymTableInit(void);
+//types and functions; returned pointer is non-NULL.
+//
+//the total_modules input ensures that the global symbol table will not resize
+//so that pointers returned by SymTableInsert always remain valid.
+symtable *SymTableInit(const size_t total_modules);
 
 //always returns a valid child symbol table; input capacity guarantees that the
 //underlying hash table buffer will not issue a dynamic resize when the total
@@ -154,3 +167,12 @@ symbol *SymTableInsert(symtable *table, const cstring *key, symbol value);
 //if the target is non-null then it contains a pointer  on return to the table 
 //in which the key exists
 symbol *SymTableLookup(symtable *table, const cstring *key, symtable **target);
+
+//convert symbol table tag to a printable name
+const cstring *SymTableLookupName(const tabletag tag);
+
+//convert symbol tag to a printable name
+const cstring *SymbolLookupName(const symboltag tag);
+
+//print the input symbol table and its children, grandchildren, etc.
+cstring *SymTableToJSON(symtable *root);

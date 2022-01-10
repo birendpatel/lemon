@@ -2,6 +2,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "arena.h"
 #include "file.h"
@@ -17,19 +18,52 @@ static void InsertChildren(network *, module *, const cstring *);
 static void Sort(network *, module *);
 static void ReportCycle(const cstring *, const cstring *);
 
-static bool ResolveSymbols(network *);
-static symbol *LookupSymbol(frame *, const cstring *, symtable **);
+static symbol *LookupSymbol(frame *, const cstring *, const size_t);
+static void ReportUndeclared(frame *, const cstring *, const size_t);
 static symbol *InsertSymbol(frame *, const cstring *, symbol);
-static void ReportRedeclaration(frame *, const cstring *);
-static symtable *PushSymTable(frame *, const tabletag, const size_t);
-static symtable *PopSymTable(frame *);
+static void ReportRedeclaration(frame *, const cstring *, symbol);
+static size_t GetSymbolLine(symbol);
+static void 
+ReportUnexpected(frame *, const cstring *, const symboltag, const size_t);
+
+static void check_pair(int *);
+static void PushSymTable(frame *, const tabletag, const size_t);
+static void PopSymTable(frame *);
+static void LoadTemporaryStack(frame *, symtable *);
+static void UnloadTemporaryStack(frame *);
 static type *UnwindType(type *);
+static cstring *StringFromType(type *);
+static void StringFromType__recursive(vstring *, type *);
+
+static bool ResolveSymbols(network *);
 static void ResolveModule(frame *);
 static void ResolveImports(frame *);
 static void ResolveDeclarations(frame *);
+
+static void ResolveUDTPrototype(frame *, decl *);
 static void ResolveUDT(frame *, decl *);
 static void ResolveMembers(frame *, vector(Member));
-static symbol *LookupMemberType(frame *, type *);
+
+static symbol *LookupType(frame *, type *);
+static symbol *LookupBaseType(frame *, type *);
+static symbol *LookupNamedType(frame *, type *);
+
+static void ResolveFunctionPrototype(frame *, decl *);
+static void ResolveFunction(frame *, decl *);
+static size_t CountDeclsWithinFiat(vector(Fiat));
+static cstring *CreateFuncSignature(decl *);
+static void ResolveParameters(frame *, vector(Param));
+static void ResolveReturnType(frame *, type *);
+
+static void ResolveMethodPrototype(frame *, decl *);
+static void ResolveMethod(frame *, decl *);
+static cstring *CreateMethodSignature(decl *);
+static void ResolveRecvType(frame *, type *);
+
+static void ResolveVariablePrototype(frame *, decl *);
+static void ResolveVariable(frame *, decl *);
+
+static void ResolveBlock(frame *, stmt *);
 
 //------------------------------------------------------------------------------
 
@@ -41,13 +75,16 @@ network *ResolverInit(const cstring *filename)
 
 	net->dependencies = ModuleGraphInit();
 	net->head = NULL;
-	net->global = SymTableInit();
 
 	bool ok = ResolveDependencies(net, filename);
 
 	if (!ok) {
 		return NULL; 
 	}
+
+	//graph API doesn't allow for removals so the len member is the true
+	//underlying hash table count.
+	net->global = SymTableInit(net->dependencies.len);
 
 	ok = ResolveSymbols(net);
 
@@ -140,8 +177,6 @@ void InsertChildren(network *net, module *parent, const cstring *parentname)
 			Throw(XXGRAPH);
 		}
 	}
-
-
 }
 
 //since C does not allow closures a cheeky static variable keeps track of the
@@ -176,10 +211,18 @@ static void ReportCycle(const cstring *parent, const cstring *child)
 //------------------------------------------------------------------------------
 // Phase 2: resolve symbols
 
+make_vector(symtable *, SymTable, static)
+
+//the frame tracks stacks of data during the depth-first AST traveral
+//@ast: root node of the AST currently undergoing symbol resolution
+//@top: leaf table of the active stack within the n-ary symtable tree; non-null
+//@history: stack of symbol table stacks; whenever the compiler needs to context
+//switch to a different module's root symbol table, the previous symbol table
+//stack is recorded in the history for later restoration.
 struct frame {
 	module *ast;
 	symtable *top;
-	size_t line;
+	vector(SymTable) history;
 };
 
 static bool ResolveSymbols(network *net)
@@ -190,17 +233,20 @@ static bool ResolveSymbols(network *net)
 
 	CEXCEPTION_T e;
 
+	frame current = {
+		.ast = NULL,
+		.top = NULL,
+		.history = SymTableVectorInit(0, VECTOR_DEFAULT_CAPACITY)
+	};
+
 	Try {
 		module *node = net->head;
 
 		while (node) {
-			frame active = {
-				.ast = node,
-				.top = net->global,
-				.line = 0
-			};
+			current.ast = node;
+			current.top = net->global;
 
-			ResolveModule(&active);
+			ResolveModule(&current);
 
 			node = node->next;
 		}
@@ -213,24 +259,35 @@ static bool ResolveSymbols(network *net)
 }
 
 //------------------------------------------------------------------------------
+//symbol resolution utilities
 
-static symbol *LookupSymbol(frame *self, const cstring *key, symtable **target)
+//throw XXSYMBOL exception is key does not exist in the active stack
+static symbol *LookupSymbol(frame *self, const cstring *key, const size_t line)
 {
 	assert(self);
 	assert(key);
+	assert(line);
 
-	const cstring *msg = "%s not declared before use";
+	symbol *symref = SymTableLookup(self->top, key, NULL);
 
-	symbol *ref = SymTableLookup(self->top, key, target);
-
-	//TODO need line numbers on type nodes and more verbose description
-	if (!ref) {
-		const cstring *fname = self->ast->alias;
-		xuser_error(fname, 0, msg, key);
+	if (!symref) {
+		ReportUndeclared(self, key, line);
 		Throw(XXSYMBOL);
 	}
 
-	return ref;
+	return symref;
+}
+
+static void ReportUndeclared(frame *self, const cstring *key, const size_t line)
+{
+	assert(self);
+	assert(key);
+	assert(line);
+
+	const cstring *msg = "'%s' was not declared before use";
+	const cstring *fname = self->ast->alias;
+
+	xuser_error(fname, line, msg, key);
 }
 
 //throws XXSYMBOL exception if symbol alredy exists in the active table
@@ -239,85 +296,112 @@ static symbol *InsertSymbol(frame *self, const cstring *key, symbol value)
 	assert(self);
 	assert(key);
 
-	symbol *ref = SymTableInsert(self->top, key, value);
+	symbol *symref = SymTableInsert(self->top, key, value);
 
-	if (!ref) {
-		ReportRedeclaration(self, key);
+	if (!symref) {
+		ReportRedeclaration(self, key, value);
 		Throw(XXSYMBOL);
 	}
 
-	return ref;
+	return symref;
 }
 
-//notify user; not all symbols have line information so redeclarations of some
-//symbols, like native types in the global table, print generic messages.
-static void ReportRedeclaration(frame *self, const cstring *key)
+//notify user of attempt to redeclare a variable within the same scope
+static void ReportRedeclaration(frame *self, const cstring *key, symbol value)
 {
 	assert(self);
 	assert(key);
 
-	const cstring *longmsg = "%s redeclared; previously on line %zu";
-	const cstring *shortmsg = "%s redeclared";
-
+	const cstring *msg = "%s redeclared; previously declared on line %zu";
 	const cstring *fname = self->ast->alias;
-	const size_t line = self->line;
-	size_t prev_line = 0;
-	symtable *container = NULL;
 
-	symbol *current = SymTableLookup(self->top, key, &container);
+	symtable *table = NULL;
+	symbol *symref = SymTableLookup(self->top, key, &table);
 
-	assert(container == self->top && "redeclaration in new scope");
-	assert(current && "false redeclaration; symbol is new");
-	assert(current->tag != SYMBOL_NATIVE && "native access in non-global");
-	assert(current->tag != SYMBOL_MODULE && "module redeclared itself");
+	assert(table);
+	assert(table == self->top && "redeclared var is not in same scope");
+	assert(table->tag != TABLE_GLOBAL && "key redeclared in global scope");
 
-	switch (current->tag) {
+	const size_t curr_line = GetSymbolLine(value);
+	const size_t prev_line = GetSymbolLine(*symref);
+
+	assert(prev_line);
+
+	xuser_error(fname, curr_line, msg, key, prev_line);
+}
+
+//returns 0 if symbol does not carry line information
+static size_t GetSymbolLine(symbol sym)
+{
+	switch (sym.tag) {
+	case SYMBOL_NATIVE:
+		return 0;
+
+	case SYMBOL_MODULE:
+		return 0;
+
 	case SYMBOL_IMPORT:
-		prev_line = current->import.line;
-		break;
+		return sym.import.line;
 
 	case SYMBOL_FUNCTION:
-		prev_line = current->function.line;
-		break;
+		return sym.function.line;
 
 	case SYMBOL_METHOD:
-		prev_line = current->method.line;
-		break;
+		return sym.method.line;
 
 	case SYMBOL_UDT:
-		prev_line = current->udt.line;
-		break;
+		return sym.udt.line;
 
 	case SYMBOL_VARIABLE:
-		prev_line = current->variable.line;
-		break;
+		return sym.variable.line;
+
+	case SYMBOL_FIELD:
+		return sym.field.line;
+
+	case SYMBOL_LABEL:
+		return sym.label.line;
 
 	default:
-		assert(prev_line == 0);
-		break;
-	}
-
-	if (prev_line) {
-		xuser_error(fname, line, longmsg, key, prev_line);
-	} else {
-		xuser_error(fname, line, shortmsg, key);
+		assert(0 != 0 && "invalid symbol tab");
+		__builtin_unreachable();
 	}
 }
 
-//returned pointer is always non-null
-static symtable *PushSymTable(frame *self, const tabletag tag, const size_t cap)
+static void ReportUnexpected
+(
+	frame *self,
+	const cstring *want,
+	const symboltag have,
+	const size_t line
+)
+{
+	assert(self);
+	assert(want);
+
+	const cstring *havename = SymbolLookupName(have);
+	cstring *msg = "expected %s but found %s";
+
+	if (strcmp(want, "type") == 0 && have == SYMBOL_IMPORT) {
+		msg = "expected %s but found %s"
+		      "\n\t-> did you forget to reference an imported type?";
+	}
+
+	xuser_error(self->ast->alias, line, msg, want, havename);
+}
+
+//------------------------------------------------------------------------------
+//frame management
+
+static void PushSymTable(frame *self, const tabletag tag, const size_t cap)
 {
 	assert(self);
 
 	symtable *top = SymTableSpawn(self->top, tag, cap);
 
 	self->top = top;
-
-	return top;
 }
 
-//restore the parent of the current active table; returns the child
-static symtable *PopSymTable(frame *self)
+static void PopSymTable(frame *self)
 {
 	assert(self);
 
@@ -326,9 +410,68 @@ static symtable *PopSymTable(frame *self)
 	assert(old_top->parent && "attempted to pop global symbol table");
 
 	self->top = old_top->parent;
-
-	return old_top;
 }
+
+//save the current symbol table chain and load a new one temporarily
+static void LoadTemporaryStack(frame *self, symtable *table)
+{
+	assert(self);
+	assert(table);
+
+	SymTableVectorPush(&self->history, self->top);
+
+	self->top = table;
+}
+
+//restore the previous symbol table chain
+static void UnloadTemporaryStack(frame *self)
+{
+	assert(self);
+	assert(self->history.len != 0 && "stack is empty");
+
+	self->top = SymTableVectorPop(&self->history);
+}
+
+//debug mode wrappers to ensure that every push is paired with a pop
+static void check_pair(int *pushed)
+{
+	assert(pushed);
+	assert(*pushed == 0);
+}
+
+#define push(self, tag, cap) 					               \
+	__attribute__((cleanup(check_pair))) int sym_table__pushed = 0;        \
+								               \
+	do {								       \
+		PushSymTable(self, tag, cap);			               \
+		sym_table__pushed++;				               \
+		assert(sym_table__pushed == 1);  			       \
+	} while (0)
+
+#define pop(self) 							       \
+	do {								       \
+		PopSymTable(self);					       \
+		sym_table__pushed--;			        	       \
+		assert(sym_table__pushed == 0);                                \
+	} while (0)
+
+#define push_stack(self, table) 					       \
+	__attribute__((cleanup(check_pair))) int sym_table_stack__pushed = 0;  \
+								               \
+	do {								       \
+		LoadTemporaryStack(self, table);			       \
+		sym_table_stack__pushed++;				       \
+		assert(sym_table_stack__pushed == 1);			       \
+	} while (0)
+
+#define pop_stack(self) 						       \
+	do {								       \
+		UnloadTemporaryStack(self);				       \
+		sym_table_stack__pushed--;			       	       \
+		assert(sym_table_stack__pushed == 0);                          \
+	} while (0)
+
+//------------------------------------------------------------------------------
 
 //return the tail (NODE_BASE) or penultimate node (NODE_NAMED) in the singly
 //linked type list.
@@ -354,32 +497,101 @@ static type *UnwindType(type *node)
 		__builtin_unreachable();
 	}
 }
+
+//unwind the singly linked type list and compress it recursively into a compact
+//string notation; i..e, the type list [10] -> * -> int32 becomes "[10]*int32"
+static cstring *StringFromType(type *node)
+{
+	assert(node);
+
+	const size_t typical_type_length = 16;
+
+	vstring vstr = vStringInit(typical_type_length);
+
+	StringFromType__recursive(&vstr, node);
+
+	return cStringFromvString(&vstr);
+}
+
+static void StringFromType__recursive(vstring *vstr, type *node)
+{
+	assert(node);
+	assert(vstr);
+	
+	switch (node->tag) {
+	case NODE_BASE:
+		vStringAppendcString(vstr, node->base.name);
+		break;
+
+	case NODE_NAMED:
+		vStringAppendcString(vstr, node->named.name);
+		StringFromType__recursive(vstr, node->named.reference);
+		break;
+
+	case NODE_POINTER:
+		vStringAppend(vstr, '*');
+		StringFromType__recursive(vstr, node->pointer.reference);
+		break;
+	
+	case NODE_ARRAY:
+		vStringAppend(vstr, '[');
+		vStringAppendIntMax(vstr, node->array.len);
+		vStringAppend(vstr, ']');
+		StringFromType__recursive(vstr, node->array.element);
+		break;
+
+	default:
+		assert(0 != 0 && "invalid type tag");
+		__builtin_unreachable();
+	}
+}
+
 //------------------------------------------------------------------------------
 
 static void ResolveModule(frame *self)
 {
 	assert(self);
 
-	module *node = self->ast;
+	symbol sym = {
+		.tag = SYMBOL_MODULE,
+		.module = {
+			.table = NULL,
+			.referenced = false
+		}
+	};
+
+	module *const node = self->ast;
+	symbol *symref = InsertSymbol(self, node->alias, sym);
 
 	const size_t capacity = node->imports.len + node->declarations.len;
+	push(self, TABLE_MODULE, capacity);
 
-	node->table = PushSymTable(self, TABLE_MODULE, capacity);
+	symref->module.table = self->top;
+	node->table = self->top;
 
 	ResolveImports(self);
-
 	ResolveDeclarations(self);
 
-	(void) PopSymTable(self);
+	pop(self);
 }
 
+//introduces an import symbol scoped to the frame's active module; the symbol
+//contains a backdoor to the referenced module's top-level symbol table.
+//
+//note; the module symbol gets marked with a reference but the import symbol
+//does not. This lets the sematic analyser differentiate between two classes
+//of errors: "module unused" versus "module imported but unused". Only the
+//main file can ever issue a "module unused". But, this is only relevant for
+//backend compiler tasks and assertions - not for end-user warnings.
 static void ResolveImports(frame *self)
 {
 	assert(self);
+	assert(self->top->tag == TABLE_MODULE);
 
 	symbol entry = {
 		.tag = SYMBOL_IMPORT,
 		.import = {
+			.table = NULL,
 			.line = 0,
 			.referenced = false
 		}
@@ -387,41 +599,64 @@ static void ResolveImports(frame *self)
 
 	vector(Import) imports = self->ast->imports;
 
-	for (size_t i = 0; i < imports.len; i++) {
+	size_t i = 0;
+
+	while (i < imports.len) {
 		import *node = &imports.buffer[i];
 
-		const cstring *name = node->alias;
-		self->line = node->line;
-		entry.import.line = node->line;
+		symbol *symref = LookupSymbol(self, node->alias, node->line);
+		assert(symref->tag == SYMBOL_MODULE);
+		symref->module.referenced = true;
 
-		symbol *ref = InsertSymbol(self, name, entry);
-		node->entry = ref;
+		entry.import.table = symref->module.table;
+		entry.import.line = node->line;
+		node->entry = InsertSymbol(self, node->alias, entry);
+
+		i++;
 	}
 }
 
 static void ResolveDeclarations(frame *self)
 {
 	assert(self);
+	assert(self->top->tag == TABLE_MODULE);
 
-	static void (*const jump[])(frame *, decl *) = {
-		[NODE_UDT] = ResolveUDT,
+	static void (*const jump[][2])(frame *, decl *) = {
+		[NODE_UDT] = {
+			ResolveUDTPrototype,
+			ResolveUDT
+		},
+		[NODE_FUNCTION] = {
+			ResolveFunctionPrototype,
+			ResolveFunction
+		},
+		[NODE_METHOD] = {
+			ResolveMethodPrototype,
+			ResolveMethod
+		},
+		[NODE_VARIABLE] = {
+			ResolveVariablePrototype,
+			ResolveVariable
+		}
 	};
 
 	vector(Decl) declarations = self->ast->declarations;
 
-	size_t i = 0;
-
-	while (i < declarations.len) {
+	//forward declarations 
+	for (size_t i = 0; i < declarations.len; i++) {
 		decl *node = &declarations.buffer[i];
-		jump[node->tag](self, node);
+		jump[node->tag][0](self, node);
+	}
 
-		i++;
+	for (size_t i = 0; i < declarations.len; i++) {
+		decl *node = &declarations.buffer[i];
+		jump[node->tag][1](self, node);
 	}
 }
 
 //------------------------------------------------------------------------------
 
-static void ResolveUDT(frame *self, decl *node)
+static void ResolveUDTPrototype(frame *self, decl *node)
 {
 	assert(self);
 	assert(node);
@@ -434,51 +669,64 @@ static void ResolveUDT(frame *self, decl *node)
 			.bytes = 0,
 			.line = node->line,
 			.referenced = false,
-			.public = false
+			.public = node->udt.public
 		}
 	};
 
-	//place udt symbol in the parent
-	symbol *symref = InsertSymbol(self, node->udt.name, sym);
+	(void) InsertSymbol(self, node->udt.name, sym);
+}
 
-	//THEN load the udt table itself; returned pointer from PushSymTable
-	//lets us backfill the child pointer in order to doubly link the tables
+static void ResolveUDT(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_UDT);
+
+	symbol *symref = LookupSymbol(self, node->udt.name, node->line);
+
 	const size_t capacity = node->udt.members.len;
-	symref->udt.table = PushSymTable(self, TABLE_UDT, capacity);
+	push(self, TABLE_UDT, capacity);
+
+	symref->udt.table = self->top;
+	node->udt.entry = symref;
 
 	ResolveMembers(self, node->udt.members);
 
-	(void) PopSymTable(self);
+	pop(self);
 }
 
-//note; resolves the member's type but if the type is a named reference to a
-//global native then an error is issued. The type must be public, but native
-//types have no public/private qualifier and so the compiler refuses to resolve
-//the reference. In any case, even if the compiler could resolve it, it doesnt
-//make sense to do so because something like math.bool is obviously meaningless
 static void ResolveMembers(frame *self, vector(Member) members)
 {
 	assert(self);
 	assert(members.len > 0);
 
-	size_t fail = 0;
-	size_t i = 0;
-
 	symbol sym = {
 		.tag = SYMBOL_FIELD,
 		.field = {
 			.type = NULL,
+			.line = 0,
 			.referenced = false,
 			.public = false
 		}
 	};
 
+	size_t fail = 0;
+	size_t i = 0;
+
 	while (i < members.len) {
 		member *node = &members.buffer[i];
 
-		node->entry = InsertSymbol(self, node->name, sym);
+		sym.field.line = node->line;
+		sym.field.type = StringFromType(node->typ);
+		sym.field.public = node->public;
 
-		if (!LookupMemberType(self, node->typ)) {
+		symbol *symref = InsertSymbol(self, node->name, sym);
+		
+		node->entry = symref;
+
+		//check all field types before throwing an exception; lets us 
+		//generate many error messages within a single compile attempt
+		if (!LookupType(self, node->typ)) {
 			fail++;
 		}
 
@@ -490,79 +738,407 @@ static void ResolveMembers(frame *self, vector(Member) members)
 	}
 }
 
+//-----------------------------------------------------------------------------
+
 //if the node is a base type, returns a reference to the type symbol entry. If
 //the node is a named type, returns a reference to its base type symbol entry.
 //returns NULL if any lookup fails or if the lookup succeeds but the referenced
 //symbol is semantically meaningless.
-static symbol *LookupMemberType(frame *self, type *node)
+static symbol *LookupType(frame *self, type *node)
 {
 	assert(self);
 	assert(node);
 
 	node = UnwindType(node);
-	const cstring *fname = self->ast->alias;
-	symbol *ref = NULL;
-	cstring *key = NULL;
 
 	switch (node->tag) {
 	case NODE_BASE:
-		key = node->base.name;
-		ref = LookupSymbol(self, key, NULL);
-
-		switch (ref->tag) {
-		case SYMBOL_UDT:
-			ref->udt.referenced = true;
-			__attribute__((fallthrough));
-
-		case SYMBOL_NATIVE:
-			return ref;
-
-		default:
-			//TODO line info
-			xuser_error(fname, 0, "'%s' not a declared type", key);
-		}
-
-		return NULL;
+		return LookupBaseType(self, node);
 
 	case NODE_NAMED:
-		key = node->named.name;
-		ref = LookupSymbol(self, key, NULL);
-
-		if (ref->tag != SYMBOL_IMPORT) {
-			xuser_error(fname, 0 , "'%s' is not an import", key);
-			return NULL;
-		}
-
-		ref->import.referenced = true;
-
-		//TODO have to actually load the other module's symbol table..
-		//this is still searching in the local spaghetti stack
-		ref = LookupMemberType(self, node->named.reference);
-
-		if (!ref) {
-			return NULL;
-		}
-
-		if (ref->tag == SYMBOL_NATIVE) {
-			const cstring *msg = "named global type is redundant";
-			xuser_error(fname, 0, msg);
-			return NULL;
-		}
-
-		assert(ref->tag == SYMBOL_UDT);
-
-		if (!ref->udt.public) {
-			const cstring *msg = "reference to private type";
-			xuser_error(fname, 0, msg);
-			return NULL;
-		}
-
-		return ref;
-
+		return LookupNamedType(self, node);
+	
 	default:
 		assert(0 != 0 && "invalid node tag");
 		__builtin_unreachable();
 	}
 }
 
+//check that the atomic type exists in the current symbol table stack and if so
+//then mark it as referenced and return the associated symbol. Otherwise return
+//NULL.
+static symbol *LookupBaseType(frame *self, type *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_BASE);
+
+	const size_t line = node->line;
+	const cstring *key = node->base.name;
+	
+	symbol *symref = LookupSymbol(self, key, line);
+	const symboltag tag = symref->tag;
+
+	switch (tag) {
+	case SYMBOL_UDT:
+		symref->udt.referenced = true;
+		__attribute__((fallthrough));
+
+	case SYMBOL_NATIVE:
+		return symref;
+
+	default: /* label bypass */ ;
+		ReportUnexpected(self, "type", tag, line);
+		return NULL;
+	}
+}
+
+//check that the named type exists in the current symbol table stack and that its
+//base type is a public UDT. Mark the base type as referenced and return the
+//import symbol. Otherwise return NULL.
+static symbol *LookupNamedType(frame *self, type *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_NAMED);
+
+	const size_t line = node->line;
+	const cstring *key = node->named.name;
+
+	symbol *symref = LookupSymbol(self, key, line);
+	const symboltag tag = symref->tag;
+	switch (tag) {
+	case SYMBOL_IMPORT:
+		symref->import.referenced = true;
+		break;
+
+	default:
+		ReportUnexpected(self, "imported module name", tag, line);
+		goto fail;
+	}
+
+	push_stack(self, symref->import.table);
+
+	symbol *underlying = LookupBaseType(self, node->named.reference);
+
+	if (!underlying) {
+		goto restore;
+	}
+
+	if (underlying->tag == SYMBOL_NATIVE) {
+		const cstring *msg = "named global type is redundant";
+		xuser_error(self->ast->alias, line, msg);
+		goto restore;
+	}
+
+	assert(underlying->tag == SYMBOL_UDT);
+
+	if (!underlying->udt.public) {
+		const cstring *msg = "reference to a private type";
+		xuser_error(self->ast->alias, line, msg);
+		goto restore;
+	}
+
+	underlying->udt.referenced = true;
+
+	pop_stack(self);
+	return symref;
+
+restore:
+	pop_stack(self);
+
+fail:
+	return NULL;
+}
+
 //------------------------------------------------------------------------------
+
+static void ResolveFunctionPrototype(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_FUNCTION);
+	
+	symbol sym = {
+		.tag = SYMBOL_FUNCTION,
+		.function = {
+			.table = NULL,
+			.signature = CreateFuncSignature(node),
+			.line = node->line,
+			.referenced = false
+		}
+	};
+
+	(void) InsertSymbol(self, node->function.name, sym);
+}
+
+static void ResolveFunction(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_FUNCTION);
+	
+	symbol *symref = LookupSymbol(self, node->function.name, node->line);
+
+	vector(Fiat) fiats = node->function.block->block.fiats;
+	const size_t num_decls = CountDeclsWithinFiat(fiats);
+	const size_t num_params = node->function.params.len;
+	const size_t table_capacity = num_params + num_decls;
+
+	push(self, TABLE_FUNCTION, table_capacity);
+
+	symref->function.table = self->top;
+	node->function.entry = symref;
+
+	//add param and fiats to func table
+	ResolveParameters(self, node->function.params);
+	ResolveReturnType(self, node->function.ret);
+	ResolveBlock(self, node->function.block);
+	
+	pop(self);
+}
+
+static size_t CountDeclsWithinFiat(vector(Fiat) fiats)
+{
+	size_t count = 0;
+
+	for (size_t i = 0; i < fiats.len; i++) {
+		fiat node = fiats.buffer[i];
+
+		if (node.tag == NODE_DECL) {
+			count++;
+		}
+	}
+
+	return count;	
+}
+
+static cstring *CreateFuncSignature(decl *node)
+{
+	assert(node);
+	assert(node->tag == NODE_FUNCTION);
+
+	vstring vstr = vStringInit(VECTOR_DEFAULT_CAPACITY);
+
+	vector(Param) params = node->function.params;
+
+	//comma concatenate the parameter type list
+	if (params.len != 0) {
+		for (size_t i = 0; i < params.len; i++) {
+			if (i > 0) {
+				vStringAppend(&vstr, ',');
+			}
+
+			type *node = params.buffer[i].typ;
+			vStringAppendcString(&vstr, StringFromType(node));
+		}
+	}
+
+	vStringAppend(&vstr, ':');
+
+	type *return_type = node->function.ret;
+
+	if (return_type) {
+		vStringAppendcString(&vstr, StringFromType(return_type));
+	}
+
+	return cStringFromvString(&vstr);
+}
+
+static void ResolveParameters(frame *self, vector(Param) params)
+{
+	assert(self);
+
+	symbol sym = {
+		.tag = SYMBOL_PARAMETER,
+		.parameter = {
+			.type = NULL,
+			.line = 0,
+			.referenced = false
+		}
+	};
+
+	size_t fail = 0;
+	size_t i = 0;
+
+	while (i < params.len) {
+		param *node = &params.buffer[i];
+
+		sym.parameter.type = StringFromType(node->typ);
+		sym.parameter.line = node->line;
+
+		symbol *symref = InsertSymbol(self, node->name, sym);
+
+		if (!LookupType(self, node->typ)) {
+			fail++;
+		}
+
+		node->entry = symref;
+
+		i++;
+	}
+
+	if (fail) {
+		Throw(XXSYMBOL);
+	}
+}
+
+//if node is null (returns void) then no-op
+static void ResolveReturnType(frame *self, type *node)
+{
+	assert(self);
+
+	if (!node) {
+		return;
+	}
+
+	if (!LookupType(self, node)) {
+		Throw(XXSYMBOL);
+	}
+}
+
+//-----------------------------------------------------------------------------
+
+static void ResolveMethodPrototype(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_METHOD);
+	
+	symbol sym = {
+		.tag = SYMBOL_METHOD,
+		.method = {
+			.table = NULL,
+			.signature = CreateMethodSignature(node),
+			.line = node->line,
+			.referenced = false
+		}
+	};
+
+	(void) InsertSymbol(self, node->method.name, sym);
+}
+
+static void ResolveMethod(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_METHOD);
+	
+	symbol *symref = LookupSymbol(self, node->method.name, node->line);
+
+	vector(Fiat) fiats = node->method.block->block.fiats;
+	const size_t num_decls = CountDeclsWithinFiat(fiats);
+	const size_t num_params = node->method.params.len;
+	const size_t table_capacity = num_params + num_decls;
+
+	push(self, TABLE_METHOD, table_capacity);
+
+	symref->method.table = self->top;
+	node->method.entry = symref;
+
+	ResolveParameters(self, node->method.params);
+	ResolveRecvType(self, node->method.recv);
+	ResolveReturnType(self, node->method.ret);
+	ResolveBlock(self, node->method.block);
+	
+	pop(self);
+}
+
+static cstring *CreateMethodSignature(decl *node)
+{
+	assert(node);
+	assert(node->tag == NODE_METHOD);
+
+	vstring vstr = vStringInit(VECTOR_DEFAULT_CAPACITY);
+
+	vector(Param) params = node->method.params;
+
+	//comma concatenate the parameter type list
+	if (params.len != 0) {
+		for (size_t i = 0; i < params.len; i++) {
+			if (i > 0) {
+				vStringAppend(&vstr, ',');
+			}
+
+			type *node = params.buffer[i].typ;
+			vStringAppendcString(&vstr, StringFromType(node));
+		}
+	}
+
+	vStringAppend(&vstr, ':');
+
+	type *return_type = node->method.ret;
+
+	if (return_type) {
+		vStringAppendcString(&vstr, StringFromType(return_type));
+	}
+
+	vStringAppend(&vstr, ':');
+
+	type *recv_type = node->method.recv;
+
+	if (recv_type) {
+		vStringAppendcString(&vstr, StringFromType(recv_type));
+	}
+
+	return cStringFromvString(&vstr);
+}
+
+//if node is null (returns void) then no-op
+static void ResolveRecvType(frame *self, type *node)
+{
+	assert(self);
+
+	if (!node) {
+		return;
+	}
+
+	if (!LookupType(self, node)) {
+		Throw(XXSYMBOL);
+	}
+}
+
+//-----------------------------------------------------------------------------
+
+static void ResolveVariablePrototype(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_VARIABLE);
+
+	symbol sym = {
+		.tag = SYMBOL_VARIABLE,
+		.variable = {
+			.type = StringFromType(node->variable.vartype),
+			.line = node->line,
+			.referenced = false,
+			.public = node->variable.public
+		}
+	};
+
+	(void) InsertSymbol(self, node->variable.name, sym);
+}
+
+static void ResolveVariable(frame *self, decl *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_VARIABLE);
+
+	symbol *symref = LookupSymbol(self, node->variable.name, node->line);
+
+	node->variable.entry = symref;
+
+	if (!LookupType(self, node->variable.vartype)) {
+		Throw(XXSYMBOL);
+	}
+}
+
+//-----------------------------------------------------------------------------
+
+static void ResolveBlock(frame *self, stmt *node)
+{
+	assert(self);
+	assert(node);
+	assert(node->tag == NODE_BLOCK);
+}

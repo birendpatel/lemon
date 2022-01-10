@@ -47,6 +47,7 @@ files = [
     "./src/utils/options.c",
     "./src/utils/file.c",
     "./src/utils/arena.c",
+    "./src/utils/json.c",
     "./src/assets/kmap.c",
     "./extern/cexception/CException.c"
 ]

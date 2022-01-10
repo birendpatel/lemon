@@ -256,7 +256,7 @@ static cstring *cStringFromLexeme(parser *self)
 #define usererror(msg, ...) 					               \
 do {								               \
 	xuser_error(self->root.alias, self->tok.line, msg, ##__VA_ARGS__);     \
-	self->errors++;					               \
+	self->errors++;					                       \
 } while (0)
 
 //if the extracted index is not a simple nonnegative integer less than LLONG_MAX
@@ -497,7 +497,7 @@ static decl RecDecl(parser *self)
 		return RecVariable(self);
 
 	default:
-		usererror(msg, view, len);
+		usererror(msg, len, view);
 		Throw(XXPARSE);
 		__builtin_unreachable();
 	}
@@ -542,6 +542,7 @@ static decl RecStruct(parser *self)
 
 //<member list>
 //throws error if no members found
+//member line number corresponds to the leading identifier
 static vector(Member) RecParseMembers(parser *self)
 {
 	assert(self);
@@ -552,6 +553,8 @@ static vector(Member) RecParseMembers(parser *self)
 	member attr = {
 		.name = NULL,
 		.typ = NULL,
+		.entry = NULL,
+		.line = 0,
 		.public = false
 	};
 
@@ -564,6 +567,7 @@ static vector(Member) RecParseMembers(parser *self)
 		check(_IDENTIFIER, "missing struct member name");
 
 		attr.name = cStringFromLexeme(self);
+		attr.line = self->tok.line;
 
 		move_check_move(_COLON, "missing ':' after name");
 
@@ -706,6 +710,7 @@ static decl RecMethod(parser *self)
 
 //<parameter list>
 //throws error if no parameters found
+//line number corresponds to leading identifier
 static vector(Param) RecParseParameters(parser *self)
 {
 	assert(self);
@@ -716,6 +721,8 @@ static vector(Param) RecParseParameters(parser *self)
 	param attr  = {
 		.name = NULL,
 		.typ = NULL,
+		.entry = NULL,
+		.line = 0,
 		.mutable = false
 	};
 
@@ -732,6 +739,7 @@ static vector(Param) RecParseParameters(parser *self)
 		check(_IDENTIFIER, "missing function parameter name");
 
 		attr.name = cStringFromLexeme(self);
+		attr.line = self->tok.line;
 
 		move_check_move(_COLON, "missing ':' after name");
 
@@ -806,6 +814,8 @@ static type *RecType(parser *self)
 
 	switch (self->tok.type) {
 	case _IDENTIFIER:
+		node->line = self->tok.line;
+
 		prev_name = cStringFromLexeme(self);
 
 		GetNextValidToken(self);
@@ -831,21 +841,28 @@ static type *RecType(parser *self)
 
 	case _STAR:
 		node->tag = NODE_POINTER;
+		node->line = self->tok.line;
 		GetNextValidToken(self);
 		node->pointer.reference = RecType(self);
+
 		break;
 
 	case _LEFTBRACKET:
+		node->tag = NODE_ARRAY;
+		node->line = self->tok.line;
+
 		move_check(_LITERALINT, "missing array size");
 		node->array.len = ExtractArrayIndex(self);
 		move_check_move(_RIGHTBRACKET, "missing ']'");
+
 		node->array.element = RecType(self);
+
 		break;
 
 	default:
 		usererror("missing data type");
 		Throw(XXPARSE);
-		break;
+		__builtin_unreachable();
 	}
 
 	return node;

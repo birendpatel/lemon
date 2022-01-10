@@ -7,7 +7,9 @@
 #pragma once
 
 #include <assert.h>
+#include <inttypes.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "arena.h"
@@ -56,6 +58,8 @@ static char vStringGet(const vstring *, size_t);
 static void vStringTrim(vstring *, const char);
 static void vStringReset(vstring *);
 static cstring *cStringFromvString(vstring *);
+static void vStringAppendcString(vstring *, const cstring *);
+static void vStringAppendIntMax(vstring *, intmax_t);
 
 static vstring vStringInit(const size_t capacity)
 {
@@ -96,6 +100,40 @@ static void vStringAppend(vstring *vstr, const char ch)
 	(void) CharVectorSet(vstr, null_index, ch);
 
 	vStringTerminate__internal(vstr);
+}
+
+//faster than vStringAppend for bulk copying
+static void vStringAppendcString(vstring *vstr, const cstring *cstr)
+{
+	assert(vstr);
+	assert(vstr->len != 0);
+	assert(cstr);
+
+	//synthetically remove the null terminator
+	vstr->len -= 1;
+
+	while (*cstr) {
+		CharVectorPush(vstr, *cstr);
+		cstr++;
+	}
+
+	vStringTerminate__internal(vstr);
+}
+
+//append the string representation of the input number to vstr
+static void vStringAppendIntMax(vstring *vstr, intmax_t number)
+{
+	assert(vstr);
+	assert(vstr->len != 0);
+
+	const int length = snprintf(NULL, 0, "%" PRIdMAX "", number);
+	assert(length > 0);
+
+	cstring *digits = allocate((size_t) length * sizeof(char) + 1);
+	digits[length] = '\0';
+	snprintf(digits, (size_t) length, "%" PRIdMAX "", number);
+
+	vStringAppendcString(vstr, digits);	
 }
 
 static char vStringGet(const vstring *vstr, size_t index)
